@@ -32,8 +32,6 @@ AegisML maintains strict architectural separation:
 - **MCP Tools** (Python wrappers) ROUTE requests
 - **Sandbox CLI** (Python engine) PERFORMS analysis
 
-All analysis runs **completely offline** with no network dependencies.
-
 ---
 
 ## Quick Start
