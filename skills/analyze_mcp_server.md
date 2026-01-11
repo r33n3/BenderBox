@@ -12,8 +12,8 @@ Perform static security analysis of MCP (Model Context Protocol) server Python c
 - User requests: Infrastructure security assessment
 
 ## Required Tools
-- `aegisml_sandbox_analyzeModel` - Analysis tool (v2.0 infrastructure support)
-- `aegisml_sandbox_getLatestReport` - For retrieving cached results
+- `benderbox_sandbox_analyzeModel` - Analysis tool (v2.0 infrastructure support)
+- `benderbox_sandbox_getLatestReport` - For retrieving cached results
 
 ## Inputs
 - **mcp_server_path** (string, required): Path to MCP server Python file
@@ -28,12 +28,12 @@ Perform static security analysis of MCP (Model Context Protocol) server Python c
 
 ### 1. Check for Existing Analysis
 If `force_reanalysis` is false:
-  - Call `aegisml_sandbox_getLatestReport` with server filename
+  - Call `benderbox_sandbox_getLatestReport` with server filename
   - If report exists and is recent (< 24 hours), use cached data
   - Otherwise, proceed to step 2
 
 ### 2. Run Analysis
-Call `aegisml_sandbox_analyzeModel` with:
+Call `benderbox_sandbox_analyzeModel` with:
 ```json
 {
   "mcp_server_path": "<user_provided_path>",
@@ -166,14 +166,14 @@ This MCP server passed all static security checks.
 [Suggest relevant actions based on findings:]
 - Run `infra-deep` profile for comprehensive analysis
 - Compare with other MCP servers: "Which server is safer?"
-- Review full JSON report: `./sandbox_logs/aegisml_[run_id].json`
+- Review full JSON report: `./sandbox_logs/benderbox_[run_id].json`
 - Check specific lines of code: `cat [filename] | sed -n '[line_number]p'`
 
 ---
 *Report ID: [run_id]*
-*Analysis Engine: AegisML v2.0 Infrastructure Analyzer*
+*Analysis Engine: BenderBox v2.0 Infrastructure Analyzer*
 *Profile: [profile]*
-*Full JSON: ./sandbox_logs/aegisml_[run_id].json*
+*Full JSON: ./sandbox_logs/benderbox_[run_id].json*
 ```
 
 ## Error Handling
@@ -206,9 +206,9 @@ This MCP server passed all static security checks.
 **Details:** [error message from MCP tool]
 
 **Troubleshooting:**
-- Ensure `aegisml_mcp_analyzer.py` is present
-- Check `aegisml_sandbox_cli.py` supports v2.0 infrastructure analysis
-- Run manually: `python aegisml_sandbox_cli.py --mcp-server [path] --profile infra-quick`
+- Ensure `benderbox_mcp_analyzer.py` is present
+- Check `benderbox_sandbox_cli.py` supports v2.0 infrastructure analysis
+- Run manually: `python benderbox_sandbox_cli.py --mcp-server [path] --profile infra-quick`
 ```
 
 ## Example Interactions
@@ -217,7 +217,7 @@ This MCP server passed all static security checks.
 ```
 User: "Is my_mcp_server.py safe to deploy?"
 
-Agent: [Calls aegisml_sandbox_analyzeModel with mcp_server_path and profile=infra-quick]
+Agent: [Calls benderbox_sandbox_analyzeModel with mcp_server_path and profile=infra-quick]
 Agent: [Generates security report]
 Agent: "Analysis complete. Your server shows MEDIUM risk with 3 findings:
         - Command injection vulnerability on line 45
@@ -231,7 +231,7 @@ Agent: "Analysis complete. Your server shows MEDIUM risk with 3 findings:
 ```
 User: "Run a comprehensive security audit on server.py"
 
-Agent: [Calls aegisml_sandbox_analyzeModel with profile=infra-deep]
+Agent: [Calls benderbox_sandbox_analyzeModel with profile=infra-deep]
 Agent: [Generates detailed report with all findings]
 Agent: "Deep analysis found 7 security issues:
         - 2 CRITICAL (command injection, data exfiltration)
@@ -245,7 +245,7 @@ Agent: "Deep analysis found 7 security issues:
 ```
 User: "Check this server for backdoors"
 
-Agent: [Calls aegisml_sandbox_analyzeModel with profile=infra-standard]
+Agent: [Calls benderbox_sandbox_analyzeModel with profile=infra-standard]
 Agent: [Reviews backdoor detection results]
 Agent: "Backdoor analysis complete. Found 1 suspicious pattern:
         - Hidden shell spawning on line 156 (subprocess.Popen with /bin/bash)
@@ -301,6 +301,6 @@ After showing results:
 - **Category:** Infrastructure Security
 - **Complexity:** Medium
 - **Estimated Execution Time:** 10s-5min (profile-dependent)
-- **Dependencies:** aegisml_mcp_analyzer.py, aegisml_sandbox_cli.py v2.0+
+- **Dependencies:** benderbox_mcp_analyzer.py, benderbox_sandbox_cli.py v2.0+
 - **Output Type:** Markdown security report
 - **Analysis Method:** Static AST parsing (no code execution)

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Example of a MALICIOUS MCP server for testing AegisML infrastructure analysis.
+Example of a MALICIOUS MCP server for testing BenderBox infrastructure analysis.
 
-This file demonstrates security vulnerabilities that AegisML should detect:
+This file demonstrates security vulnerabilities that BenderBox should detect:
   - Command injection
   - Data exfiltration
   - Unsafe file operations

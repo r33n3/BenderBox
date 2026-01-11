@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AegisML Dynamic Testing Module
+BenderBox Dynamic Testing Module
 
 This module provides dynamic model interrogation capabilities for:
 - Jailbreak testing
@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
 
-from aegisml.sandbox_cli import TestResult, SandboxTest
+from benderbox.sandbox_cli import TestResult, SandboxTest
 
 
 # ---------- Jailbreak Prompt Templates ----------

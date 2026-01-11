@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-AegisML Sandbox - Interactive Menu Functions
+BenderBox Sandbox - Interactive Menu Functions
 
 This module contains all interactive menu functions for the self-contained
-AegisML sandbox CLI. Import these into aegisml_sandbox_cli.py.
+BenderBox sandbox CLI. Import these into benderbox_sandbox_cli.py.
 """
 
 import json
@@ -13,12 +13,12 @@ from typing import Dict, Any, List, Optional
 
 def interactive_menu(log_dir: Path, test_registry: Dict, sandbox_analyze_fn) -> int:
     """
-    Interactive menu for AegisML Sandbox.
+    Interactive menu for BenderBox Sandbox.
     Provides a self-contained interface for all operations.
     """
     while True:
         print("\n" + "=" * 70)
-        print("AegisML Model & Infrastructure Sandbox - Interactive Mode v2.0")
+        print("BenderBox Model & Infrastructure Sandbox - Interactive Mode v2.0")
         print("=" * 70)
         print("\nMODEL ANALYSIS")
         print("  1. Analyze a GGUF model")
@@ -39,7 +39,7 @@ def interactive_menu(log_dir: Path, test_registry: Dict, sandbox_analyze_fn) -> 
         choice = input("Select option (0-10): ").strip()
 
         if choice == "0":
-            print("\n[AegisML] Goodbye!")
+            print("\n[BenderBox] Goodbye!")
             return 0
 
         elif choice == "1":
@@ -73,7 +73,7 @@ def interactive_menu(log_dir: Path, test_registry: Dict, sandbox_analyze_fn) -> 
             show_help()
 
         else:
-            print("\n[AegisML] Invalid choice. Please try again.")
+            print("\n[BenderBox] Invalid choice. Please try again.")
 
 
 def analyze_mcp_server_interactive(log_dir: Path, test_registry: Dict, sandbox_analyze_fn) -> int:
@@ -93,7 +93,7 @@ def analyze_mcp_server_interactive(log_dir: Path, test_registry: Dict, sandbox_a
     py_files = [f for f in py_files if f.name not in exclude]
 
     if not py_files:
-        print(f"\n[AegisML] No MCP server files found in {servers_dir}")
+        print(f"\n[BenderBox] No MCP server files found in {servers_dir}")
         print("Tip: Place MCP server .py files in the current directory")
         input("\nPress ENTER to continue...")
         return 0
@@ -149,11 +149,11 @@ def analyze_mcp_server_interactive(log_dir: Path, test_registry: Dict, sandbox_a
 
     confirm = input("\nProceed with analysis? (y/n): ").strip().lower()
     if confirm != 'y':
-        print("\n[AegisML] Analysis cancelled.")
+        print("\n[BenderBox] Analysis cancelled.")
         return 0
 
     # Run analysis
-    print("\n[AegisML] Starting security analysis...")
+    print("\n[BenderBox] Starting security analysis...")
     return sandbox_analyze_fn(
         model_path=None,
         mcp_server_path=server_path,
@@ -175,13 +175,13 @@ def analyze_skill_interactive(log_dir: Path, test_registry: Dict, sandbox_analyz
     # Find available skills
     skills_dir = Path("skills")
     if not skills_dir.exists():
-        print(f"\n[AegisML] Skills directory not found: {skills_dir}")
+        print(f"\n[BenderBox] Skills directory not found: {skills_dir}")
         input("\nPress ENTER to continue...")
         return 0
 
     md_files = sorted(skills_dir.glob("*.md"))
     if not md_files:
-        print(f"\n[AegisML] No skill files found in {skills_dir}")
+        print(f"\n[BenderBox] No skill files found in {skills_dir}")
         input("\nPress ENTER to continue...")
         return 0
 
@@ -236,11 +236,11 @@ def analyze_skill_interactive(log_dir: Path, test_registry: Dict, sandbox_analyz
 
     confirm = input("\nProceed with analysis? (y/n): ").strip().lower()
     if confirm != 'y':
-        print("\n[AegisML] Analysis cancelled.")
+        print("\n[BenderBox] Analysis cancelled.")
         return 0
 
     # Run analysis
-    print("\n[AegisML] Starting security analysis...")
+    print("\n[BenderBox] Starting security analysis...")
     return sandbox_analyze_fn(
         model_path=None,
         mcp_server_path=None,
@@ -260,12 +260,12 @@ def compare_infrastructure_interactive(log_dir: Path):
     print("=" * 70)
 
     if not log_dir.exists():
-        print(f"\n[AegisML] No reports directory: {log_dir}")
+        print(f"\n[BenderBox] No reports directory: {log_dir}")
         input("\nPress ENTER to continue...")
         return
 
     # Find infrastructure reports
-    reports = sorted(log_dir.glob("aegisml_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    reports = sorted(log_dir.glob("benderbox_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
     infra_reports = []
 
     for report in reports:
@@ -279,7 +279,7 @@ def compare_infrastructure_interactive(log_dir: Path):
             continue
 
     if len(infra_reports) < 2:
-        print(f"\n[AegisML] Need at least 2 infrastructure reports to compare. Found: {len(infra_reports)}")
+        print(f"\n[BenderBox] Need at least 2 infrastructure reports to compare. Found: {len(infra_reports)}")
         print("Tip: Run infrastructure analysis first (options 4 or 5)")
         input("\nPress ENTER to continue...")
         return
@@ -414,7 +414,7 @@ def compare_infrastructure_interactive(log_dir: Path):
             print(f"   Review specific findings to determine which is better for your use case")
 
     except Exception as e:
-        print(f"[AegisML] Error comparing components: {e}")
+        print(f"[BenderBox] Error comparing components: {e}")
 
     input("\nPress ENTER to continue...")
 
@@ -428,13 +428,13 @@ def analyze_model_interactive(log_dir: Path, test_registry: Dict, sandbox_analyz
     # Find available models
     models_dir = Path("models")
     if not models_dir.exists():
-        print(f"\n[AegisML] Models directory not found: {models_dir}")
+        print(f"\n[BenderBox] Models directory not found: {models_dir}")
         input("\nPress ENTER to continue...")
         return 0
 
     gguf_files = sorted(models_dir.glob("*.gguf"))
     if not gguf_files:
-        print(f"\n[AegisML] No GGUF models found in {models_dir}")
+        print(f"\n[BenderBox] No GGUF models found in {models_dir}")
         input("\nPress ENTER to continue...")
         return 0
 
@@ -507,11 +507,11 @@ def analyze_model_interactive(log_dir: Path, test_registry: Dict, sandbox_analyz
 
     confirm = input("\nProceed with analysis? (y/n): ").strip().lower()
     if confirm != 'y':
-        print("\n[AegisML] Analysis cancelled.")
+        print("\n[BenderBox] Analysis cancelled.")
         return 0
 
     # Run analysis
-    print("\n[AegisML] Starting analysis...")
+    print("\n[BenderBox] Starting analysis...")
     return sandbox_analyze_fn(
         model_path=model_path,
         profile=profile,
@@ -529,13 +529,13 @@ def view_latest_report(log_dir: Path):
     print("=" * 70)
 
     if not log_dir.exists():
-        print(f"\n[AegisML] No reports directory: {log_dir}")
+        print(f"\n[BenderBox] No reports directory: {log_dir}")
         input("\nPress ENTER to continue...")
         return
 
-    reports = sorted(log_dir.glob("aegisml_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    reports = sorted(log_dir.glob("benderbox_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
     if not reports:
-        print(f"\n[AegisML] No reports found in {log_dir}")
+        print(f"\n[BenderBox] No reports found in {log_dir}")
         input("\nPress ENTER to continue...")
         return
 
@@ -551,13 +551,13 @@ def view_all_reports(log_dir: Path):
     print("=" * 70)
 
     if not log_dir.exists():
-        print(f"\n[AegisML] No reports directory: {log_dir}")
+        print(f"\n[BenderBox] No reports directory: {log_dir}")
         input("\nPress ENTER to continue...")
         return
 
-    reports = sorted(log_dir.glob("aegisml_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    reports = sorted(log_dir.glob("benderbox_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
     if not reports:
-        print(f"\n[AegisML] No reports found in {log_dir}")
+        print(f"\n[BenderBox] No reports found in {log_dir}")
         input("\nPress ENTER to continue...")
         return
 
@@ -656,7 +656,7 @@ def display_report(report_path: Path):
         print(f"Full report: {report_path}")
 
     except Exception as e:
-        print(f"[AegisML] Error reading report: {e}")
+        print(f"[BenderBox] Error reading report: {e}")
 
 
 def query_metadata_interactive(log_dir: Path):
@@ -666,13 +666,13 @@ def query_metadata_interactive(log_dir: Path):
     print("=" * 70)
 
     if not log_dir.exists():
-        print(f"\n[AegisML] No reports directory: {log_dir}")
+        print(f"\n[BenderBox] No reports directory: {log_dir}")
         input("\nPress ENTER to continue...")
         return
 
-    reports = sorted(log_dir.glob("aegisml_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    reports = sorted(log_dir.glob("benderbox_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
     if not reports:
-        print(f"\n[AegisML] No reports found in {log_dir}")
+        print(f"\n[BenderBox] No reports found in {log_dir}")
         input("\nPress ENTER to continue...")
         return
 
@@ -763,7 +763,7 @@ def query_metadata_interactive(log_dir: Path):
                 print("   layers, embedding, vocabulary, or VRAM requirements.\n")
 
     except Exception as e:
-        print(f"[AegisML] Error querying metadata: {e}")
+        print(f"[BenderBox] Error querying metadata: {e}")
 
     input("\nPress ENTER to continue...")
 
@@ -775,13 +775,13 @@ def compare_models_interactive(log_dir: Path):
     print("=" * 70)
 
     if not log_dir.exists():
-        print(f"\n[AegisML] No reports directory: {log_dir}")
+        print(f"\n[BenderBox] No reports directory: {log_dir}")
         input("\nPress ENTER to continue...")
         return
 
-    reports = sorted(log_dir.glob("aegisml_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    reports = sorted(log_dir.glob("benderbox_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
     if len(reports) < 2:
-        print(f"\n[AegisML] Need at least 2 reports to compare. Found: {len(reports)}")
+        print(f"\n[BenderBox] Need at least 2 reports to compare. Found: {len(reports)}")
         input("\nPress ENTER to continue...")
         return
 
@@ -858,7 +858,7 @@ def compare_models_interactive(log_dir: Path):
         print(f"{'Risk Level':<25} {risk1:<25} {risk2:<25}")
 
     except Exception as e:
-        print(f"[AegisML] Error comparing models: {e}")
+        print(f"[BenderBox] Error comparing models: {e}")
 
     input("\nPress ENTER to continue...")
 
@@ -875,13 +875,13 @@ def list_tests_interactive(test_registry: Dict):
 def show_help():
     """Display help and documentation."""
     print("\n" + "=" * 70)
-    print("AegisML Sandbox v2.0 - Help & Documentation")
+    print("BenderBox Sandbox v2.0 - Help & Documentation")
     print("=" * 70)
 
     help_text = """
 OVERVIEW
 --------
-AegisML Sandbox is an AI Model & Infrastructure security analysis tool:
+BenderBox Sandbox is an AI Model & Infrastructure security analysis tool:
   - GGUF model analysis - metadata, safety, capabilities
   - MCP server security analysis - command injection, data exfiltration
   - Skill security analysis - prompt injection, credential harvesting
@@ -962,7 +962,7 @@ Infrastructure analysis detects:
 
 FILES & LOCATIONS
 -----------------
-  Reports:      ./sandbox_logs/aegisml_*.json
+  Reports:      ./sandbox_logs/benderbox_*.json
   Models:       ./models/*.gguf
   MCP Servers:  ./*.py
   Skills:       ./skills/*.md
@@ -975,22 +975,22 @@ COMMAND LINE USAGE
 You can also run from command line:
 
   # Model analysis
-  python aegisml_sandbox_cli.py --model model.gguf --profile quick
+  python benderbox_sandbox_cli.py --model model.gguf --profile quick
 
   # MCP server analysis (v2.0)
-  python aegisml_sandbox_cli.py --mcp-server server.py --profile infra-standard
+  python benderbox_sandbox_cli.py --mcp-server server.py --profile infra-standard
 
   # Skill analysis (v2.0)
-  python aegisml_sandbox_cli.py --skill skill.md --profile infra-quick
+  python benderbox_sandbox_cli.py --skill skill.md --profile infra-quick
 
   # View summary
-  python aegisml_sandbox_cli.py --summary
+  python benderbox_sandbox_cli.py --summary
 
   # List tests
-  python aegisml_sandbox_cli.py --list-tests
+  python benderbox_sandbox_cli.py --list-tests
 
   # Interactive mode (this menu)
-  python aegisml_sandbox_cli.py --interactive
+  python benderbox_sandbox_cli.py --interactive
 
 For more information, see the documentation files.
 """

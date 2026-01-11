@@ -12,8 +12,8 @@ Compare security characteristics of multiple AI infrastructure components (MCP s
 - User requests: "Help me choose between X and Y"
 
 ## Required Tools
-- `aegisml_sandbox_analyzeModel` - Analysis tool (v2.0 infrastructure support)
-- `aegisml_sandbox_getLatestReport` - For retrieving cached results
+- `benderbox_sandbox_analyzeModel` - Analysis tool (v2.0 infrastructure support)
+- `benderbox_sandbox_getLatestReport` - For retrieving cached results
 
 ## Inputs
 - **component_paths** (array of strings, required): Paths to infrastructure files to compare
@@ -36,10 +36,10 @@ Compare security characteristics of multiple AI infrastructure components (MCP s
 
 ### 2. Analyze Each Component
 For each component in component_paths:
-  a. Check cache: Call `aegisml_sandbox_getLatestReport`
+  a. Check cache: Call `benderbox_sandbox_getLatestReport`
   b. If not cached or force_reanalysis=true:
      - Determine file type (.py = MCP server, .md = skill)
-     - Call `aegisml_sandbox_analyzeModel` with appropriate path parameter:
+     - Call `benderbox_sandbox_analyzeModel` with appropriate path parameter:
        - For .py: `{"mcp_server_path": path, "profile": profile}`
        - For .md: `{"skill_path": path, "profile": profile}`
   c. Store analysis result
@@ -168,9 +168,9 @@ Transform metrics into side-by-side comparison (see Output Format below)
 ## Next Steps
 
 - **Review full reports:**
-  - [component1]: `./sandbox_logs/aegisml_[run_id1].json`
-  - [component2]: `./sandbox_logs/aegisml_[run_id2].json`
-  - [component3]: `./sandbox_logs/aegisml_[run_id3].json`
+  - [component1]: `./sandbox_logs/benderbox_[run_id1].json`
+  - [component2]: `./sandbox_logs/benderbox_[run_id2].json`
+  - [component3]: `./sandbox_logs/benderbox_[run_id3].json`
 
 - **Fix vulnerabilities:** Focus on winner's remaining issues first
 
@@ -180,7 +180,7 @@ Transform metrics into side-by-side comparison (see Output Format below)
 
 ---
 *Comparison ID: [timestamp]*
-*Analysis Engine: AegisML v2.0*
+*Analysis Engine: BenderBox v2.0*
 *Profile: [profile]*
 ```
 
@@ -405,6 +405,6 @@ After comparison:
 - **Category:** Infrastructure Security
 - **Complexity:** High
 - **Estimated Execution Time:** 10s-10min (profile and count dependent)
-- **Dependencies:** aegisml_sandbox_cli.py v2.0+, analysis modules
+- **Dependencies:** benderbox_sandbox_cli.py v2.0+, analysis modules
 - **Output Type:** Markdown comparison report
 - **Analysis Method:** Parallel static analysis + comparative evaluation

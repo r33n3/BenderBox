@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-AegisML MCP Server
+BenderBox MCP Server
 
-This module provides Model Context Protocol (MCP) tools for AegisML.
-These tools are stateless wrappers around the aegisml_sandbox_cli.py engine.
+This module provides Model Context Protocol (MCP) tools for BenderBox.
+These tools are stateless wrappers around the benderbox_sandbox_cli.py engine.
 
 Architecture:
   - Skills (Markdown) → MCP Tools (this file) → Sandbox CLI (Python)
   - MCP tools NEVER implement analysis logic
   - MCP tools ONLY invoke CLI and parse results
-  - All business logic stays in aegisml_sandbox_cli.py
+  - All business logic stays in benderbox_sandbox_cli.py
 """
 
 import json
@@ -27,7 +27,7 @@ try:
     MCP_AVAILABLE = True
 except ImportError:
     MCP_AVAILABLE = False
-    print("[AegisML MCP] Warning: MCP SDK not installed. Install with: pip install mcp", file=sys.stderr)
+    print("[BenderBox MCP] Warning: MCP SDK not installed. Install with: pip install mcp", file=sys.stderr)
 
 
 # ---------- Configuration ----------
@@ -75,7 +75,7 @@ def invoke_sandbox_cli(
     timeout: int = 300,
 ) -> Dict[str, Any]:
     """
-    Invoke aegisml_sandbox_cli.py and return parsed JSON result.
+    Invoke benderbox_sandbox_cli.py and return parsed JSON result.
 
     This is a STATELESS wrapper - it does not implement any analysis logic.
 
@@ -177,7 +177,7 @@ def get_latest_report(
         return None
 
     reports = sorted(
-        log_path.glob("aegisml_*.json"),
+        log_path.glob("benderbox_*.json"),
         key=lambda p: p.stat().st_mtime,
         reverse=True,
     )
@@ -262,20 +262,20 @@ def list_available_tests(cli_path: Optional[str] = None) -> List[Dict[str, str]]
 
 if MCP_AVAILABLE:
     # Initialize MCP server
-    app = Server("aegisml")
+    app = Server("benderbox")
 
     @app.list_tools()
     async def list_tools() -> list[Tool]:
         """
-        List all available MCP tools provided by AegisML.
+        List all available MCP tools provided by BenderBox.
         """
         return [
             Tool(
-                name="aegisml_sandbox_analyzeModel",
+                name="benderbox_sandbox_analyzeModel",
                 description="""
 Analyze a GGUF model file for safety, capabilities, and metadata.
 
-This tool runs the AegisML sandbox analysis pipeline and returns a comprehensive
+This tool runs the BenderBox sandbox analysis pipeline and returns a comprehensive
 JSON report including:
   - GGUF metadata (architecture, parameters, quantization, context length)
   - Risk assessment (level, score, primary factors)
@@ -325,7 +325,7 @@ The analysis is completely stateless and offline - no network calls are made.
                 },
             ),
             Tool(
-                name="aegisml_sandbox_getLatestReport",
+                name="benderbox_sandbox_getLatestReport",
                 description="""
 Retrieve the most recent sandbox analysis report from the log directory.
 
@@ -349,7 +349,7 @@ Returns the full JSON report including metadata, risk assessment, and test resul
                 },
             ),
             Tool(
-                name="aegisml_sandbox_listTests",
+                name="benderbox_sandbox_listTests",
                 description="""
 List all available sandbox tests and their categories.
 
@@ -368,11 +368,11 @@ that can be used with the 'custom' profile.
         """
         Execute MCP tool requests.
 
-        All tools are stateless wrappers around aegisml_sandbox_cli.py.
+        All tools are stateless wrappers around benderbox_sandbox_cli.py.
         No analysis logic is implemented here.
         """
         try:
-            if name == "aegisml_sandbox_analyzeModel":
+            if name == "benderbox_sandbox_analyzeModel":
                 # Extract parameters
                 model_path = arguments["model_path"]
                 profile = arguments.get("profile", "standard")
@@ -397,7 +397,7 @@ that can be used with the 'custom' profile.
                     )
                 ]
 
-            elif name == "aegisml_sandbox_getLatestReport":
+            elif name == "benderbox_sandbox_getLatestReport":
                 log_dir = arguments.get("log_dir", DEFAULT_LOG_DIR)
                 model_name = arguments.get("model_name")
 
@@ -422,7 +422,7 @@ that can be used with the 'custom' profile.
                     )
                 ]
 
-            elif name == "aegisml_sandbox_listTests":
+            elif name == "benderbox_sandbox_listTests":
                 tests = list_available_tests()
 
                 return [
@@ -465,28 +465,28 @@ def main():
     Run the MCP server.
 
     Usage:
-        python aegisml_mcp_server.py
+        python benderbox_mcp_server.py
 
     Or add to MCP client configuration:
         {
           "mcpServers": {
-            "aegisml": {
+            "benderbox": {
               "command": "python",
-              "args": ["/path/to/aegisml_mcp_server.py"]
+              "args": ["/path/to/benderbox_mcp_server.py"]
             }
           }
         }
     """
     if not MCP_AVAILABLE:
-        print("[AegisML MCP] Error: MCP SDK not installed", file=sys.stderr)
-        print("[AegisML MCP] Install with: pip install mcp", file=sys.stderr)
+        print("[BenderBox MCP] Error: MCP SDK not installed", file=sys.stderr)
+        print("[BenderBox MCP] Install with: pip install mcp", file=sys.stderr)
         return 1
 
     # Check if CLI is available
     cli_path = find_sandbox_cli()
     if not cli_path:
-        print("[AegisML MCP] Warning: sandbox_cli.py not found", file=sys.stderr)
-        print("[AegisML MCP] MCP server will start, but tools may fail", file=sys.stderr)
+        print("[BenderBox MCP] Warning: sandbox_cli.py not found", file=sys.stderr)
+        print("[BenderBox MCP] MCP server will start, but tools may fail", file=sys.stderr)
 
     # Run MCP server
     import asyncio

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AegisML MCP Server Security Analyzer
+BenderBox MCP Server Security Analyzer
 
 Static analysis of MCP server Python code to detect security vulnerabilities
 and malicious behaviors without executing the code.
@@ -482,7 +482,7 @@ if __name__ == "__main__":
     import sys
 
     if len(sys.argv) < 2:
-        print("Usage: python aegisml_mcp_analyzer.py <mcp_server.py>")
+        print("Usage: python benderbox_mcp_analyzer.py <mcp_server.py>")
         sys.exit(1)
 
     file_path = Path(sys.argv[1])

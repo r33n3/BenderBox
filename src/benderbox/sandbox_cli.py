@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AegisML Model Sandbox CLI
+BenderBox Model Sandbox CLI
 
 Profiles:
   - quick  : light static + minimal dynamic probes
@@ -30,7 +30,7 @@ from typing import Dict, List, Optional, Iterable, Callable, Any
 
 # Import dynamic tests if available
 try:
-    from aegisml.dynamic_tests import BasicJailbreakTest, BackdoorDetectionTest
+    from benderbox.dynamic_tests import BasicJailbreakTest, BackdoorDetectionTest
     DYNAMIC_TESTS_AVAILABLE = True
 except ImportError:
     DYNAMIC_TESTS_AVAILABLE = False
@@ -39,7 +39,7 @@ except ImportError:
 
 # Import infrastructure tests if available
 try:
-    from aegisml.infrastructure_tests import (
+    from benderbox.infrastructure_tests import (
         MCPStaticAnalysisTest,
         SkillStaticAnalysisTest,
         InfrastructureComprehensiveTest
@@ -755,12 +755,12 @@ def sandbox_analyze(
 ) -> int:
     # v2.0: Allow model to be optional if analyzing infrastructure
     if model_path and not model_path.exists():
-        print(f"[AegisML] ERROR: Model not found: {model_path}", file=sys.stderr)
+        print(f"[BenderBox] ERROR: Model not found: {model_path}", file=sys.stderr)
         return 1
 
     # v2.0: Check if we're analyzing infrastructure or models
     if not model_path and not mcp_server_path and not skill_path:
-        print(f"[AegisML] ERROR: Must specify --model, --mcp-server, or --skill", file=sys.stderr)
+        print(f"[BenderBox] ERROR: Must specify --model, --mcp-server, or --skill", file=sys.stderr)
         return 1
 
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -803,7 +803,7 @@ def sandbox_analyze(
     )
 
     # Write JSON result file
-    json_path = log_dir / f"aegisml_{run_id}.json"
+    json_path = log_dir / f"benderbox_{run_id}.json"
     json_serializable = asdict(result)
     with json_path.open("w", encoding="utf-8") as f:
         json.dump(json_serializable, f, indent=2)
@@ -824,7 +824,7 @@ def sandbox_analyze(
 
 
 def print_human_readable_summary(result: SandboxRunResult, json_path: Path):
-    print("\n===== AegisML Sandbox Summary =====")
+    print("\n===== BenderBox Sandbox Summary =====")
     print(f"Run ID      : {result.run_id}")
     print(f"Profile     : {result.profile}")
     print(f"Model       : {result.model.get('name')} ({result.model.get('path')})")
@@ -856,14 +856,14 @@ def list_tests():
 
     if not DYNAMIC_TESTS_AVAILABLE:
         print("\nNote: Dynamic tests are not available.")
-        print("      Install aegisml_dynamic_tests.py to enable jailbreak and backdoor testing.")
+        print("      Install benderbox_dynamic_tests.py to enable jailbreak and backdoor testing.")
         print("      See DYNAMIC_TESTING_GUIDE.md for details.")
 
 
 def find_latest_json_for_model(log_dir: Path, model_name: Optional[str]) -> Optional[Path]:
     if not log_dir.exists():
         return None
-    candidates = sorted(log_dir.glob("aegisml_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    candidates = sorted(log_dir.glob("benderbox_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
     if not model_name:
         return candidates[0] if candidates else None
 
@@ -893,17 +893,17 @@ def show_summary(
     target_path: Optional[Path] = None
 
     if run_id:
-        candidate = log_dir / f"aegisml_{run_id}.json"
+        candidate = log_dir / f"benderbox_{run_id}.json"
         if candidate.exists():
             target_path = candidate
         else:
-            print(f"[AegisML] No report found for run_id: {run_id}", file=sys.stderr)
+            print(f"[BenderBox] No report found for run_id: {run_id}", file=sys.stderr)
             return 1
     else:
         model_name = model_path.name if model_path else None
         target_path = find_latest_json_for_model(log_dir, model_name)
         if not target_path:
-            print("[AegisML] No matching sandbox reports found.", file=sys.stderr)
+            print("[BenderBox] No matching sandbox reports found.", file=sys.stderr)
             return 1
 
     result = load_run_from_json(target_path)
@@ -915,7 +915,7 @@ def show_summary(
 
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="AegisML Sandbox CLI v2.0 - Model & Infrastructure Security Analysis",
+        description="BenderBox Sandbox CLI v2.0 - Model & Infrastructure Security Analysis",
         epilog="""
 Profile descriptions:
   MODEL ANALYSIS:
@@ -932,16 +932,16 @@ Profile descriptions:
 
 Examples:
   # Model analysis
-  python aegisml_sandbox_cli.py --model model.gguf --profile standard
+  python benderbox_sandbox_cli.py --model model.gguf --profile standard
 
   # MCP server security analysis
-  python aegisml_sandbox_cli.py --mcp-server server.py --profile infra-standard
+  python benderbox_sandbox_cli.py --mcp-server server.py --profile infra-standard
 
   # Skill security analysis
-  python aegisml_sandbox_cli.py --skill skill.md --profile infra-quick
+  python benderbox_sandbox_cli.py --skill skill.md --profile infra-quick
 
   # Combined analysis
-  python aegisml_sandbox_cli.py --model model.gguf --mcp-server server.py --skill skill.md --profile infra-deep
+  python benderbox_sandbox_cli.py --model model.gguf --mcp-server server.py --skill skill.md --profile infra-deep
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -1022,22 +1022,22 @@ def main(argv: Optional[List[str]] = None) -> int:
 
         # Check for interactive mode
         if args.interactive:
-            from aegisml.interactive import interactive_menu
+            from benderbox.interactive import interactive_menu
             return interactive_menu(log_dir, TEST_REGISTRY, sandbox_analyze)
 
         # v2.0: Check for analysis targets (model OR infrastructure)
         if not args.model and not args.mcp_server and not args.skill:
             if not args.profile:
-                print("\n[AegisML] No analysis target or profile specified.")
+                print("\n[BenderBox] No analysis target or profile specified.")
                 print("Tip: Use --interactive (-i) for a guided menu interface")
                 print("     Or use --help for command-line options\n")
 
                 choice = input("Enter interactive mode now? (y/n): ").strip().lower()
                 if choice == 'y':
-                    from aegisml.interactive import interactive_menu
+                    from benderbox.interactive import interactive_menu
                     return interactive_menu(log_dir, TEST_REGISTRY, sandbox_analyze)
                 else:
-                    print("[AegisML] Exiting. Use --help for usage information.")
+                    print("[BenderBox] Exiting. Use --help for usage information.")
                     return 1
 
         # Parse paths
@@ -1061,10 +1061,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         )
 
     except KeyboardInterrupt:
-        print("\n[AegisML] Interrupted by user.", file=sys.stderr)
+        print("\n[BenderBox] Interrupted by user.", file=sys.stderr)
         return 2
     except Exception as e:
-        print(f"[AegisML] FATAL ERROR: {e}", file=sys.stderr)
+        print(f"[BenderBox] FATAL ERROR: {e}", file=sys.stderr)
         traceback.print_exc()
         return 3
 

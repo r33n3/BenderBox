@@ -1,4 +1,4 @@
-# AegisML Skill Authoring Guide
+# BenderBox Skill Authoring Guide
 
 **Version:** 1.0.0
 **Last Updated:** 2025-12-10
@@ -7,7 +7,7 @@
 
 ## Overview
 
-Skills are **declarative Markdown files** that define how AI agents should use AegisML tools. They specify triggers, inputs, outputs, and process flows WITHOUT implementing any analysis logic.
+Skills are **declarative Markdown files** that define how AI agents should use BenderBox tools. They specify triggers, inputs, outputs, and process flows WITHOUT implementing any analysis logic.
 
 ### Key Principle
 
@@ -127,8 +127,8 @@ results which come back as JSON and then formatting them into a nice summary...
 **Good:**
 ```markdown
 ## Required Tools
-- `aegisml_sandbox_analyzeModel` - Primary analysis tool
-- `aegisml_sandbox_getLatestReport` - For cached results
+- `benderbox_sandbox_analyzeModel` - Primary analysis tool
+- `benderbox_sandbox_getLatestReport` - For cached results
 ```
 
 **Bad:**
@@ -187,12 +187,12 @@ results which come back as JSON and then formatting them into a nice summary...
 
 ### 1. Check for Existing Analysis
 If `force_reanalysis` is false:
-  - Call `aegisml_sandbox_getLatestReport` with model filename
+  - Call `benderbox_sandbox_getLatestReport` with model filename
   - If report exists and is recent (< 24 hours), use cached data
   - Otherwise, proceed to step 2
 
 ### 2. Run Analysis
-Call `aegisml_sandbox_analyzeModel` with:
+Call `benderbox_sandbox_analyzeModel` with:
 \`\`\`json
 {
   "model_path": "<user_provided_path>",
@@ -330,7 +330,7 @@ If there's an error, tell the user
 \`\`\`
 User: "What's inside llama-7b-q4.gguf?"
 
-Agent: [Calls aegisml_sandbox_analyzeModel with profile=quick]
+Agent: [Calls benderbox_sandbox_analyzeModel with profile=quick]
 Agent: [Generates standard summary with metadata]
 Agent: "This is a LLaMA 7B model with Q4 quantization..."
 \`\`\`
@@ -339,7 +339,7 @@ Agent: "This is a LLaMA 7B model with Q4 quantization..."
 \`\`\`
 User: "Is model.gguf safe for production?"
 
-Agent: [Calls aegisml_sandbox_analyzeModel with profile=deep]
+Agent: [Calls benderbox_sandbox_analyzeModel with profile=deep]
 Agent: [Generates deep summary with safety analysis]
 Agent: "Based on analysis, this model shows 8% jailbreak success rate..."
 \`\`\`
@@ -423,7 +423,7 @@ Agent: "Based on analysis, this model shows 8% jailbreak success rate..."
 - **Category:** Model Analysis
 - **Complexity:** Medium
 - **Estimated Execution Time:** 5-90s (profile-dependent)
-- **Dependencies:** llama.cpp, aegisml_sandbox_cli.py
+- **Dependencies:** llama.cpp, benderbox_sandbox_cli.py
 - **Output Type:** Markdown report
 ```
 
@@ -451,7 +451,7 @@ Agent: "Based on analysis, this model shows 8% jailbreak success rate..."
 - User requests: [Type of analysis]
 
 ## Required Tools
-- `aegisml_sandbox_[toolName]`
+- `benderbox_sandbox_[toolName]`
 
 ## Inputs
 - **input1** (type, required): [Description]
@@ -463,7 +463,7 @@ Agent: "Based on analysis, this model shows 8% jailbreak success rate..."
 [Logic and conditions]
 
 ### 2. Execute Analysis
-Call `aegisml_sandbox_[toolName]`:
+Call `benderbox_sandbox_[toolName]`:
 \`\`\`json
 {
   "param": "value"
@@ -514,7 +514,7 @@ Call `aegisml_sandbox_[toolName]`:
 - User provides: Multiple [items] to compare
 
 ## Required Tools
-- `aegisml_sandbox_[toolName]` - Run for each item
+- `benderbox_sandbox_[toolName]` - Run for each item
 
 ## Inputs
 - **items** (array of strings, required): Items to compare
@@ -559,7 +559,7 @@ For each item:
 
 Available tools for skills to call:
 
-### `aegisml_sandbox_analyzeModel`
+### `benderbox_sandbox_analyzeModel`
 
 **Purpose:** Run model analysis
 
@@ -578,7 +578,7 @@ Available tools for skills to call:
 
 **Typical Usage:**
 ```markdown
-Call `aegisml_sandbox_analyzeModel`:
+Call `benderbox_sandbox_analyzeModel`:
 \`\`\`json
 {
   "model_path": "<user_provided>",
@@ -589,7 +589,7 @@ Call `aegisml_sandbox_analyzeModel`:
 
 ---
 
-### `aegisml_sandbox_getLatestReport`
+### `benderbox_sandbox_getLatestReport`
 
 **Purpose:** Retrieve cached analysis
 
@@ -606,7 +606,7 @@ Call `aegisml_sandbox_analyzeModel`:
 **Typical Usage:**
 ```markdown
 Check for cached report:
-Call `aegisml_sandbox_getLatestReport` with `model_name`
+Call `benderbox_sandbox_getLatestReport` with `model_name`
 
 If report found and recent (< 24h):
   - Use cached data
@@ -616,7 +616,7 @@ Else:
 
 ---
 
-### `aegisml_sandbox_listTests`
+### `benderbox_sandbox_listTests`
 
 **Purpose:** Get available tests
 
@@ -639,7 +639,7 @@ Else:
 **Typical Usage:**
 ```markdown
 To show user available tests:
-Call `aegisml_sandbox_listTests`
+Call `benderbox_sandbox_listTests`
 Display tests grouped by category
 ```
 
@@ -707,7 +707,7 @@ Each test object:
 
 ```markdown
 ### 1. Check Cache
-Call `aegisml_sandbox_getLatestReport`:
+Call `benderbox_sandbox_getLatestReport`:
 \`\`\`json
 {
   "model_name": "[model_filename]"
@@ -797,7 +797,7 @@ Before submitting a skill, verify:
 **Good:**
 ```markdown
 ## Process Flow
-1. Call `aegisml_sandbox_analyzeModel` with `profile="quick"`
+1. Call `benderbox_sandbox_analyzeModel` with `profile="quick"`
 2. Extract `model.metadata.architecture` from JSON response
 3. Display: "Architecture: [architecture]"
 ```
@@ -923,7 +923,7 @@ Include at end of skill:
 - **Architecture Docs:** `./docs/ARCHITECTURE.md`
 - **MCP Tool Reference:** `./docs/MCP_TOOLS.md`
 - **Example Skills:** `./skills/`
-- **JSON Schema:** See `aegisml_sandbox_cli.py:SandboxRunResult`
+- **JSON Schema:** See `benderbox_sandbox_cli.py:SandboxRunResult`
 
 ---
 

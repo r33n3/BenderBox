@@ -1,4 +1,4 @@
-# AegisML v3.0 Architecture Plan
+# BenderBox v3.0 Architecture Plan
 # Local NLP-Driven Offline-First Platform for AI Model & Infrastructure Analysis
 
 **Version:** 3.0.0 (Proposed)
@@ -9,11 +9,11 @@
 
 ## Executive Summary
 
-This document outlines the architectural evolution of AegisML from a CLI-based analysis tool to a **comprehensive local NLP-driven offline-first platform** for analyzing AI models AND infrastructure for safety, security, and capabilities.
+This document outlines the architectural evolution of BenderBox from a CLI-based analysis tool to a **comprehensive local NLP-driven offline-first platform** for analyzing AI models AND infrastructure for safety, security, and capabilities.
 
 ### Vision Statement
 
-> **AegisML v3.0** will be a self-contained, air-gapped capable platform that uses local NLP models to provide intelligent, conversational analysis of AI models and infrastructure—without requiring internet connectivity or cloud services.
+> **BenderBox v3.0** will be a self-contained, air-gapped capable platform that uses local NLP models to provide intelligent, conversational analysis of AI models and infrastructure—without requiring internet connectivity or cloud services.
 
 ---
 
@@ -45,7 +45,7 @@ This document outlines the architectural evolution of AegisML from a CLI-based a
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                        AegisML v3.0 Platform                            │
+│                        BenderBox v3.0 Platform                            │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
 │  ┌─────────────────────────────────────────────────────────────────┐   │
@@ -108,8 +108,8 @@ This document outlines the architectural evolution of AegisML from a CLI-based a
 #### 1.1 CLI (Enhanced)
 - **Status:** Existing, to be enhanced
 - **Enhancements:**
-  - Natural language query support: `aegisml ask "Is this model safe?"`
-  - Conversational mode: `aegisml chat`
+  - Natural language query support: `benderbox ask "Is this model safe?"`
+  - Conversational mode: `benderbox chat`
   - Rich terminal output with colors and formatting
 
 #### 1.2 TUI (Terminal UI) - NEW
@@ -144,7 +144,7 @@ This is the **core innovation** of v3.0—a local NLP intelligence layer.
 #### 2.1 Local LLM Engine
 
 ```python
-# Proposed: src/aegisml/nlp/llm_engine.py
+# Proposed: src/benderbox/nlp/llm_engine.py
 
 class LocalLLMEngine:
     """
@@ -185,7 +185,7 @@ class LocalLLMEngine:
 #### 2.3 Conversation Manager
 
 ```python
-# Proposed: src/aegisml/nlp/conversation.py
+# Proposed: src/benderbox/nlp/conversation.py
 
 class ConversationManager:
     """
@@ -232,7 +232,7 @@ class ConversationManager:
 #### 2.4 Intent Router
 
 ```python
-# Proposed: src/aegisml/nlp/intent.py
+# Proposed: src/benderbox/nlp/intent.py
 
 class IntentRouter:
     """
@@ -267,7 +267,7 @@ class IntentRouter:
 #### 3.1 Semantic Analyzer (NEW)
 
 ```python
-# Proposed: src/aegisml/analyzers/semantic.py
+# Proposed: src/benderbox/analyzers/semantic.py
 
 class SemanticAnalyzer:
     """
@@ -350,7 +350,7 @@ class SemanticSecurityTest(SandboxTest):
 #### 4.1 Vector Store (ChromaDB)
 
 ```python
-# Proposed: src/aegisml/storage/vector_store.py
+# Proposed: src/benderbox/storage/vector_store.py
 
 class VectorStore:
     """
@@ -379,7 +379,7 @@ class VectorStore:
 #### 4.2 Report Database (SQLite)
 
 ```python
-# Proposed: src/aegisml/storage/report_db.py
+# Proposed: src/benderbox/storage/report_db.py
 
 class ReportDatabase:
     """
@@ -513,8 +513,8 @@ categories:
 ## Directory Structure (Proposed)
 
 ```
-AegisML/
-├── src/aegisml/
+BenderBox/
+├── src/benderbox/
 │   ├── __init__.py
 │   ├── sandbox_cli.py              # Enhanced CLI
 │   ├── mcp_server.py               # Enhanced MCP server
@@ -580,7 +580,7 @@ AegisML/
 ## Configuration
 
 ```yaml
-# config/aegisml.yaml
+# config/benderbox.yaml
 
 version: "3.0"
 
@@ -642,21 +642,21 @@ ui:
 
 ```bash
 # Natural language queries
-aegisml ask "Is model.gguf safe to deploy?"
-aegisml ask "What vulnerabilities were found in server.py?"
-aegisml ask "Compare model1.gguf and model2.gguf for safety"
+benderbox ask "Is model.gguf safe to deploy?"
+benderbox ask "What vulnerabilities were found in server.py?"
+benderbox ask "Compare model1.gguf and model2.gguf for safety"
 
 # Conversational mode
-aegisml chat
+benderbox chat
 > What models have I analyzed recently?
 > Show me the riskiest one
 > Explain why it scored high
 
 # TUI mode
-aegisml tui
+benderbox tui
 
 # Web UI (if enabled)
-aegisml serve --port 8080
+benderbox serve --port 8080
 ```
 
 ### Enhanced MCP Tools
@@ -665,7 +665,7 @@ aegisml serve --port 8080
 # New MCP tools for v3.0
 
 @mcp_tool
-async def aegisml_ask(query: str, context: Optional[str] = None) -> str:
+async def benderbox_ask(query: str, context: Optional[str] = None) -> str:
     """
     Natural language query about models or infrastructure.
 
@@ -679,7 +679,7 @@ async def aegisml_ask(query: str, context: Optional[str] = None) -> str:
     pass
 
 @mcp_tool
-async def aegisml_explain(finding_id: str) -> str:
+async def benderbox_explain(finding_id: str) -> str:
     """
     Get detailed explanation of a security finding.
 
@@ -692,7 +692,7 @@ async def aegisml_explain(finding_id: str) -> str:
     pass
 
 @mcp_tool
-async def aegisml_recommend(target: str, use_case: str) -> str:
+async def benderbox_recommend(target: str, use_case: str) -> str:
     """
     Get deployment recommendations for a model or server.
 
@@ -758,7 +758,7 @@ class ModelManager:
 
 ### Air-Gap Compatibility
 
-AegisML v3.0 must function **completely offline**:
+BenderBox v3.0 must function **completely offline**:
 
 1. **No telemetry** - Zero network calls
 2. **Local models only** - All LLMs stored locally
@@ -861,7 +861,7 @@ class SandboxedInference:
 ```
 User: Is mistral-7b.gguf safe to use for a customer chatbot?
 
-AegisML: I'll analyze mistral-7b.gguf for customer chatbot suitability.
+BenderBox: I'll analyze mistral-7b.gguf for customer chatbot suitability.
 
 [Running analysis: quick profile]
 
@@ -889,7 +889,7 @@ Would you like a detailed report or specific test results?
 ```
 User: Check if custom_mcp_server.py has any security issues
 
-AegisML: Analyzing custom_mcp_server.py for security vulnerabilities...
+BenderBox: Analyzing custom_mcp_server.py for security vulnerabilities...
 
 [Running infra-standard profile with semantic analysis]
 
@@ -935,4 +935,4 @@ Would you like me to explain any finding in more detail?
 
 ---
 
-*This architecture plan establishes AegisML v3.0 as a comprehensive, intelligent, offline-first platform for AI security analysis.*
+*This architecture plan establishes BenderBox v3.0 as a comprehensive, intelligent, offline-first platform for AI security analysis.*

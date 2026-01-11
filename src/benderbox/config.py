@@ -1,0 +1,288 @@
+"""
+BenderBox Configuration System
+
+Provides centralized configuration management with support for:
+- YAML configuration files
+- Environment variable overrides
+- Sensible defaults for offline operation
+"""
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Dict, Optional
+import os
+import yaml
+
+
+@dataclass
+class LLMConfig:
+    """Configuration for Local LLM Engine."""
+
+    # Model paths (relative to models/ directory or absolute)
+    analysis_model_path: str = "models/analysis/model.gguf"
+    code_model_path: str = "models/code/model.gguf"
+
+    # Model parameters
+    context_length: int = 4096
+    threads: int = 4
+    gpu_layers: int = 0  # 0 = CPU only
+
+    # Generation defaults
+    max_tokens: int = 2048
+    temperature: float = 0.7
+    top_p: float = 0.95
+
+    # Memory management
+    max_loaded_models: int = 2  # LRU eviction when exceeded
+
+
+@dataclass
+class StorageConfig:
+    """Configuration for Storage Layer."""
+
+    # Vector store (ChromaDB)
+    vector_store_path: str = "data/chromadb"
+
+    # SQLite database
+    db_path: str = "data/benderbox.db"
+
+    # Knowledge base
+    knowledge_path: str = "data/knowledge"
+
+    # Report storage
+    reports_path: str = "data/reports"
+
+
+@dataclass
+class EmbeddingConfig:
+    """Configuration for Embedding Model."""
+
+    # Model name or local path
+    model_name_or_path: str = "all-MiniLM-L6-v2"
+
+    # Local cache directory
+    cache_dir: str = "models/embeddings"
+
+    # Use local model only (no download)
+    offline_mode: bool = True
+
+    # Embedding cache
+    enable_cache: bool = True
+    cache_size: int = 10000
+
+
+@dataclass
+class AnalysisConfig:
+    """Configuration for Analysis Engine."""
+
+    # Default analysis profile
+    default_profile: str = "standard"
+
+    # Cache settings
+    cache_ttl_seconds: int = 3600  # 1 hour
+
+    # Concurrency
+    max_concurrent_analyses: int = 2
+
+    # Semantic analysis
+    enable_semantic_analysis: bool = True
+    semantic_chunk_size: int = 2000  # Characters per chunk
+
+
+@dataclass
+class UIConfig:
+    """Configuration for User Interfaces."""
+
+    # Web UI
+    web_enabled: bool = False
+    web_host: str = "127.0.0.1"
+    web_port: int = 8080
+
+    # TUI
+    tui_theme: str = "dark"
+
+    # CLI
+    color_output: bool = True
+    progress_indicators: bool = True
+
+
+@dataclass
+class Config:
+    """Main configuration container."""
+
+    llm: LLMConfig = field(default_factory=LLMConfig)
+    storage: StorageConfig = field(default_factory=StorageConfig)
+    embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
+    analysis: AnalysisConfig = field(default_factory=AnalysisConfig)
+    ui: UIConfig = field(default_factory=UIConfig)
+
+    # Base paths (resolved at load time)
+    base_path: str = ""
+
+
+def _resolve_path(path: str, base_path: Path) -> str:
+    """Resolve a path relative to base_path if not absolute."""
+    p = Path(path)
+    if p.is_absolute():
+        return str(p)
+    return str(base_path / p)
+
+
+def _apply_env_overrides(config: Config) -> None:
+    """Apply environment variable overrides to config."""
+    env_mappings = {
+        # LLM
+        "BENDERBOX_LLM_ANALYSIS_MODEL": ("llm", "analysis_model_path"),
+        "BENDERBOX_LLM_CODE_MODEL": ("llm", "code_model_path"),
+        "BENDERBOX_LLM_CONTEXT_LENGTH": ("llm", "context_length", int),
+        "BENDERBOX_LLM_THREADS": ("llm", "threads", int),
+        "BENDERBOX_LLM_GPU_LAYERS": ("llm", "gpu_layers", int),
+
+        # Storage
+        "BENDERBOX_STORAGE_VECTOR_PATH": ("storage", "vector_store_path"),
+        "BENDERBOX_STORAGE_DB_PATH": ("storage", "db_path"),
+        "BENDERBOX_STORAGE_KNOWLEDGE_PATH": ("storage", "knowledge_path"),
+
+        # Embedding
+        "BENDERBOX_EMBEDDING_MODEL": ("embedding", "model_name_or_path"),
+        "BENDERBOX_EMBEDDING_OFFLINE": ("embedding", "offline_mode", lambda x: x.lower() == "true"),
+
+        # Analysis
+        "BENDERBOX_ANALYSIS_PROFILE": ("analysis", "default_profile"),
+        "BENDERBOX_ANALYSIS_SEMANTIC": ("analysis", "enable_semantic_analysis", lambda x: x.lower() == "true"),
+
+        # UI
+        "BENDERBOX_UI_WEB_ENABLED": ("ui", "web_enabled", lambda x: x.lower() == "true"),
+        "BENDERBOX_UI_WEB_HOST": ("ui", "web_host"),
+        "BENDERBOX_UI_WEB_PORT": ("ui", "web_port", int),
+    }
+
+    for env_var, mapping in env_mappings.items():
+        value = os.environ.get(env_var)
+        if value is not None:
+            section_name = mapping[0]
+            attr_name = mapping[1]
+            converter = mapping[2] if len(mapping) > 2 else str
+
+            section = getattr(config, section_name)
+            try:
+                setattr(section, attr_name, converter(value))
+            except (ValueError, TypeError):
+                pass  # Ignore invalid env values
+
+
+def _dict_to_config(data: Dict[str, Any]) -> Config:
+    """Convert a dictionary to a Config object."""
+    config = Config()
+
+    if "llm" in data:
+        for key, value in data["llm"].items():
+            if hasattr(config.llm, key):
+                setattr(config.llm, key, value)
+
+    if "storage" in data:
+        for key, value in data["storage"].items():
+            if hasattr(config.storage, key):
+                setattr(config.storage, key, value)
+
+    if "embedding" in data:
+        for key, value in data["embedding"].items():
+            if hasattr(config.embedding, key):
+                setattr(config.embedding, key, value)
+
+    if "analysis" in data:
+        for key, value in data["analysis"].items():
+            if hasattr(config.analysis, key):
+                setattr(config.analysis, key, value)
+
+    if "ui" in data:
+        for key, value in data["ui"].items():
+            if hasattr(config.ui, key):
+                setattr(config.ui, key, value)
+
+    return config
+
+
+def load_config(config_path: Optional[str] = None, base_path: Optional[str] = None) -> Config:
+    """
+    Load configuration from YAML file with environment variable overrides.
+
+    Args:
+        config_path: Path to config file. If None, looks for config/benderbox.yaml
+        base_path: Base path for resolving relative paths. If None, uses cwd.
+
+    Returns:
+        Config object with all settings loaded.
+    """
+    # Determine base path
+    if base_path:
+        base = Path(base_path)
+    else:
+        base = Path.cwd()
+
+    # Determine config file path
+    if config_path:
+        config_file = Path(config_path)
+    else:
+        config_file = base / "config" / "benderbox.yaml"
+
+    # Load config from file if it exists
+    if config_file.exists():
+        with open(config_file, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        config = _dict_to_config(data)
+    else:
+        config = Config()
+
+    # Set base path
+    config.base_path = str(base)
+
+    # Resolve relative paths
+    config.llm.analysis_model_path = _resolve_path(config.llm.analysis_model_path, base)
+    config.llm.code_model_path = _resolve_path(config.llm.code_model_path, base)
+    config.storage.vector_store_path = _resolve_path(config.storage.vector_store_path, base)
+    config.storage.db_path = _resolve_path(config.storage.db_path, base)
+    config.storage.knowledge_path = _resolve_path(config.storage.knowledge_path, base)
+    config.storage.reports_path = _resolve_path(config.storage.reports_path, base)
+    config.embedding.cache_dir = _resolve_path(config.embedding.cache_dir, base)
+
+    # Apply environment variable overrides
+    _apply_env_overrides(config)
+
+    return config
+
+
+def get_default_config() -> Config:
+    """Get a Config object with all default values."""
+    return Config()
+
+
+# Global config instance (lazy loaded)
+_global_config: Optional[Config] = None
+
+
+def get_config() -> Config:
+    """
+    Get the global configuration instance.
+
+    Loads config on first call, returns cached instance thereafter.
+    """
+    global _global_config
+    if _global_config is None:
+        _global_config = load_config()
+    return _global_config
+
+
+def reload_config(config_path: Optional[str] = None) -> Config:
+    """
+    Reload the global configuration.
+
+    Args:
+        config_path: Optional path to config file.
+
+    Returns:
+        Newly loaded Config object.
+    """
+    global _global_config
+    _global_config = load_config(config_path)
+    return _global_config

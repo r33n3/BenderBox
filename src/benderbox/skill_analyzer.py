@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AegisML Skill Security Analyzer
+BenderBox Skill Security Analyzer
 
 Static analysis of Markdown skill files to detect security vulnerabilities
 and malicious patterns.
@@ -178,7 +178,7 @@ class SkillAnalyzer:
                 title="Missing required sections",
                 description=f"Skill is missing required sections: {', '.join(missing_sections)}",
                 location="Global structure",
-                remediation="Add all required sections per AegisML skill specification."
+                remediation="Add all required sections per BenderBox skill specification."
             ))
 
         # Check for implementation logic (Python/shell code)
@@ -469,7 +469,7 @@ if __name__ == "__main__":
     import json
 
     if len(sys.argv) < 2:
-        print("Usage: python aegisml_skill_analyzer.py <skill.md>")
+        print("Usage: python benderbox_skill_analyzer.py <skill.md>")
         sys.exit(1)
 
     file_path = Path(sys.argv[1])

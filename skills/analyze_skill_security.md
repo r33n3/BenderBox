@@ -12,8 +12,8 @@ Perform security analysis of Markdown skill files to detect malicious patterns i
 - User requests: Prompt injection detection
 
 ## Required Tools
-- `aegisml_sandbox_analyzeModel` - Analysis tool (v2.0 infrastructure support)
-- `aegisml_sandbox_getLatestReport` - For retrieving cached results
+- `benderbox_sandbox_analyzeModel` - Analysis tool (v2.0 infrastructure support)
+- `benderbox_sandbox_getLatestReport` - For retrieving cached results
 
 ## Inputs
 - **skill_path** (string, required): Path to Markdown skill file
@@ -28,12 +28,12 @@ Perform security analysis of Markdown skill files to detect malicious patterns i
 
 ### 1. Check for Existing Analysis
 If `force_reanalysis` is false:
-  - Call `aegisml_sandbox_getLatestReport` with skill filename
+  - Call `benderbox_sandbox_getLatestReport` with skill filename
   - If report exists and is recent (< 24 hours), use cached data
   - Otherwise, proceed to step 2
 
 ### 2. Run Analysis
-Call `aegisml_sandbox_analyzeModel` with:
+Call `benderbox_sandbox_analyzeModel` with:
 ```json
 {
   "skill_path": "<user_provided_path>",
@@ -196,15 +196,15 @@ Hidden or disguised instructions:
 [Suggest relevant actions based on findings:]
 - Run `infra-deep` profile for comprehensive context analysis
 - Compare with other skills: "Which skill is safer?"
-- Review full JSON report: `./sandbox_logs/aegisml_[run_id].json`
+- Review full JSON report: `./sandbox_logs/benderbox_[run_id].json`
 - Test skill behavior in sandboxed environment
 - Review skill source and provenance
 
 ---
 *Report ID: [run_id]*
-*Analysis Engine: AegisML v2.0 Skill Analyzer*
+*Analysis Engine: BenderBox v2.0 Skill Analyzer*
 *Profile: [profile]*
-*Full JSON: ./sandbox_logs/aegisml_[run_id].json*
+*Full JSON: ./sandbox_logs/benderbox_[run_id].json*
 ```
 
 ## Error Handling
@@ -239,9 +239,9 @@ Hidden or disguised instructions:
 **Details:** [error message from MCP tool]
 
 **Troubleshooting:**
-- Ensure `aegisml_skill_analyzer.py` is present
-- Check `aegisml_sandbox_cli.py` supports v2.0 infrastructure analysis
-- Run manually: `python aegisml_sandbox_cli.py --skill [path] --profile infra-quick`
+- Ensure `benderbox_skill_analyzer.py` is present
+- Check `benderbox_sandbox_cli.py` supports v2.0 infrastructure analysis
+- Run manually: `python benderbox_sandbox_cli.py --skill [path] --profile infra-quick`
 ```
 
 ## Example Interactions
@@ -250,7 +250,7 @@ Hidden or disguised instructions:
 ```
 User: "Is custom_skill.md safe to use?"
 
-Agent: [Calls aegisml_sandbox_analyzeModel with skill_path and profile=infra-quick]
+Agent: [Calls benderbox_sandbox_analyzeModel with skill_path and profile=infra-quick]
 Agent: [Generates security report]
 Agent: "Analysis complete. Your skill shows LOW risk with no security issues detected.
 
@@ -267,7 +267,7 @@ Agent: "Analysis complete. Your skill shows LOW risk with no security issues det
 ```
 User: "Check this skill file for prompt injection attacks"
 
-Agent: [Calls aegisml_sandbox_analyzeModel with profile=infra-standard]
+Agent: [Calls benderbox_sandbox_analyzeModel with profile=infra-standard]
 Agent: [Reviews prompt injection findings]
 Agent: "Found 3 prompt injection patterns:
 
@@ -283,7 +283,7 @@ Agent: "Found 3 prompt injection patterns:
 ```
 User: "Does this skill request passwords or API keys?"
 
-Agent: [Calls aegisml_sandbox_analyzeModel with profile=infra-quick]
+Agent: [Calls benderbox_sandbox_analyzeModel with profile=infra-quick]
 Agent: [Checks credential harvesting patterns]
 Agent: "Yes, found 2 credential requests:
 
@@ -344,6 +344,6 @@ After showing results:
 - **Category:** Infrastructure Security
 - **Complexity:** Medium
 - **Estimated Execution Time:** 5s-2min (profile-dependent)
-- **Dependencies:** aegisml_skill_analyzer.py, aegisml_sandbox_cli.py v2.0+
+- **Dependencies:** benderbox_skill_analyzer.py, benderbox_sandbox_cli.py v2.0+
 - **Output Type:** Markdown security report
 - **Analysis Method:** Static pattern matching (no execution)

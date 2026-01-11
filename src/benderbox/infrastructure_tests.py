@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AegisML Infrastructure Security Tests
+BenderBox Infrastructure Security Tests
 
 Test plugins for analyzing AI agent infrastructure (MCP servers, skills, protocols).
 Integrates with the main Sandbox CLI via the test registry.
@@ -16,9 +16,9 @@ import json
 from pathlib import Path
 from typing import Dict, Any
 
-from aegisml.sandbox_cli import TestResult, SandboxTest
-from aegisml.mcp_analyzer import analyze_mcp_server
-from aegisml.skill_analyzer import analyze_skill
+from benderbox.sandbox_cli import TestResult, SandboxTest
+from benderbox.mcp_analyzer import analyze_mcp_server
+from benderbox.skill_analyzer import analyze_skill
 
 
 # ---------- MCP Server Tests ----------

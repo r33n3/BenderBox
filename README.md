@@ -1,4 +1,4 @@
-# AegisML - AI Model & Infrastructure Security Analysis Platform
+# BenderBox - AI Model & Infrastructure Security Analysis Platform
 
 **Version:** 2.0.0
 **Status:** Production Ready
@@ -7,7 +7,7 @@
 
 ## Overview
 
-**AegisML** is a modular, stateless, offline-first platform for analyzing AI models AND infrastructure for safety, security, and capabilities. It combines:
+**BenderBox** is a modular, stateless, offline-first platform for analyzing AI models AND infrastructure for safety, security, and capabilities. It combines:
 
 ### Model Analysis (v1.0)
 - 🔍 **GGUF Metadata Extraction** - Architecture, quantization, context length
@@ -27,7 +27,7 @@
 
 **Skills describe; MCP tools execute; Python performs.**
 
-AegisML maintains strict architectural separation:
+BenderBox maintains strict architectural separation:
 - **Skills** (Markdown) define WHAT to do
 - **MCP Tools** (Python wrappers) ROUTE requests
 - **Sandbox CLI** (Python engine) PERFORMS analysis
@@ -51,7 +51,7 @@ AegisML maintains strict architectural separation:
 ```bash
 # Clone repository
 git clone <repository-url>
-cd AegisML
+cd BenderBox
 
 # Optional: Create virtual environment
 python -m venv venv
@@ -68,53 +68,53 @@ pip install mcp
 **Model Analysis:**
 ```bash
 # Quick metadata check (~5-10s)
-python aegisml_sandbox_cli.py --model models/model.gguf --profile quick
+python benderbox_sandbox_cli.py --model models/model.gguf --profile quick
 
 # Standard analysis (~10-15s)
-python aegisml_sandbox_cli.py --model models/model.gguf --profile standard
+python benderbox_sandbox_cli.py --model models/model.gguf --profile standard
 
 # Deep security audit (~60-90s)
-python aegisml_sandbox_cli.py --model models/model.gguf --profile deep
+python benderbox_sandbox_cli.py --model models/model.gguf --profile deep
 ```
 
 **Infrastructure Analysis (v2.0):**
 ```bash
 # Analyze MCP server security
-python aegisml_sandbox_cli.py --mcp-server server.py --profile infra-standard
+python benderbox_sandbox_cli.py --mcp-server server.py --profile infra-standard
 
 # Analyze skill security
-python aegisml_sandbox_cli.py --skill custom_skill.md --profile infra-quick
+python benderbox_sandbox_cli.py --skill custom_skill.md --profile infra-quick
 
 # Deep infrastructure audit
-python aegisml_sandbox_cli.py --mcp-server server.py --profile infra-deep
+python benderbox_sandbox_cli.py --mcp-server server.py --profile infra-deep
 ```
 
 **Utility Commands:**
 ```bash
 # View latest report
-python aegisml_sandbox_cli.py --summary
+python benderbox_sandbox_cli.py --summary
 
 # List available tests
-python aegisml_sandbox_cli.py --list-tests
+python benderbox_sandbox_cli.py --list-tests
 
 # Interactive mode
-python aegisml_sandbox_cli.py --interactive
+python benderbox_sandbox_cli.py --interactive
 ```
 
 #### MCP Server
 
 ```bash
 # Start MCP server
-python aegisml_mcp_server.py
+python benderbox_mcp_server.py
 ```
 
 Configure in your MCP client:
 ```json
 {
   "mcpServers": {
-    "aegisml": {
+    "benderbox": {
       "command": "python",
-      "args": ["/path/to/aegisml_mcp_server.py"]
+      "args": ["/path/to/benderbox_mcp_server.py"]
     }
   }
 }
@@ -124,7 +124,7 @@ Use MCP tools:
 ```python
 # Analyze model
 result = await mcp.call_tool(
-    "aegisml_sandbox_analyzeModel",
+    "benderbox_sandbox_analyzeModel",
     {
         "model_path": "./models/model.gguf",
         "profile": "standard"
@@ -133,7 +133,7 @@ result = await mcp.call_tool(
 
 # Get latest report
 cached = await mcp.call_tool(
-    "aegisml_sandbox_getLatestReport",
+    "benderbox_sandbox_getLatestReport",
     {"model_name": "model.gguf"}
 )
 ```
@@ -163,10 +163,10 @@ cached = await mcp.call_tool(
 ### Layers
 
 1. **Skill Layer** (`skills/*.md`) - Markdown definitions for AI agents
-2. **MCP Tool Layer** (`aegisml_mcp_server.py`) - Model Context Protocol interface
-3. **Sandbox CLI** (`aegisml_sandbox_cli.py`) - Core analysis engine
-4. **Test Layer** (`aegisml_dynamic_tests.py`) - Pluggable test modules
-5. **Interactive UI** (`aegisml_interactive.py`) - Optional menu interface
+2. **MCP Tool Layer** (`benderbox_mcp_server.py`) - Model Context Protocol interface
+3. **Sandbox CLI** (`benderbox_sandbox_cli.py`) - Core analysis engine
+4. **Test Layer** (`benderbox_dynamic_tests.py`) - Pluggable test modules
+5. **Interactive UI** (`benderbox_interactive.py`) - Optional menu interface
 
 **See:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for complete architectural details.
 
@@ -231,9 +231,9 @@ cached = await mcp.call_tool(
 
 ### MCP Tools
 
-- `aegisml_sandbox_analyzeModel` - Run model analysis
-- `aegisml_sandbox_getLatestReport` - Retrieve cached reports
-- `aegisml_sandbox_listTests` - List available tests
+- `benderbox_sandbox_analyzeModel` - Run model analysis
+- `benderbox_sandbox_getLatestReport` - Retrieve cached reports
+- `benderbox_sandbox_listTests` - List available tests
 
 **See:** [docs/MCP_TOOLS.md](docs/MCP_TOOLS.md) for API reference.
 
@@ -270,18 +270,18 @@ All analysis produces JSON reports:
 }
 ```
 
-Reports saved to `./sandbox_logs/aegisml_[run_id].json`
+Reports saved to `./sandbox_logs/benderbox_[run_id].json`
 
 ---
 
 ## Directory Structure
 
 ```
-AegisML/
-├── aegisml_sandbox_cli.py       # Core analysis engine
-├── aegisml_dynamic_tests.py     # Test plugins (jailbreak, backdoor)
-├── aegisml_mcp_server.py        # MCP tool server
-├── aegisml_interactive.py       # Optional interactive UI
+BenderBox/
+├── benderbox_sandbox_cli.py       # Core analysis engine
+├── benderbox_dynamic_tests.py     # Test plugins (jailbreak, backdoor)
+├── benderbox_mcp_server.py        # MCP tool server
+├── benderbox_interactive.py       # Optional interactive UI
 │
 ├── skills/                      # Markdown skill definitions
 │   ├── analyze_gguf_model.md
@@ -293,7 +293,7 @@ AegisML/
 │   └── *.gguf
 │
 ├── sandbox_logs/                # JSON analysis reports
-│   └── aegisml_*.json
+│   └── benderbox_*.json
 │
 ├── docs/                        # Documentation
 │   ├── ARCHITECTURE.md          # System architecture
@@ -314,11 +314,11 @@ AegisML/
 
 ```bash
 # Analyze candidates
-python aegisml_sandbox_cli.py --model model1.gguf --profile standard
-python aegisml_sandbox_cli.py --model model2.gguf --profile standard
+python benderbox_sandbox_cli.py --model model1.gguf --profile standard
+python benderbox_sandbox_cli.py --model model2.gguf --profile standard
 
 # Compare via interactive mode
-python aegisml_sandbox_cli.py --interactive
+python benderbox_sandbox_cli.py --interactive
 # Select option 6: Compare two models
 ```
 
@@ -337,7 +337,7 @@ Agent: [Uses compare_model_safety skill]
 
 ```bash
 # Run comprehensive audit
-python aegisml_sandbox_cli.py --model production-model.gguf --profile deep --format both
+python benderbox_sandbox_cli.py --model production-model.gguf --profile deep --format both
 
 # Review results
 # - Risk score must be < 25 (LOW)
@@ -359,10 +359,10 @@ python aegisml_sandbox_cli.py --model production-model.gguf --profile deep --for
 
 ```bash
 # Run attack-focused profile
-python aegisml_sandbox_cli.py --model research-model.gguf --profile attack
+python benderbox_sandbox_cli.py --model research-model.gguf --profile attack
 
 # Or custom tests
-python aegisml_sandbox_cli.py \
+python benderbox_sandbox_cli.py \
   --model research-model.gguf \
   --profile custom \
   --tests "basic_jailbreak_suite,backdoor_detection"
@@ -371,7 +371,7 @@ python aegisml_sandbox_cli.py \
 **Review violations:**
 ```bash
 # View detailed report
-cat sandbox_logs/aegisml_*.json | jq '.tests[] | select(.category=="dynamic")'
+cat sandbox_logs/benderbox_*.json | jq '.tests[] | select(.category=="dynamic")'
 ```
 
 ---
@@ -401,7 +401,7 @@ Agent: [Uses generate_model_card skill]
 
 for model in models/*.gguf; do
   echo "Auditing $model..."
-  python aegisml_sandbox_cli.py \
+  python benderbox_sandbox_cli.py \
     --model "$model" \
     --profile standard \
     --format json
@@ -413,11 +413,11 @@ python scripts/compare_with_baseline.py
 
 ---
 
-## Extending AegisML
+## Extending BenderBox
 
 ### Add a New Test
 
-1. **Create test class** in `aegisml_dynamic_tests.py`:
+1. **Create test class** in `benderbox_dynamic_tests.py`:
    ```python
    class MyTest(SandboxTest):
        name = "my_test"
@@ -434,9 +434,9 @@ python scripts/compare_with_baseline.py
            )
    ```
 
-2. **Register** in `aegisml_sandbox_cli.py`:
+2. **Register** in `benderbox_sandbox_cli.py`:
    ```python
-   from aegisml_dynamic_tests import MyTest
+   from benderbox_dynamic_tests import MyTest
    TEST_REGISTRY["my_test"] = MyTest
    PROFILE_TESTS["deep"].append("my_test")
    ```
@@ -454,7 +454,7 @@ Create `skills/my_skill.md`:
 - User asks: "[trigger phrase]"
 
 ## Required Tools
-- `aegisml_sandbox_[toolName]`
+- `benderbox_sandbox_[toolName]`
 
 ## Process Flow
 [Steps]
@@ -467,7 +467,7 @@ Create `skills/my_skill.md`:
 
 ### Add a New Profile
 
-In `aegisml_sandbox_cli.py`:
+In `benderbox_sandbox_cli.py`:
 ```python
 PROFILE_TESTS["my_profile"] = [
     "test1",
@@ -514,21 +514,21 @@ Tested on: Intel i7-12700K, 32GB RAM, llama.cpp CPU-only
 git clone https://github.com/ggerganov/llama.cpp
 cd llama.cpp && make
 
-# Add to PATH or place in AegisML directory
-cp build/bin/llama-cli /path/to/AegisML/
+# Add to PATH or place in BenderBox directory
+cp build/bin/llama-cli /path/to/BenderBox/
 ```
 
 ### "Dynamic tests not available"
 
-**Cause:** `aegisml_dynamic_tests.py` failed to import
+**Cause:** `benderbox_dynamic_tests.py` failed to import
 
 **Solution:**
 ```bash
 # Verify file exists
-ls aegisml_dynamic_tests.py
+ls benderbox_dynamic_tests.py
 
 # Test import
-python -c "from aegisml_dynamic_tests import BasicJailbreakTest"
+python -c "from benderbox_dynamic_tests import BasicJailbreakTest"
 ```
 
 ### Analysis timeout
@@ -536,7 +536,7 @@ python -c "from aegisml_dynamic_tests import BasicJailbreakTest"
 **Solution:**
 ```bash
 # Increase timeout
-python aegisml_sandbox_cli.py \
+python benderbox_sandbox_cli.py \
   --model large-model.gguf \
   --profile deep \
   --format json \
@@ -565,14 +565,14 @@ pip install mcp
 
 ## Security Considerations
 
-### What AegisML Tests For
+### What BenderBox Tests For
 
 ✅ **Jailbreak Resistance** - Role-play, context-switch, injection techniques
 ✅ **Backdoor Triggers** - Hidden activation phrases
 ✅ **Policy Compliance** - Refusal of harmful requests
 ✅ **Metadata Validation** - GGUF format integrity
 
-### What AegisML Does NOT Test
+### What BenderBox Does NOT Test
 
 ❌ **Training Data Leakage** - Memorization of sensitive data
 ❌ **Bias Detection** - Fairness and representation (planned)
@@ -588,7 +588,7 @@ pip install mcp
 
 ### Best Practices
 
-1. **Never rely solely on AegisML** - Use as one layer of defense
+1. **Never rely solely on BenderBox** - Use as one layer of defense
 2. **Regular re-testing** - Re-audit monthly or after model updates
 3. **Monitor production** - Log and review actual usage patterns
 4. **Defense in depth** - Combine with content moderation, rate limiting, human review
@@ -602,7 +602,7 @@ pip install mcp
 ```bash
 # Clone repository
 git clone <repo-url>
-cd AegisML
+cd BenderBox
 
 # Create virtual environment
 python -m venv venv
@@ -644,11 +644,11 @@ python -m pytest tests/  # (when test suite exists)
 
 ## Citation
 
-If you use AegisML in research, please cite:
+If you use BenderBox in research, please cite:
 
 ```bibtex
-@software{aegisml2025,
-  title={AegisML: AI Model Security Analysis Platform},
+@software{benderbox2025,
+  title={BenderBox: AI Model Security Analysis Platform},
   author={[Your Name/Organization]},
   year={2025},
   url={[Repository URL]}
@@ -706,10 +706,10 @@ If you use AegisML in research, please cite:
   - `compare_infrastructure_security.md` - Infrastructure comparison skill
 
 **Technical:**
-- Added `aegisml_mcp_analyzer.py` - Static MCP server analyzer (AST-based)
-- Added `aegisml_skill_analyzer.py` - Static skill analyzer (regex-based)
-- Added `aegisml_infrastructure_tests.py` - Infrastructure test plugins
-- Extended `aegisml_sandbox_cli.py` with `--mcp-server` and `--skill` flags
+- Added `benderbox_mcp_analyzer.py` - Static MCP server analyzer (AST-based)
+- Added `benderbox_skill_analyzer.py` - Static skill analyzer (regex-based)
+- Added `benderbox_infrastructure_tests.py` - Infrastructure test plugins
+- Extended `benderbox_sandbox_cli.py` with `--mcp-server` and `--skill` flags
 - Schema version bump: 0.2.0 (extended schema for infrastructure)
 - Runner version: 2.0.0
 
@@ -754,4 +754,4 @@ If you use AegisML in research, please cite:
 
 ---
 
-*Built with security in mind. Analyzed with AegisML.*
+*Built with security in mind. Analyzed with BenderBox.*

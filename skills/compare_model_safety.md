@@ -11,8 +11,8 @@ Compare safety characteristics, capabilities, and metadata of two or more GGUF m
 - User asks: "Which should I use for production?"
 
 ## Required Tools
-- `aegisml_sandbox_analyzeModel` - Analyze each model
-- `aegisml_sandbox_getLatestReport` - Check for existing reports
+- `benderbox_sandbox_analyzeModel` - Analyze each model
+- `benderbox_sandbox_getLatestReport` - Check for existing reports
 
 ## Inputs
 - **model_paths** (array of strings, required): List of GGUF model paths to compare
@@ -36,9 +36,9 @@ Compare safety characteristics, capabilities, and metadata of two or more GGUF m
 
 ### 2. Gather Analysis Reports
 For each model:
-  a. Check for recent report (< 24 hours): `aegisml_sandbox_getLatestReport`
+  a. Check for recent report (< 24 hours): `benderbox_sandbox_getLatestReport`
   b. If no recent report or user wants fresh data:
-     - Call `aegisml_sandbox_analyzeModel` with specified profile
+     - Call `benderbox_sandbox_analyzeModel` with specified profile
      - Show progress: "Analyzing model 2/3..."
 
 ### 3. Extract Comparison Metrics
@@ -281,9 +281,9 @@ Based on comparison_focus, recommend best model with justification
 ## 📁 Detailed Reports
 
 [For each model, provide link to full JSON:]
-- **[Model 1 Name]:** `./sandbox_logs/aegisml_[run_id].json`
-- **[Model 2 Name]:** `./sandbox_logs/aegisml_[run_id].json`
-- **[Model 3 Name]:** `./sandbox_logs/aegisml_[run_id].json`
+- **[Model 1 Name]:** `./sandbox_logs/benderbox_[run_id].json`
+- **[Model 2 Name]:** `./sandbox_logs/benderbox_[run_id].json`
+- **[Model 3 Name]:** `./sandbox_logs/benderbox_[run_id].json`
 ```
 
 ## Error Handling
@@ -403,5 +403,5 @@ Agent: "For code generation: [Model X] scores 8/10 vs [Model Y] at 6/10"
 - **Category:** Model Comparison
 - **Complexity:** High
 - **Estimated Execution Time:** 20-180s (depends on model count and profile)
-- **Dependencies:** llama.cpp, aegisml_sandbox_cli.py
+- **Dependencies:** llama.cpp, benderbox_sandbox_cli.py
 - **Output Type:** Markdown comparison report

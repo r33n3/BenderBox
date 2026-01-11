@@ -1,4 +1,4 @@
-# AegisML v3.0 Implementation Plan
+# BenderBox v3.0 Implementation Plan
 # Executable Steps for Claude Code
 
 **Version:** 3.0.0
@@ -9,7 +9,7 @@
 
 ## Overview
 
-This document provides **step-by-step executable instructions** for implementing AegisML v3.0. Each phase contains discrete tasks that can be executed sequentially by Claude Code.
+This document provides **step-by-step executable instructions** for implementing BenderBox v3.0. Each phase contains discrete tasks that can be executed sequentially by Claude Code.
 
 ---
 
@@ -34,11 +34,11 @@ TASK: Create the v3.0 directory structure
 
 ACTIONS:
 1. Create the following directories:
-   - src/aegisml/nlp/
-   - src/aegisml/analyzers/
-   - src/aegisml/storage/
-   - src/aegisml/ui/
-   - src/aegisml/tests/
+   - src/benderbox/nlp/
+   - src/benderbox/analyzers/
+   - src/benderbox/storage/
+   - src/benderbox/ui/
+   - src/benderbox/tests/
    - data/knowledge/
    - data/chromadb/
    - models/analysis/
@@ -77,8 +77,8 @@ ACTIONS:
    - uvicorn>=0.23.0 (for Web UI)
 
 4. Add new entry points:
-   - aegisml-chat = "aegisml.nlp.conversation:main"
-   - aegisml-tui = "aegisml.ui.tui:main"
+   - benderbox-chat = "benderbox.nlp.conversation:main"
+   - benderbox-tui = "benderbox.ui.tui:main"
 
 VERIFICATION:
 - pip install -e . succeeds
@@ -92,7 +92,7 @@ VERIFICATION:
 ```
 TASK: Create configuration management system
 
-FILE: src/aegisml/config.py
+FILE: src/benderbox/config.py
 
 ACTIONS:
 1. Create Config dataclass with sections:
@@ -102,19 +102,19 @@ ACTIONS:
    - UIConfig (web enabled, host, port, TUI theme)
 
 2. Create load_config() function:
-   - Load from config/aegisml.yaml if exists
+   - Load from config/benderbox.yaml if exists
    - Fall back to defaults
    - Support environment variable overrides
 
 3. Create default config template
 
-FILE: config/aegisml.yaml
+FILE: config/benderbox.yaml
 
 ACTIONS:
 1. Create default configuration file with all options documented
 
 VERIFICATION:
-- from aegisml.config import load_config works
+- from benderbox.config import load_config works
 - Config loads defaults when no file exists
 - Config loads from YAML when file exists
 ```
@@ -126,12 +126,12 @@ VERIFICATION:
 ```
 TASK: Create the local LLM engine using llama-cpp-python
 
-FILE: src/aegisml/nlp/__init__.py
+FILE: src/benderbox/nlp/__init__.py
 
 ACTIONS:
 1. Export main classes: LocalLLMEngine, ConversationManager, IntentRouter
 
-FILE: src/aegisml/nlp/llm_engine.py
+FILE: src/benderbox/nlp/llm_engine.py
 
 ACTIONS:
 1. Create LlamaModel wrapper class:
@@ -175,7 +175,7 @@ VERIFICATION:
 ```
 TASK: Create embedding generation using sentence-transformers
 
-FILE: src/aegisml/nlp/embeddings.py
+FILE: src/benderbox/nlp/embeddings.py
 
 ACTIONS:
 1. Create EmbeddingModel class:
@@ -207,12 +207,12 @@ VERIFICATION:
 ```
 TASK: Create vector store using ChromaDB
 
-FILE: src/aegisml/storage/__init__.py
+FILE: src/benderbox/storage/__init__.py
 
 ACTIONS:
 1. Export main classes: VectorStore, ReportDatabase, KnowledgeBase
 
-FILE: src/aegisml/storage/vector_store.py
+FILE: src/benderbox/storage/vector_store.py
 
 ACTIONS:
 1. Create VectorStore class:
@@ -251,7 +251,7 @@ VERIFICATION:
 ```
 TASK: Create SQLite database for report storage
 
-FILE: src/aegisml/storage/report_db.py
+FILE: src/benderbox/storage/report_db.py
 
 ACTIONS:
 1. Create ReportDatabase class:
@@ -290,7 +290,7 @@ VERIFICATION:
 ```
 TASK: Create structured threat knowledge base
 
-FILE: src/aegisml/storage/knowledge_base.py
+FILE: src/benderbox/storage/knowledge_base.py
 
 ACTIONS:
 1. Create KnowledgeBase class:
@@ -346,7 +346,7 @@ VERIFICATION:
 ```
 TASK: Create intent classification system
 
-FILE: src/aegisml/nlp/intent.py
+FILE: src/benderbox/nlp/intent.py
 
 ACTIONS:
 1. Create Intent dataclass:
@@ -396,7 +396,7 @@ VERIFICATION:
 ```
 TASK: Create response generation system
 
-FILE: src/aegisml/nlp/response.py
+FILE: src/benderbox/nlp/response.py
 
 ACTIONS:
 1. Create ResponseGenerator class:
@@ -438,7 +438,7 @@ VERIFICATION:
 ```
 TASK: Create conversation management system
 
-FILE: src/aegisml/nlp/conversation.py
+FILE: src/benderbox/nlp/conversation.py
 
 ACTIONS:
 1. Create Message dataclass:
@@ -490,7 +490,7 @@ VERIFICATION:
 ```
 TASK: Create context tracking and management
 
-FILE: src/aegisml/nlp/context.py
+FILE: src/benderbox/nlp/context.py
 
 ACTIONS:
 1. Create ContextManager class:
@@ -526,7 +526,7 @@ VERIFICATION:
 ```
 TASK: Connect NLP layer to sandbox_cli analysis
 
-FILE: src/aegisml/nlp/analysis_bridge.py
+FILE: src/benderbox/nlp/analysis_bridge.py
 
 ACTIONS:
 1. Create AnalysisBridge class:
@@ -565,7 +565,7 @@ VERIFICATION:
 ```
 TASK: Create LLM-powered code analysis
 
-FILE: src/aegisml/analyzers/semantic_analyzer.py
+FILE: src/benderbox/analyzers/semantic_analyzer.py
 
 ACTIONS:
 1. Create SemanticAnalyzer class:
@@ -609,7 +609,7 @@ VERIFICATION:
 ```
 TASK: Create LLM-powered test plugins
 
-FILE: src/aegisml/tests/semantic_tests.py
+FILE: src/benderbox/tests/semantic_tests.py
 
 ACTIONS:
 1. Create SemanticSecurityTest base class:
@@ -654,7 +654,7 @@ VERIFICATION:
 ```
 TASK: Create model behavior analysis using local LLM
 
-FILE: src/aegisml/analyzers/behavior_analyzer.py
+FILE: src/benderbox/analyzers/behavior_analyzer.py
 
 ACTIONS:
 1. Create BehaviorAnalyzer class:
@@ -692,7 +692,7 @@ VERIFICATION:
 ```
 TASK: Create natural language explanations for findings
 
-FILE: src/aegisml/nlp/explainer.py
+FILE: src/benderbox/nlp/explainer.py
 
 ACTIONS:
 1. Create FindingExplainer class:
@@ -733,7 +733,7 @@ VERIFICATION:
 ```
 TASK: Create Retrieval-Augmented Generation pipeline
 
-FILE: src/aegisml/nlp/rag.py
+FILE: src/benderbox/nlp/rag.py
 
 ACTIONS:
 1. Create RAGPipeline class:
@@ -772,7 +772,7 @@ VERIFICATION:
 ```
 TASK: Index reports for semantic search
 
-FILE: src/aegisml/storage/report_indexer.py
+FILE: src/benderbox/storage/report_indexer.py
 
 ACTIONS:
 1. Create ReportIndexer class:
@@ -808,7 +808,7 @@ VERIFICATION:
 ```
 TASK: Create knowledge base update mechanism
 
-FILE: src/aegisml/storage/knowledge_updater.py
+FILE: src/benderbox/storage/knowledge_updater.py
 
 ACTIONS:
 1. Create KnowledgeUpdater class:
@@ -846,7 +846,7 @@ VERIFICATION:
 ```
 TASK: Create cross-analysis comparison features
 
-FILE: src/aegisml/analyzers/comparative.py
+FILE: src/benderbox/analyzers/comparative.py
 
 ACTIONS:
 1. Create ComparativeAnalyzer class:
@@ -887,7 +887,7 @@ VERIFICATION:
 ```
 TASK: Add natural language support to CLI
 
-FILE: src/aegisml/sandbox_cli.py (update)
+FILE: src/benderbox/sandbox_cli.py (update)
 
 ACTIONS:
 1. Add new CLI arguments:
@@ -929,10 +929,10 @@ VERIFICATION:
 ```
 TASK: Create TUI using Textual framework
 
-FILE: src/aegisml/ui/tui.py
+FILE: src/benderbox/ui/tui.py
 
 ACTIONS:
-1. Create AegisMLApp class (extends textual.App):
+1. Create BenderBoxApp class (extends textual.App):
    - Dashboard view
    - Analysis view
    - Reports view
@@ -984,7 +984,7 @@ VERIFICATION:
 ```
 TASK: Create local web interface
 
-FILE: src/aegisml/ui/web.py
+FILE: src/benderbox/ui/web.py
 
 ACTIONS:
 1. Create FastAPI application:
@@ -1031,33 +1031,33 @@ VERIFICATION:
 ```
 TASK: Add NLP-enabled MCP tools
 
-FILE: src/aegisml/mcp_server.py (update)
+FILE: src/benderbox/mcp_server.py (update)
 
 ACTIONS:
 1. Add new MCP tools:
-   - aegisml_ask: Natural language query
-   - aegisml_explain: Explain finding
-   - aegisml_chat: Multi-turn conversation
-   - aegisml_compare: Compare targets
-   - aegisml_recommend: Get recommendations
+   - benderbox_ask: Natural language query
+   - benderbox_explain: Explain finding
+   - benderbox_chat: Multi-turn conversation
+   - benderbox_compare: Compare targets
+   - benderbox_recommend: Get recommendations
 
-2. Implement aegisml_ask:
+2. Implement benderbox_ask:
    - Input: query (str), context (optional str)
    - Output: Natural language response
 
-3. Implement aegisml_explain:
+3. Implement benderbox_explain:
    - Input: finding_id (str)
    - Output: Detailed explanation
 
-4. Implement aegisml_chat:
+4. Implement benderbox_chat:
    - Input: message (str), session_id (optional str)
    - Output: Response with session_id for continuity
 
-5. Implement aegisml_compare:
+5. Implement benderbox_compare:
    - Input: targets (List[str]), comparison_type (str)
    - Output: Comparison results
 
-6. Implement aegisml_recommend:
+6. Implement benderbox_recommend:
    - Input: target (str), use_case (str)
    - Output: Recommendations
 
@@ -1260,43 +1260,43 @@ VERIFICATION:
 Phase 1:
   1. Directory structure
   2. pyproject.toml
-  3. src/aegisml/config.py
-  4. config/aegisml.yaml
-  5. src/aegisml/nlp/__init__.py
-  6. src/aegisml/nlp/llm_engine.py
-  7. src/aegisml/nlp/embeddings.py
-  8. src/aegisml/storage/__init__.py
-  9. src/aegisml/storage/vector_store.py
-  10. src/aegisml/storage/report_db.py
-  11. src/aegisml/storage/knowledge_base.py
+  3. src/benderbox/config.py
+  4. config/benderbox.yaml
+  5. src/benderbox/nlp/__init__.py
+  6. src/benderbox/nlp/llm_engine.py
+  7. src/benderbox/nlp/embeddings.py
+  8. src/benderbox/storage/__init__.py
+  9. src/benderbox/storage/vector_store.py
+  10. src/benderbox/storage/report_db.py
+  11. src/benderbox/storage/knowledge_base.py
   12. data/knowledge/jailbreaks.yaml
   13. data/knowledge/vulnerabilities.yaml
   14. data/knowledge/code_patterns.yaml
 
 Phase 2:
-  15. src/aegisml/nlp/intent.py
-  16. src/aegisml/nlp/response.py
-  17. src/aegisml/nlp/conversation.py
-  18. src/aegisml/nlp/context.py
-  19. src/aegisml/nlp/analysis_bridge.py
+  15. src/benderbox/nlp/intent.py
+  16. src/benderbox/nlp/response.py
+  17. src/benderbox/nlp/conversation.py
+  18. src/benderbox/nlp/context.py
+  19. src/benderbox/nlp/analysis_bridge.py
 
 Phase 3:
-  20. src/aegisml/analyzers/semantic_analyzer.py
-  21. src/aegisml/tests/semantic_tests.py
-  22. src/aegisml/analyzers/behavior_analyzer.py
-  23. src/aegisml/nlp/explainer.py
+  20. src/benderbox/analyzers/semantic_analyzer.py
+  21. src/benderbox/tests/semantic_tests.py
+  22. src/benderbox/analyzers/behavior_analyzer.py
+  23. src/benderbox/nlp/explainer.py
 
 Phase 4:
-  24. src/aegisml/nlp/rag.py
-  25. src/aegisml/storage/report_indexer.py
-  26. src/aegisml/storage/knowledge_updater.py
-  27. src/aegisml/analyzers/comparative.py
+  24. src/benderbox/nlp/rag.py
+  25. src/benderbox/storage/report_indexer.py
+  26. src/benderbox/storage/knowledge_updater.py
+  27. src/benderbox/analyzers/comparative.py
 
 Phase 5:
-  28. src/aegisml/sandbox_cli.py (update)
-  29. src/aegisml/ui/tui.py
-  30. src/aegisml/ui/web.py (optional)
-  31. src/aegisml/mcp_server.py (update)
+  28. src/benderbox/sandbox_cli.py (update)
+  29. src/benderbox/ui/tui.py
+  30. src/benderbox/ui/web.py (optional)
+  31. src/benderbox/mcp_server.py (update)
 
 Phase 6:
   32. tests/*
@@ -1313,14 +1313,14 @@ To start implementation, use these commands:
 
 ```bash
 # Start Phase 1
-# "Begin implementing AegisML v3.0 Phase 1: Foundation. Follow the steps in docs/IMPLEMENTATION_PLAN.md starting with Step 1.1"
+# "Begin implementing BenderBox v3.0 Phase 1: Foundation. Follow the steps in docs/IMPLEMENTATION_PLAN.md starting with Step 1.1"
 
 # Continue to Phase 2
-# "Continue with AegisML v3.0 Phase 2: NLP Core. Follow docs/IMPLEMENTATION_PLAN.md"
+# "Continue with BenderBox v3.0 Phase 2: NLP Core. Follow docs/IMPLEMENTATION_PLAN.md"
 
 # And so on for each phase...
 ```
 
 ---
 
-*This implementation plan provides complete, executable steps for building AegisML v3.0.*
+*This implementation plan provides complete, executable steps for building BenderBox v3.0.*

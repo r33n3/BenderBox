@@ -4,7 +4,19 @@
       "Bash(git push:*)",
       "Bash(git fetch:*)",
       "Bash(dir:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nAdd BenderBox v3.0 architecture and implementation plan\n\n- ARCHITECTURE_PLAN_V3.md: Comprehensive architecture for local NLP-driven\n  offline-first platform including LLM orchestration, semantic analysis,\n  knowledge storage, and enhanced interfaces\n- IMPLEMENTATION_PLAN.md: Detailed 6-phase executable implementation guide\n  with step-by-step instructions for Claude Code execution\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git config:*)",
+      "Bash(node --version:*)",
+      "Bash(npm --version:*)",
+      "Bash(cmd /c \"node --version && npm --version\")",
+      "Bash(powershell -Command \"node --version; npm --version\")",
+      "Bash(powershell -Command \"winget install OpenJS.NodeJS.LTS --accept-package-agreements --accept-source-agreements\")",
+      "Bash(powershell -Command \"& ''C:\\\\Program Files\\\\nodejs\\\\npm.cmd'' install -g @anthropic-ai/claude-code\")",
+      "Bash(powershell -Command \"& ''C:\\\\Program Files\\\\nodejs\\\\claude.cmd'' --version\")",
+      "Bash(powershell -Command \"& ''C:\\\\Program Files\\\\nodejs\\\\npx.cmd'' claude --version\")",
+      "Bash(powershell -Command \"& ''C:\\\\Program Files\\\\nodejs\\\\npm.cmd'' config get prefix\")",
+      "Bash(powershell:*)"
     ]
   }
 }

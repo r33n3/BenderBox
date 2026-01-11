@@ -3,16 +3,16 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "aegisml"
-version = "0.1.0"
-description = "AI Security Testing and Model Safety Framework"
+name = "benderbox"
+version = "3.0.0-alpha"
+description = "AI Security Testing and Model Safety Framework - Offline-first platform for analyzing AI models and infrastructure"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 license = {text = "MIT"}
 authors = [
-    {name = "AegisML Contributors"}
+    {name = "BenderBox Contributors"}
 ]
-keywords = ["ai", "security", "testing", "llm", "model-safety", "mcp"]
+keywords = ["ai", "security", "testing", "llm", "model-safety", "mcp", "nlp", "offline"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -20,7 +20,6 @@ classifiers = [
     "Topic :: Security",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -29,26 +28,46 @@ classifiers = [
 
 dependencies = [
     "mcp>=0.1.0",
+    # v3.0 NLP dependencies
+    "llama-cpp-python>=0.2.0",
+    "chromadb>=0.4.0",
+    "sentence-transformers>=2.2.0",
+    "pyyaml>=6.0",
+    "aiosqlite>=0.19.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",
     "pytest-cov",
+    "pytest-asyncio",
     "black",
     "flake8",
     "mypy",
 ]
+tui = [
+    "textual>=0.40.0",
+]
+web = [
+    "fastapi>=0.100.0",
+    "uvicorn>=0.23.0",
+]
+all = [
+    "benderbox[tui,web]",
+]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/aegisml"
-Repository = "https://github.com/yourusername/aegisml"
-Documentation = "https://github.com/yourusername/aegisml#readme"
+Homepage = "https://github.com/yourusername/benderbox"
+Repository = "https://github.com/yourusername/benderbox"
+Documentation = "https://github.com/yourusername/benderbox#readme"
 
 [project.scripts]
-aegisml-sandbox = "aegisml.sandbox_cli:main"
-aegisml-interactive = "aegisml.interactive:main"
-aegisml-mcp = "aegisml.mcp_server:main"
+benderbox = "benderbox.sandbox_cli:main"
+benderbox-interactive = "benderbox.interactive:main"
+benderbox-mcp = "benderbox.mcp_server:main"
+# v3.0 entry points
+benderbox-chat = "benderbox.nlp.conversation:main"
+benderbox-tui = "benderbox.ui.tui:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -58,14 +77,15 @@ testpaths = ["tests"]
 python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
+asyncio_mode = "auto"
 
 [tool.black]
 line-length = 100
-target-version = ['py38']
+target-version = ['py39']
 include = '\.pyi?$'
 
 [tool.mypy]
-python_version = "3.8"
+python_version = "3.9"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false

@@ -1,5 +1,5 @@
 """
-AegisML - AI Security Testing and Model Safety Framework
+BenderBox - AI Security Testing and Model Safety Framework
 
 A comprehensive framework for testing and analyzing AI model security,
 MCP server safety, and infrastructure vulnerabilities.

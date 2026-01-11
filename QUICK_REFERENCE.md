@@ -1,4 +1,4 @@
-# AegisML Quick Reference
+# BenderBox Quick Reference
 
 **Version:** 2.0.0
 
@@ -10,19 +10,19 @@
 
 ```bash
 # Quick Analysis (~5-10s)
-python aegisml_sandbox_cli.py --model models/model.gguf --profile quick
+python benderbox_sandbox_cli.py --model models/model.gguf --profile quick
 
 # Standard Analysis (~10-15s) [RECOMMENDED]
-python aegisml_sandbox_cli.py --model models/model.gguf --profile standard
+python benderbox_sandbox_cli.py --model models/model.gguf --profile standard
 
 # Deep Security Audit (~60-90s)
-python aegisml_sandbox_cli.py --model models/model.gguf --profile deep
+python benderbox_sandbox_cli.py --model models/model.gguf --profile deep
 
 # Attack-Focused Testing (~45-60s)
-python aegisml_sandbox_cli.py --model models/model.gguf --profile attack
+python benderbox_sandbox_cli.py --model models/model.gguf --profile attack
 
 # Custom Tests
-python aegisml_sandbox_cli.py --model models/model.gguf --profile custom \
+python benderbox_sandbox_cli.py --model models/model.gguf --profile custom \
   --tests "gguf_metadata_sanity,basic_jailbreak_suite"
 ```
 
@@ -30,32 +30,32 @@ python aegisml_sandbox_cli.py --model models/model.gguf --profile custom \
 
 ```bash
 # MCP Server Quick Scan (~10-20s)
-python aegisml_sandbox_cli.py --mcp-server server.py --profile infra-quick
+python benderbox_sandbox_cli.py --mcp-server server.py --profile infra-quick
 
 # MCP Server Standard Audit (~30-60s) [RECOMMENDED]
-python aegisml_sandbox_cli.py --mcp-server server.py --profile infra-standard
+python benderbox_sandbox_cli.py --mcp-server server.py --profile infra-standard
 
 # MCP Server Deep Analysis (~2-5min)
-python aegisml_sandbox_cli.py --mcp-server server.py --profile infra-deep
+python benderbox_sandbox_cli.py --mcp-server server.py --profile infra-deep
 
 # Skill Security Check (~5-10s)
-python aegisml_sandbox_cli.py --skill custom_skill.md --profile infra-quick
+python benderbox_sandbox_cli.py --skill custom_skill.md --profile infra-quick
 
 # Skill Standard Audit (~15-30s)
-python aegisml_sandbox_cli.py --skill custom_skill.md --profile infra-standard
+python benderbox_sandbox_cli.py --skill custom_skill.md --profile infra-standard
 ```
 
 ### Utility Commands
 
 ```bash
 # Interactive Mode
-python aegisml_sandbox_cli.py --interactive
+python benderbox_sandbox_cli.py --interactive
 
 # View Latest Report
-python aegisml_sandbox_cli.py --summary
+python benderbox_sandbox_cli.py --summary
 
 # List Available Tests
-python aegisml_sandbox_cli.py --list-tests
+python benderbox_sandbox_cli.py --list-tests
 ```
 
 ---
@@ -66,7 +66,7 @@ python aegisml_sandbox_cli.py --list-tests
 
 ```python
 result = await mcp.call_tool(
-    "aegisml_sandbox_analyzeModel",
+    "benderbox_sandbox_analyzeModel",
     {
         "model_path": "./models/model.gguf",
         "profile": "standard",  # quick|standard|deep|attack|custom
@@ -79,7 +79,7 @@ result = await mcp.call_tool(
 
 ```python
 report = await mcp.call_tool(
-    "aegisml_sandbox_getLatestReport",
+    "benderbox_sandbox_getLatestReport",
     {
         "model_name": "model.gguf"  # Optional filter
     }
@@ -89,7 +89,7 @@ report = await mcp.call_tool(
 ### 3. listTests
 
 ```python
-tests = await mcp.call_tool("aegisml_sandbox_listTests", {})
+tests = await mcp.call_tool("benderbox_sandbox_listTests", {})
 ```
 
 ---
@@ -198,7 +198,7 @@ report = {
 ```python
 # 1. Check cache
 cached = await mcp.call_tool(
-    "aegisml_sandbox_getLatestReport",
+    "benderbox_sandbox_getLatestReport",
     {"model_name": "model.gguf"}
 )
 
@@ -210,7 +210,7 @@ if "error" not in cached:
 
 # 3. Otherwise run fresh
 return await mcp.call_tool(
-    "aegisml_sandbox_analyzeModel",
+    "benderbox_sandbox_analyzeModel",
     {"model_path": "./models/model.gguf"}
 )
 ```
@@ -312,11 +312,11 @@ if rate1 < rate2:
 ## Directory Structure
 
 ```
-AegisML/
-├── aegisml_sandbox_cli.py       # Core engine
-├── aegisml_mcp_server.py        # MCP tools
-├── aegisml_interactive.py       # UI (optional)
-├── aegisml_dynamic_tests.py     # Tests
+BenderBox/
+├── benderbox_sandbox_cli.py       # Core engine
+├── benderbox_mcp_server.py        # MCP tools
+├── benderbox_interactive.py       # UI (optional)
+├── benderbox_dynamic_tests.py     # Tests
 │
 ├── skills/                      # Agent behaviors
 ├── models/                      # GGUF files
@@ -338,13 +338,13 @@ export PATH="$PATH:$(pwd)/build/bin"
 
 ### "Dynamic tests not available"
 
-Check `aegisml_dynamic_tests.py` exists and imports correctly.
+Check `benderbox_dynamic_tests.py` exists and imports correctly.
 
 ### Analysis timeout
 
 Increase timeout:
 ```bash
-python aegisml_sandbox_cli.py --model large.gguf --profile deep
+python benderbox_sandbox_cli.py --model large.gguf --profile deep
 # Or in code: timeout=600
 ```
 
@@ -367,7 +367,7 @@ pip install mcp
 
 ## File Locations
 
-- **Reports:** `./sandbox_logs/aegisml_*.json`
+- **Reports:** `./sandbox_logs/benderbox_*.json`
 - **Models:** `./models/*.gguf`
 - **Docs:** `./docs/`
 - **Skills:** `./skills/`
@@ -387,21 +387,21 @@ pip install mcp
 
 ```bash
 # 1. Quick check
-python aegisml_sandbox_cli.py --model new-model.gguf --profile quick
+python benderbox_sandbox_cli.py --model new-model.gguf --profile quick
 
 # 2. Standard analysis
-python aegisml_sandbox_cli.py --model new-model.gguf --profile standard
+python benderbox_sandbox_cli.py --model new-model.gguf --profile standard
 
 # 3. View report
-python aegisml_sandbox_cli.py --summary
+python benderbox_sandbox_cli.py --summary
 
 # 4. If concerns, run deep audit
-python aegisml_sandbox_cli.py --model new-model.gguf --profile deep
+python benderbox_sandbox_cli.py --model new-model.gguf --profile deep
 
 # 5. Review JSON
-cat sandbox_logs/aegisml_*.json | jq '.overall_risk'
+cat sandbox_logs/benderbox_*.json | jq '.overall_risk'
 ```
 
 ---
 
-*Quick reference for AegisML v1.0.0*
+*Quick reference for BenderBox v1.0.0*

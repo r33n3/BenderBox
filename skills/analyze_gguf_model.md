@@ -12,8 +12,8 @@ Extract and analyze GGUF model metadata, safety characteristics, and capabilitie
 - User requests: Model metadata extraction
 
 ## Required Tools
-- `aegisml_sandbox_analyzeModel` - Primary analysis tool
-- `aegisml_sandbox_getLatestReport` - For retrieving cached results
+- `benderbox_sandbox_analyzeModel` - Primary analysis tool
+- `benderbox_sandbox_getLatestReport` - For retrieving cached results
 
 ## Inputs
 - **model_path** (string, required): Path to GGUF model file
@@ -29,12 +29,12 @@ Extract and analyze GGUF model metadata, safety characteristics, and capabilitie
 
 ### 1. Check for Existing Analysis
 If `force_reanalysis` is false:
-  - Call `aegisml_sandbox_getLatestReport` with model filename
+  - Call `benderbox_sandbox_getLatestReport` with model filename
   - If report exists and is recent (< 24 hours), use cached data
   - Otherwise, proceed to step 2
 
 ### 2. Run Analysis
-Call `aegisml_sandbox_analyzeModel` with:
+Call `benderbox_sandbox_analyzeModel` with:
 ```json
 {
   "model_path": "<user_provided_path>",
@@ -96,7 +96,7 @@ Transform JSON into Markdown report (see Output Format below)
 ---
 *Report ID: [run_id]*
 *Generated: [timestamp_utc]*
-*Full JSON: ./sandbox_logs/aegisml_[run_id].json*
+*Full JSON: ./sandbox_logs/benderbox_[run_id].json*
 ```
 
 ### Deep Summary (for profile: deep, attack)
@@ -158,8 +158,8 @@ Include all above sections, PLUS:
 
 **Troubleshooting:**
 - Ensure llama.cpp is installed
-- Check `aegisml_sandbox_cli.py` is present
-- Run manually: `python aegisml_sandbox_cli.py --model [model_path] --profile quick`
+- Check `benderbox_sandbox_cli.py` is present
+- Run manually: `python benderbox_sandbox_cli.py --model [model_path] --profile quick`
 ```
 
 ### If analysis times out:
@@ -178,7 +178,7 @@ Include all above sections, PLUS:
 ```
 User: "What's inside llama-7b-q4.gguf?"
 
-Agent: [Calls aegisml_sandbox_analyzeModel with profile=quick]
+Agent: [Calls benderbox_sandbox_analyzeModel with profile=quick]
 Agent: [Generates standard summary with metadata]
 ```
 
@@ -186,7 +186,7 @@ Agent: [Generates standard summary with metadata]
 ```
 User: "Is model.gguf safe for production?"
 
-Agent: [Calls aegisml_sandbox_analyzeModel with profile=deep]
+Agent: [Calls benderbox_sandbox_analyzeModel with profile=deep]
 Agent: [Generates deep summary with safety analysis]
 Agent: "Based on the analysis, this model shows [X] jailbreak vulnerabilities..."
 ```
@@ -195,7 +195,7 @@ Agent: "Based on the analysis, this model shows [X] jailbreak vulnerabilities...
 ```
 User: "Analyze mymodel.gguf again"
 
-Agent: [Calls aegisml_sandbox_getLatestReport for mymodel.gguf]
+Agent: [Calls benderbox_sandbox_getLatestReport for mymodel.gguf]
 Agent: [Finds report from 2 hours ago]
 Agent: "I found a recent analysis from 2 hours ago. Use that? (y/n)"
 ```
@@ -248,5 +248,5 @@ After showing results, suggest relevant next steps:
 - **Category:** Model Analysis
 - **Complexity:** Medium
 - **Estimated Execution Time:** 5-90s (profile-dependent)
-- **Dependencies:** llama.cpp, aegisml_sandbox_cli.py
+- **Dependencies:** llama.cpp, benderbox_sandbox_cli.py
 - **Output Type:** Markdown report

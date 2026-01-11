@@ -1,4 +1,4 @@
-# AegisML MCP Tools Documentation
+# BenderBox MCP Tools Documentation
 
 **Version:** 1.0.0
 **Last Updated:** 2025-12-10
@@ -7,23 +7,23 @@
 
 ## Overview
 
-AegisML provides Model Context Protocol (MCP) tools that allow AI agents to analyze GGUF models for safety and capabilities. All tools are **stateless wrappers** around the `aegisml_sandbox_cli.py` engine.
+BenderBox provides Model Context Protocol (MCP) tools that allow AI agents to analyze GGUF models for safety and capabilities. All tools are **stateless wrappers** around the `benderbox_sandbox_cli.py` engine.
 
 ### MCP Server
 
-**Module:** `aegisml_mcp_server.py`
+**Module:** `benderbox_mcp_server.py`
 
 **Usage:**
 ```bash
 # Run MCP server
-python aegisml_mcp_server.py
+python benderbox_mcp_server.py
 
 # Or add to MCP client configuration
 {
   "mcpServers": {
-    "aegisml": {
+    "benderbox": {
       "command": "python",
-      "args": ["/path/to/aegisml_mcp_server.py"]
+      "args": ["/path/to/benderbox_mcp_server.py"]
     }
   }
 }
@@ -33,13 +33,13 @@ python aegisml_mcp_server.py
 
 ## Available Tools
 
-### 1. aegisml_sandbox_analyzeModel
+### 1. benderbox_sandbox_analyzeModel
 
 Analyze a GGUF model file for safety, capabilities, and metadata.
 
 #### Description
 
-Runs the AegisML sandbox analysis pipeline and returns a comprehensive JSON report including:
+Runs the BenderBox sandbox analysis pipeline and returns a comprehensive JSON report including:
 - GGUF metadata (architecture, parameters, quantization, context length)
 - Risk assessment (level, score, primary factors)
 - Safety analysis (jailbreak resistance, backdoor detection)
@@ -190,7 +190,7 @@ Returns full JSON analysis report:
 **Python (via MCP SDK):**
 ```python
 result = await mcp_client.call_tool(
-    "aegisml_sandbox_analyzeModel",
+    "benderbox_sandbox_analyzeModel",
     {
         "model_path": "./models/llama-7b-q4.gguf",
         "profile": "standard"
@@ -209,7 +209,7 @@ jailbreak_rate = report["safety"]["jailbreak_success_rate"]
 
 **Skill (Markdown):**
 ```markdown
-Call `aegisml_sandbox_analyzeModel`:
+Call `benderbox_sandbox_analyzeModel`:
 \`\`\`json
 {
   "model_path": "./models/llama-7b-q4.gguf",
@@ -242,14 +242,14 @@ Extract from JSON response:
 
 ```json
 {
-  "error": "aegisml_sandbox_cli.py not found",
+  "error": "benderbox_sandbox_cli.py not found",
   "type": "FileNotFoundError"
 }
 ```
 
 ---
 
-### 2. aegisml_sandbox_getLatestReport
+### 2. benderbox_sandbox_getLatestReport
 
 Retrieve the most recent sandbox analysis report from the log directory.
 
@@ -296,7 +296,7 @@ Returns same JSON report schema as `analyzeModel`, or:
 **Get latest report for any model:**
 ```python
 result = await mcp_client.call_tool(
-    "aegisml_sandbox_getLatestReport",
+    "benderbox_sandbox_getLatestReport",
     {}
 )
 
@@ -308,7 +308,7 @@ if "error" not in report:
 **Get latest report for specific model:**
 ```python
 result = await mcp_client.call_tool(
-    "aegisml_sandbox_getLatestReport",
+    "benderbox_sandbox_getLatestReport",
     {
         "model_name": "llama-7b-q4.gguf"
     }
@@ -318,7 +318,7 @@ result = await mcp_client.call_tool(
 **Caching Pattern (Skill):**
 ```markdown
 ### 1. Check for Cached Report
-Call `aegisml_sandbox_getLatestReport`:
+Call `benderbox_sandbox_getLatestReport`:
 \`\`\`json
 {
   "model_name": "[user_provided_model_name]"
@@ -330,12 +330,12 @@ If report found:
   - Ask user: "Found analysis from [X] hours ago. Use? (y/n)"
 
 If report not found OR user wants fresh:
-  - Proceed with `aegisml_sandbox_analyzeModel`
+  - Proceed with `benderbox_sandbox_analyzeModel`
 ```
 
 ---
 
-### 3. aegisml_sandbox_listTests
+### 3. benderbox_sandbox_listTests
 
 List all available sandbox tests and their categories.
 
@@ -371,7 +371,7 @@ Queries the sandbox CLI for registered tests. Returns test names and categories 
 **List all tests:**
 ```python
 result = await mcp_client.call_tool(
-    "aegisml_sandbox_listTests",
+    "benderbox_sandbox_listTests",
     {}
 )
 
@@ -383,7 +383,7 @@ for test in data["tests"]:
 **Use with custom profile:**
 ```python
 # First, list tests
-tests_result = await mcp_client.call_tool("aegisml_sandbox_listTests", {})
+tests_result = await mcp_client.call_tool("benderbox_sandbox_listTests", {})
 tests = json.loads(tests_result.text)["tests"]
 
 # Find security tests
@@ -391,7 +391,7 @@ security_tests = [t["name"] for t in tests if t["category"] == "security"]
 
 # Run custom profile with only security tests
 result = await mcp_client.call_tool(
-    "aegisml_sandbox_analyzeModel",
+    "benderbox_sandbox_analyzeModel",
     {
         "model_path": "./models/model.gguf",
         "profile": "custom",
@@ -559,12 +559,12 @@ from mcp import ClientSession
 
 async def analyze_model():
     async with ClientSession() as session:
-        # Connect to AegisML MCP server
+        # Connect to BenderBox MCP server
         await session.initialize()
 
         # Run analysis
         result = await session.call_tool(
-            "aegisml_sandbox_analyzeModel",
+            "benderbox_sandbox_analyzeModel",
             {
                 "model_path": "./models/llama-7b-q4.gguf",
                 "profile": "standard"
@@ -593,7 +593,7 @@ async def analyze_with_cache(model_name):
 
         # Check for cached report
         cached = await session.call_tool(
-            "aegisml_sandbox_getLatestReport",
+            "benderbox_sandbox_getLatestReport",
             {"model_name": model_name}
         )
 
@@ -607,7 +607,7 @@ async def analyze_with_cache(model_name):
         # Run fresh analysis
         print("Running new analysis...")
         result = await session.call_tool(
-            "aegisml_sandbox_analyzeModel",
+            "benderbox_sandbox_analyzeModel",
             {
                 "model_path": f"./models/{model_name}",
                 "profile": "standard"
@@ -626,7 +626,7 @@ async def security_audit(model_path):
 
         # Run attack profile
         result = await session.call_tool(
-            "aegisml_sandbox_analyzeModel",
+            "benderbox_sandbox_analyzeModel",
             {
                 "model_path": model_path,
                 "profile": "attack",
@@ -661,7 +661,7 @@ async def run_custom_tests(model_path, test_categories):
 
         # List available tests
         tests_result = await session.call_tool(
-            "aegisml_sandbox_listTests",
+            "benderbox_sandbox_listTests",
             {}
         )
 
@@ -677,7 +677,7 @@ async def run_custom_tests(model_path, test_categories):
 
         # Run custom profile
         result = await session.call_tool(
-            "aegisml_sandbox_analyzeModel",
+            "benderbox_sandbox_analyzeModel",
             {
                 "model_path": model_path,
                 "profile": "custom",
@@ -739,7 +739,7 @@ await run_custom_tests("./models/model.gguf", ["security", "dynamic"])
 **Cause:** Sandbox CLI encountered error
 
 **Solution:**
-- Run CLI manually to diagnose: `python aegisml_sandbox_cli.py --model <path> --profile quick`
+- Run CLI manually to diagnose: `python benderbox_sandbox_cli.py --model <path> --profile quick`
 - Check llama.cpp is installed
 - Verify model file is valid GGUF
 
@@ -768,7 +768,7 @@ await run_custom_tests("./models/model.gguf", ["security", "dynamic"])
 async def safe_analyze(model_path):
     try:
         result = await session.call_tool(
-            "aegisml_sandbox_analyzeModel",
+            "benderbox_sandbox_analyzeModel",
             {"model_path": model_path, "profile": "standard"}
         )
 
@@ -805,7 +805,7 @@ async def safe_analyze(model_path):
 Always check for recent reports:
 ```python
 # Check cache first
-cached = await call_tool("aegisml_sandbox_getLatestReport", {...})
+cached = await call_tool("benderbox_sandbox_getLatestReport", {...})
 if "error" not in cached:
     # Use cached data (saves 10-90s)
 ```
@@ -815,7 +815,7 @@ if "error" not in cached:
 For large models or comprehensive testing:
 ```python
 await call_tool(
-    "aegisml_sandbox_analyzeModel",
+    "benderbox_sandbox_analyzeModel",
     {
         "model_path": "./large-model.gguf",
         "profile": "deep",
@@ -840,12 +840,12 @@ results = await asyncio.gather(*tasks)
 
 ## Troubleshooting
 
-### "aegisml_sandbox_cli.py not found"
+### "benderbox_sandbox_cli.py not found"
 
 **Cause:** MCP server can't locate CLI script
 
 **Solution:**
-1. Ensure `aegisml_sandbox_cli.py` is in same directory as `aegisml_mcp_server.py`
+1. Ensure `benderbox_sandbox_cli.py` is in same directory as `benderbox_mcp_server.py`
 2. Or provide explicit path in `cli_path` parameter
 3. Check file permissions (must be readable)
 
@@ -869,12 +869,12 @@ results = await asyncio.gather(*tasks)
 
 ### "Dynamic tests not available"
 
-**Cause:** `aegisml_dynamic_tests.py` not found or failed to import
+**Cause:** `benderbox_dynamic_tests.py` not found or failed to import
 
 **Solution:**
-1. Ensure `aegisml_dynamic_tests.py` exists
+1. Ensure `benderbox_dynamic_tests.py` exists
 2. Check Python imports (no missing dependencies)
-3. Run: `python aegisml_sandbox_cli.py --list-tests` to verify
+3. Run: `python benderbox_sandbox_cli.py --list-tests` to verify
 
 ---
 
@@ -949,7 +949,7 @@ if report["schema_version"] != "0.1.0":
 
 - **Architecture:** `./docs/ARCHITECTURE.md`
 - **Skill Guide:** `./docs/SKILL_GUIDE.md`
-- **CLI Reference:** `python aegisml_sandbox_cli.py --help`
+- **CLI Reference:** `python benderbox_sandbox_cli.py --help`
 - **MCP Specification:** https://modelcontextprotocol.io
 
 ---

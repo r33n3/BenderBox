@@ -12,8 +12,8 @@ Test a GGUF model's resistance to jailbreak attempts and policy violations using
 - User mentions: "DAN", "prompt injection", "jailbreak", "bypass safety"
 
 ## Required Tools
-- `aegisml_sandbox_analyzeModel` - Run with `attack` or `deep` profile
-- `aegisml_sandbox_getLatestReport` - Check for existing security audits
+- `benderbox_sandbox_analyzeModel` - Run with `attack` or `deep` profile
+- `benderbox_sandbox_getLatestReport` - Check for existing security audits
 
 ## Inputs
 - **model_path** (string, required): Path to GGUF model file
@@ -43,7 +43,7 @@ If a security audit was run in the last 6 hours:
 - Offer to re-run: "Last audit was [X] hours ago. Re-run? (y/n)"
 
 ### 3. Execute Jailbreak Testing
-Call `aegisml_sandbox_analyzeModel`:
+Call `benderbox_sandbox_analyzeModel`:
 ```json
 {
   "model_path": "<user_provided_path>",
@@ -187,7 +187,7 @@ Transform data into actionable security assessment (see Output Format)
 
 [Offer relevant follow-up actions:]
 
-1. **View Full Report:** `./sandbox_logs/aegisml_[run_id].json`
+1. **View Full Report:** `./sandbox_logs/benderbox_[run_id].json`
 2. **Compare with Other Models:** [Offer to run comparison if multiple models available]
 3. **Test Backdoors:** Run backdoor detection to check for hidden triggers
 4. **Deep Analysis:** Run comprehensive test suite (if only attack profile was used)
@@ -236,7 +236,7 @@ Jailbreak testing requires running the model with adversarial prompts.
 ```
 User: "Is llama-7b-q4.gguf safe to use?"
 
-Agent: [Calls aegisml_sandbox_analyzeModel with profile=attack]
+Agent: [Calls benderbox_sandbox_analyzeModel with profile=attack]
 Agent: "I've tested the model with 15 common jailbreak attempts..."
 Agent: [Shows security assessment with 8% success rate]
 Agent: "✅ GOOD - This model shows acceptable safety for most use cases."
@@ -307,6 +307,6 @@ Agent: "Comparison Results:
 - **Category:** Security Testing
 - **Complexity:** High
 - **Estimated Execution Time:** 30-90s (thoroughness-dependent)
-- **Dependencies:** llama.cpp, aegisml_dynamic_tests.py
+- **Dependencies:** llama.cpp, benderbox_dynamic_tests.py
 - **Output Type:** Markdown security report
 - **Sensitivity:** High (results may reveal model vulnerabilities)
