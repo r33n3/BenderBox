@@ -34,6 +34,11 @@ data/
 .DS_Store
 Thumbs.db
 
+# IDE and tool configurations
+.claude/
+.vscode/
+.idea/
+
 # Backup or temp files
 *.bak
 *.swp
