@@ -228,6 +228,12 @@ python bb.py config api-keys          # List API keys
 python bb.py config set-key <provider>
 python bb.py config test-key <provider>
 
+# Model Management (for NLP/chat features)
+python bb.py models list              # List downloaded & recommended models
+python bb.py models download          # Download recommended model
+python bb.py models download tinyllama # Download specific model
+python bb.py models setup             # Set up default model for NLP
+
 # System
 python bb.py status                   # Show system status
 python bb.py version                  # Show version

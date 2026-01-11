@@ -1098,6 +1098,265 @@ def config_show_path(ctx):
         print("Status: File does not exist (will be created when you set a key)")
 
 
+# Models command group for managing local NLP models
+@cli.group()
+@click.pass_context
+def models(ctx):
+    """Manage local GGUF models for NLP features."""
+    pass
+
+
+@models.command("list")
+@click.pass_context
+def models_list(ctx):
+    """List downloaded and recommended models."""
+    from benderbox.ui.terminal import TerminalUI
+    from benderbox.utils.model_manager import ModelManager, RECOMMENDED_MODELS
+
+    ui = TerminalUI()
+    ui.print_banner()
+
+    manager = ModelManager()
+
+    try:
+        from rich.table import Table
+        from rich.console import Console
+
+        console = Console()
+
+        # Show downloaded models
+        downloaded = manager.get_downloaded_models()
+
+        if downloaded:
+            table = Table(title="Downloaded Models")
+            table.add_column("Name", style="cyan")
+            table.add_column("Size", style="green")
+            table.add_column("Location", style="dim")
+
+            for model in downloaded:
+                table.add_row(
+                    model["name"],
+                    f"{model['size_mb']} MB",
+                    model["location"],
+                )
+
+            console.print(table)
+        else:
+            ui.print_warning("No models downloaded yet.")
+
+        print()
+
+        # Show default model status
+        default_path = manager.get_default_model_path()
+        if default_path:
+            ui.print_success(f"Default model: {default_path.name}")
+            ui.print_info(f"Path: {default_path}")
+        else:
+            ui.print_warning("No default model configured.")
+            ui.print_info("Set one with: benderbox models setup")
+
+        print()
+
+        # Show recommended models
+        rec_table = Table(title="Recommended Models")
+        rec_table.add_column("ID", style="cyan")
+        rec_table.add_column("Name", style="bold")
+        rec_table.add_column("Size", style="green")
+        rec_table.add_column("RAM Needed", style="yellow")
+        rec_table.add_column("Quality")
+        rec_table.add_column("Description", style="dim")
+
+        for key, model in RECOMMENDED_MODELS.items():
+            quality_color = {"basic": "yellow", "good": "green", "best": "cyan"}
+            rec_table.add_row(
+                key,
+                model.name,
+                f"{model.size_mb} MB",
+                f"{model.min_ram_gb}+ GB",
+                f"[{quality_color.get(model.quality, 'white')}]{model.quality}[/]",
+                model.description[:50] + "..." if len(model.description) > 50 else model.description,
+            )
+
+        console.print(rec_table)
+        print()
+        ui.print_info("Download a model: benderbox models download <id>")
+        ui.print_info("For your system (14GB RAM): 'tinyllama' or 'phi2' recommended")
+
+    except ImportError:
+        # Fallback without rich
+        print("Downloaded models:")
+        for model in downloaded:
+            print(f"  - {model['name']} ({model['size_mb']} MB)")
+
+
+@models.command("download")
+@click.argument("model_id", required=False)
+@click.option("--set-default", "-d", is_flag=True, help="Set as default model after download")
+@click.pass_context
+def models_download(ctx, model_id: str, set_default: bool):
+    """Download a recommended model for NLP features.
+
+    MODEL_ID is the model identifier (e.g., 'tinyllama', 'phi2').
+    If not specified, downloads the recommended model for your system.
+    """
+    import asyncio
+    from benderbox.ui.terminal import TerminalUI, ProgressSpinner
+    from benderbox.utils.model_manager import ModelManager, RECOMMENDED_MODELS, DEFAULT_MODEL
+
+    ui = TerminalUI()
+    ui.print_banner()
+
+    manager = ModelManager()
+
+    # Default to recommended model if not specified
+    if not model_id:
+        model_id = DEFAULT_MODEL
+        ui.print_info(f"No model specified, using recommended: {model_id}")
+
+    if model_id not in RECOMMENDED_MODELS:
+        ui.print_error(f"Unknown model: {model_id}")
+        ui.print_info(f"Available models: {', '.join(RECOMMENDED_MODELS.keys())}")
+        return
+
+    model = RECOMMENDED_MODELS[model_id]
+    ui.print_info(f"Model: {model.name}")
+    ui.print_info(f"Size: ~{model.size_mb} MB")
+    ui.print_info(f"Source: {model.huggingface_repo}")
+    print()
+
+    if not click.confirm("Download this model?"):
+        ui.print_info("Cancelled")
+        return
+
+    async def do_download():
+        def progress_cb(msg, pct):
+            pass  # Progress handled by spinner
+
+        return await manager.download_model(model_id, progress_cb)
+
+    try:
+        from rich.console import Console
+        from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
+
+        console = Console()
+
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task(f"Downloading {model.name}...", total=None)
+            success, message, path = asyncio.run(do_download())
+
+        print()
+
+        if success:
+            ui.print_success(message)
+            ui.print_info(f"Path: {path}")
+
+            if set_default or click.confirm("Set as default model for NLP features?"):
+                ok, msg = manager.setup_default_model(path)
+                if ok:
+                    ui.print_success(msg)
+                else:
+                    ui.print_error(msg)
+        else:
+            ui.print_error(message)
+
+    except ImportError:
+        # Fallback without rich
+        print(f"Downloading {model.name}...")
+        success, message, path = asyncio.run(do_download())
+        if success:
+            print(f"Success: {message}")
+            print(f"Path: {path}")
+        else:
+            print(f"Error: {message}")
+
+
+@models.command("setup")
+@click.argument("model_path", required=False, type=click.Path(exists=True))
+@click.pass_context
+def models_setup(ctx, model_path: str):
+    """Set up a model as the default for NLP features.
+
+    If MODEL_PATH is not specified, uses the first available downloaded model.
+    """
+    from pathlib import Path
+    from benderbox.ui.terminal import TerminalUI
+    from benderbox.utils.model_manager import ModelManager
+
+    ui = TerminalUI()
+    ui.print_banner()
+
+    manager = ModelManager()
+
+    if model_path:
+        path = Path(model_path)
+    else:
+        # Find an available model
+        downloaded = manager.get_downloaded_models()
+        if not downloaded:
+            ui.print_error("No models found. Download one first:")
+            ui.print_info("  benderbox models download tinyllama")
+            return
+
+        # Prefer TinyLlama if available
+        tinyllama = next((m for m in downloaded if "tinyllama" in m["name"].lower()), None)
+        if tinyllama:
+            path = Path(tinyllama["path"])
+            ui.print_info(f"Found TinyLlama model: {path.name}")
+        else:
+            path = Path(downloaded[0]["path"])
+            ui.print_info(f"Using first available model: {path.name}")
+
+    if not click.confirm(f"Set {path.name} as default model?"):
+        ui.print_info("Cancelled")
+        return
+
+    success, message = manager.setup_default_model(path)
+
+    if success:
+        ui.print_success(message)
+        ui.print_info("You can now use NLP features: benderbox chat")
+    else:
+        ui.print_error(message)
+
+
+@models.command("info")
+@click.argument("model_id")
+@click.pass_context
+def models_info(ctx, model_id: str):
+    """Show detailed information about a recommended model."""
+    from benderbox.ui.terminal import TerminalUI
+    from benderbox.utils.model_manager import RECOMMENDED_MODELS
+
+    ui = TerminalUI()
+
+    if model_id not in RECOMMENDED_MODELS:
+        ui.print_error(f"Unknown model: {model_id}")
+        ui.print_info(f"Available: {', '.join(RECOMMENDED_MODELS.keys())}")
+        return
+
+    model = RECOMMENDED_MODELS[model_id]
+
+    print()
+    print(f"Model: {model.name}")
+    print(f"ID: {model_id}")
+    print()
+    print(f"Description: {model.description}")
+    print()
+    print(f"HuggingFace: {model.huggingface_repo}")
+    print(f"Filename: {model.filename}")
+    print(f"Size: ~{model.size_mb} MB")
+    print(f"Min RAM: {model.min_ram_gb} GB")
+    print(f"Quality: {model.quality}")
+    print(f"Use case: {model.use_case}")
+    print()
+    print(f"Download: benderbox models download {model_id}")
+
+
 def main():
     """Main entry point."""
     cli(obj={})
