@@ -26,12 +26,8 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 
+# Core dependencies - minimal for CLI and prerequisites
 dependencies = [
-    "mcp>=0.1.0",
-    # v3.0 NLP dependencies
-    "llama-cpp-python>=0.2.0",
-    "chromadb>=0.4.0",
-    "sentence-transformers>=2.2.0",
     "pyyaml>=6.0",
     "aiosqlite>=0.19.0",
     # CLI and UI
@@ -43,6 +39,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# ML/NLP dependencies (require numpy, may not work on Python 3.14+)
+nlp = [
+    "mcp>=0.1.0",
+    "llama-cpp-python>=0.2.0",
+    "chromadb>=0.4.0",
+    "sentence-transformers>=2.2.0",
+]
 dev = [
     "pytest>=7.0",
     "pytest-cov",
@@ -59,7 +62,7 @@ web = [
     "uvicorn>=0.23.0",
 ]
 all = [
-    "benderbox[tui,web]",
+    "benderbox[nlp,tui,web]",
 ]
 
 [project.urls]
@@ -68,10 +71,13 @@ Repository = "https://github.com/yourusername/benderbox"
 Documentation = "https://github.com/yourusername/benderbox#readme"
 
 [project.scripts]
-benderbox = "benderbox.sandbox_cli:main"
+# v3.0 main entry point
+benderbox = "benderbox.ui.app:main"
+# Legacy entry points
+benderbox-legacy = "benderbox.sandbox_cli:main"
 benderbox-interactive = "benderbox.interactive:main"
 benderbox-mcp = "benderbox.mcp_server:main"
-# v3.0 entry points
+# v3.0 additional entry points
 benderbox-chat = "benderbox.nlp.conversation:main"
 benderbox-tui = "benderbox.ui.tui:main"
 
