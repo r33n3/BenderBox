@@ -140,7 +140,7 @@ class BenderBoxApp:
         Run analysis on a target.
 
         Args:
-            target: Path to analyze.
+            target: Path, URL, or Hugging Face model ID to analyze.
             profile: Analysis profile.
             output: Output path.
             format: Output format.
@@ -150,27 +150,84 @@ class BenderBoxApp:
         """
         await self.initialize()
 
-        from benderbox.ui.dashboard import AnalysisDashboard, ProgressTracker
+        from benderbox.ui.dashboard import ProgressTracker
+        from benderbox.utils import ModelSourceHandler, ModelSource
 
         self.terminal_ui.print_banner()
-        self.terminal_ui.print_info(f"Analyzing: {target}")
+
+        # Detect source type and show appropriate message
+        handler = ModelSourceHandler(
+            cache_path=Path(self.config.storage.model_cache_path),
+            cache_ttl_days=self.config.storage.model_cache_ttl_days,
+            download_timeout=self.config.storage.download_timeout_seconds,
+            max_size_gb=self.config.storage.max_download_size_gb,
+        )
+        source_type = handler.detect_source(target)
+
+        if source_type == ModelSource.URL:
+            self.terminal_ui.print_info(f"Target: {target}")
+            self.terminal_ui.print_info("Source: URL (will download if not cached)")
+        elif source_type == ModelSource.HUGGINGFACE:
+            self.terminal_ui.print_info(f"Target: {target}")
+            self.terminal_ui.print_info("Source: Hugging Face (will download if not cached)")
+        else:
+            self.terminal_ui.print_info(f"Analyzing: {target}")
+
         self.terminal_ui.print_info(f"Profile: {profile}")
 
         result = None
 
         if self._conversation_manager:
-            # Use conversation manager for analysis
-            with ProgressTracker(
-                console=self.terminal_ui.console,
-                description="Running analysis...",
-            ) as tracker:
-                tracker.start(1)
+            # Create download progress callback for Rich progress bar
+            download_progress = None
+            progress_task_id = None
 
-                query = f"analyze {target} with {profile} profile"
-                response = await self._conversation_manager.process_query(query)
+            try:
+                from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, DownloadColumn, TransferSpeedColumn
 
-                tracker.advance()
-                result = response.analysis_result
+                if source_type != ModelSource.LOCAL and self.terminal_ui.console:
+                    download_progress = Progress(
+                        SpinnerColumn(),
+                        TextColumn("[progress.description]{task.description}"),
+                        BarColumn(),
+                        DownloadColumn(),
+                        TransferSpeedColumn(),
+                        console=self.terminal_ui.console,
+                    )
+
+                    def on_download_progress(prog):
+                        nonlocal progress_task_id
+                        if progress_task_id is None:
+                            progress_task_id = download_progress.add_task(
+                                f"Downloading {prog.filename}...",
+                                total=prog.total_bytes or 100,
+                            )
+                        download_progress.update(
+                            progress_task_id,
+                            completed=prog.downloaded_bytes,
+                            total=prog.total_bytes or 100,
+                        )
+
+                    download_progress.start()
+            except ImportError:
+                on_download_progress = None
+
+            try:
+                # Use conversation manager for analysis
+                with ProgressTracker(
+                    console=self.terminal_ui.console,
+                    description="Running analysis...",
+                ) as tracker:
+                    tracker.start(1)
+
+                    query = f"analyze {target} with {profile} profile"
+                    response = await self._conversation_manager.process_query(query)
+
+                    tracker.advance()
+                    result = response.analysis_result
+            finally:
+                if download_progress:
+                    download_progress.stop()
 
         if result:
             self.terminal_ui.print_analysis_summary(result)

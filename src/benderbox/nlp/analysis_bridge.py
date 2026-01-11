@@ -11,7 +11,10 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from benderbox.utils.model_source import DownloadProgress
 
 logger = logging.getLogger(__name__)
 
@@ -102,20 +105,38 @@ class AnalysisBridge:
     - Analysis coordination
     """
 
-    def __init__(self, log_dir: Optional[str] = None):
+    def __init__(
+        self,
+        log_dir: Optional[str] = None,
+        model_cache_path: Optional[str] = None,
+        cache_ttl_days: int = 30,
+        download_timeout: int = 600,
+        max_download_size_gb: float = 50.0,
+    ):
         """
         Initialize AnalysisBridge.
 
         Args:
             log_dir: Directory for analysis logs. Defaults to ./sandbox_logs.
+            model_cache_path: Path for caching downloaded models.
+            cache_ttl_days: Days to keep cached models.
+            download_timeout: Download timeout in seconds.
+            max_download_size_gb: Maximum download size in GB.
         """
         self.log_dir = Path(log_dir or "./sandbox_logs")
         self.log_dir.mkdir(parents=True, exist_ok=True)
+
+        # Model source handler config
+        self._model_cache_path = Path(model_cache_path) if model_cache_path else Path("data/models")
+        self._cache_ttl_days = cache_ttl_days
+        self._download_timeout = download_timeout
+        self._max_download_size_gb = max_download_size_gb
 
         # Lazy import of sandbox_cli components
         self._sandbox_analyze = None
         self._test_registry = None
         self._profile_tests = None
+        self._model_source_handler = None
 
     def _ensure_imported(self) -> None:
         """Ensure sandbox_cli components are imported."""
@@ -135,26 +156,88 @@ class AnalysisBridge:
             logger.error(f"Failed to import sandbox_cli: {e}")
             raise AnalysisBridgeError(f"Analysis engine not available: {e}")
 
+    def _get_model_source_handler(self):
+        """Get or create the model source handler."""
+        if self._model_source_handler is None:
+            from benderbox.utils.model_source import ModelSourceHandler
+            self._model_source_handler = ModelSourceHandler(
+                cache_path=self._model_cache_path,
+                cache_ttl_days=self._cache_ttl_days,
+                download_timeout=self._download_timeout,
+                max_size_gb=self._max_download_size_gb,
+            )
+        return self._model_source_handler
+
+    async def resolve_model_source(
+        self,
+        target: str,
+        progress_callback: Optional[Callable[["DownloadProgress"], None]] = None,
+    ) -> Path:
+        """
+        Resolve a model target to a local path.
+
+        Supports:
+        - Local file paths (returned as-is if exists)
+        - HTTP/HTTPS URLs (downloaded and cached)
+        - Hugging Face model IDs (downloaded and cached)
+
+        Args:
+            target: Model target (path, URL, or HF model ID).
+            progress_callback: Optional callback for download progress.
+
+        Returns:
+            Path to the local model file.
+
+        Raises:
+            AnalysisBridgeError: If resolution fails.
+        """
+        from benderbox.utils.model_source import ModelSource, ModelSourceError
+
+        handler = self._get_model_source_handler()
+        source_type = handler.detect_source(target)
+
+        logger.info(f"Resolving model target: {target} (source: {source_type.value})")
+
+        try:
+            result = await handler.resolve(target, progress_callback)
+
+            if result.cached:
+                logger.info(f"Using cached model: {result.local_path}")
+            else:
+                logger.info(f"Model resolved to: {result.local_path}")
+
+            return result.local_path
+
+        except ModelSourceError as e:
+            raise AnalysisBridgeError(str(e)) from e
+
     async def analyze_model(
         self,
         model_path: str,
         profile: str = "standard",
         progress_callback: Optional[Callable[[str], None]] = None,
+        download_progress_callback: Optional[Callable[["DownloadProgress"], None]] = None,
     ) -> Dict[str, Any]:
         """
         Analyze a GGUF model file.
 
         Args:
-            model_path: Path to the model file.
+            model_path: Path, URL, or Hugging Face model ID.
             profile: Analysis profile (quick, standard, deep, attack).
             progress_callback: Optional callback for progress updates.
+            download_progress_callback: Optional callback for download progress.
 
         Returns:
             Analysis result dictionary.
         """
         self._ensure_imported()
 
-        path = Path(model_path)
+        # Resolve model source (handles URLs, HF, and local paths)
+        if progress_callback:
+            progress_callback(f"Resolving model source: {model_path}...")
+
+        path = await self.resolve_model_source(model_path, download_progress_callback)
+
         if not path.exists():
             raise AnalysisBridgeError(f"Model not found: {model_path}")
 

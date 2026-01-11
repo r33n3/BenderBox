@@ -52,6 +52,12 @@ class StorageConfig:
     # Report storage
     reports_path: str = "data/reports"
 
+    # Model cache for downloaded models (URLs, Hugging Face)
+    model_cache_path: str = "data/models"
+    model_cache_ttl_days: int = 30
+    download_timeout_seconds: int = 600
+    max_download_size_gb: float = 50.0
+
 
 @dataclass
 class EmbeddingConfig:

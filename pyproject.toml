@@ -34,6 +34,12 @@ dependencies = [
     "sentence-transformers>=2.2.0",
     "pyyaml>=6.0",
     "aiosqlite>=0.19.0",
+    # CLI and UI
+    "click>=8.0.0",
+    "rich>=13.0.0",
+    # Model downloads (URL and Hugging Face support)
+    "httpx>=0.25.0",
+    "huggingface-hub>=0.20.0",
 ]
 
 [project.optional-dependencies]

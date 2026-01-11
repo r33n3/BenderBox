@@ -262,16 +262,32 @@ class ChatUI:
         """Handle analyze command."""
         if not command.args:
             self.ui.print_error("Please specify a target to analyze.")
-            self.ui.print_info("Usage: analyze <path> [--profile <profile>]")
+            self.ui.print_info("Usage: analyze <path|url|hf_model> [--profile <profile>]")
             return
 
         target = command.args[0]
         profile = command.flags.get("profile", "standard")
 
+        # Detect source type and show appropriate message
+        try:
+            from benderbox.utils import ModelSourceHandler, ModelSource
+            handler = ModelSourceHandler()
+            source_type = handler.detect_source(target)
+
+            if source_type == ModelSource.URL:
+                self.ui.print_info(f"Target: {target}")
+                self.ui.print_info("Source: URL (downloading if not cached...)")
+            elif source_type == ModelSource.HUGGINGFACE:
+                self.ui.print_info(f"Target: {target}")
+                self.ui.print_info("Source: Hugging Face (downloading if not cached...)")
+        except ImportError:
+            pass  # Utils not available, continue with basic behavior
+
         query = f"analyze {target} with {profile} profile"
 
         if self._conversation:
-            with ProgressSpinner(self.ui, f"Analyzing {target}..."):
+            spinner_msg = f"Analyzing {target}..."
+            with ProgressSpinner(self.ui, spinner_msg):
                 response = await self._conversation.process_query(query)
 
             self._last_result = response.analysis_result
