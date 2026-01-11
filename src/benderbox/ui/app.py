@@ -625,7 +625,7 @@ def prereq_remove(ctx, name: str):
 
 # Interrogation command
 @cli.command()
-@click.argument("model_path", type=click.Path(exists=True))
+@click.argument("model_target")
 @click.option("-p", "--profile", default="quick", help="Interrogation profile (quick, standard, full)")
 @click.option("-c", "--censorship", default="unknown", help="Claimed censorship level")
 @click.option("-o", "--output", help="Output report file path")
@@ -633,7 +633,7 @@ def prereq_remove(ctx, name: str):
 @click.pass_context
 def interrogate(
     ctx,
-    model_path: str,
+    model_target: str,
     profile: str,
     censorship: str,
     output: Optional[str],
@@ -642,38 +642,83 @@ def interrogate(
     """
     Interrogate a model for safety and censorship validation.
 
+    MODEL_TARGET can be:
+    - Local file path: ./model.gguf
+    - Hugging Face model ID: TheBloke/Llama-2-7B-GGUF
+    - Hugging Face URL: https://huggingface.co/TheBloke/...
+    - Direct download URL: https://example.com/model.gguf
+
     Tests the model with various prompts to detect:
     - Unwanted outputs (harmful content generation)
     - Jailbreak vulnerabilities
     - Censorship level verification
     - Mislabeling detection
     """
+    import asyncio
     from pathlib import Path
     from benderbox.ui.terminal import TerminalUI
+    from benderbox.config import load_config
+    from benderbox.utils import ModelSourceHandler, ModelSource
 
     ui = TerminalUI()
     ui.print_banner()
 
     try:
         from benderbox.interrogation.engine import InterrogationEngine
-        from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
+        from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, DownloadColumn, TransferSpeedColumn
         from rich.console import Console
         from rich.table import Table
 
         console = Console()
+        config = load_config()
 
-        ui.print_info(f"Interrogating: {model_path}")
+        # Resolve model source (download if needed)
+        handler = ModelSourceHandler.from_config(config)
+        source = handler.detect_source(model_target)
+
+        if source != ModelSource.LOCAL:
+            ui.print_info(f"Source: {source.value}")
+            ui.print_info(f"Resolving: {model_target}")
+
+            # Download with progress
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                DownloadColumn(),
+                TransferSpeedColumn(),
+                console=console,
+            ) as progress:
+                download_task = progress.add_task("Downloading model...", total=100)
+
+                def download_progress(dp):
+                    if dp.total_bytes > 0:
+                        progress.update(
+                            download_task,
+                            completed=dp.percent,
+                            description=f"Downloading {dp.filename}..."
+                        )
+
+                resolved = asyncio.run(handler.resolve(model_target, download_progress))
+
+            model_path = resolved.local_path
+            if resolved.cached:
+                ui.print_info(f"Using cached model: {model_path}")
+            else:
+                ui.print_success(f"Downloaded to: {model_path}")
+        else:
+            model_path = Path(model_target)
+            if not model_path.exists():
+                ui.print_error(f"Model file not found: {model_target}")
+                return
+
+        print()
+        ui.print_info(f"Interrogating: {model_path.name}")
         ui.print_info(f"Profile: {profile}")
         ui.print_info(f"Claimed censorship: {censorship}")
         print()
 
         engine = InterrogationEngine()
-
-        # Progress tracking
-        current_status = ["Initializing..."]
-
-        def progress_callback(message: str, percent: float):
-            current_status[0] = message
 
         # Run interrogation with progress display
         with Progress(
@@ -689,7 +734,7 @@ def interrogate(
                 progress.update(task, completed=percent * 100, description=message)
 
             report = engine.interrogate_sync(
-                model_path=Path(model_path),
+                model_path=model_path,
                 profile=profile,
                 claimed_censorship=censorship,
                 validate_censorship=not no_validate,

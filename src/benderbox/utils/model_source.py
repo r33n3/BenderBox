@@ -93,7 +93,7 @@ class ModelSourceHandler:
             download_timeout: Download timeout in seconds.
             max_size_gb: Maximum download size in GB.
         """
-        self.cache_path = cache_path or Path("data/models")
+        self.cache_path = Path(cache_path) if cache_path else Path("data/models")
         self.cache_ttl_days = cache_ttl_days
         self.download_timeout = download_timeout
         self.max_size_bytes = int(max_size_gb * 1024 * 1024 * 1024)
@@ -102,6 +102,28 @@ class ModelSourceHandler:
         self.cache_path.mkdir(parents=True, exist_ok=True)
         (self.cache_path / "huggingface").mkdir(exist_ok=True)
         (self.cache_path / "url").mkdir(exist_ok=True)
+
+    @classmethod
+    def from_config(cls, config: Any) -> "ModelSourceHandler":
+        """
+        Create a ModelSourceHandler from a BenderBox Config object.
+
+        Args:
+            config: A BenderBox Config object with storage settings.
+
+        Returns:
+            Configured ModelSourceHandler instance.
+        """
+        storage = getattr(config, 'storage', None)
+        if storage:
+            return cls(
+                cache_path=Path(storage.model_cache_path),
+                cache_ttl_days=storage.model_cache_ttl_days,
+                download_timeout=storage.download_timeout_seconds,
+                max_size_gb=storage.max_download_size_gb,
+            )
+        # Fallback to defaults if no storage config
+        return cls()
 
     def detect_source(self, target: str) -> ModelSource:
         """
@@ -123,17 +145,24 @@ class ModelSourceHandler:
         if target.startswith(('http://', 'https://')):
             return ModelSource.URL
 
-        # Check if it looks like a local path (starts with ./, ../, /, or drive letter on Windows)
+        # Check if local path exists (highest priority for existing files)
+        if Path(target).exists():
+            return ModelSource.LOCAL
+
+        # Check if it looks like a local path pattern (starts with ./, ../, /, or drive letter)
         if (target.startswith(('./', '../', '/')) or
-            (len(target) > 2 and target[1] == ':') or  # Windows drive letter
-            Path(target).exists()):
+            (len(target) > 2 and target[1] == ':')):  # Windows drive letter
             return ModelSource.LOCAL
 
         # Check for Hugging Face model ID pattern (org/model)
-        # Must have exactly one slash and match the pattern
+        # Pattern: org-name/model-name with optional /filename
+        # But NOT paths like data/models or src/test
         if '/' in target and target.count('/') <= 2:
-            if self.HF_MODEL_PATTERN.match(target):
-                return ModelSource.HUGGINGFACE
+            # Exclude common local path patterns
+            local_patterns = ['data/', 'src/', 'models/', 'test/', 'docs/', 'lib/', 'bin/']
+            if not any(target.lower().startswith(p) for p in local_patterns):
+                if self.HF_MODEL_PATTERN.match(target):
+                    return ModelSource.HUGGINGFACE
 
         # Default to local file
         return ModelSource.LOCAL
