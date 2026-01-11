@@ -364,9 +364,20 @@ def sha256_file(path: Path, chunk_size: int = 1 << 20) -> str:
 def find_llama_cli() -> Optional[Path]:
     """
     Find llama-cli executable. Checks:
-    1. llama.cpp/build*/bin/llama-cli (local build)
-    2. System PATH
+    1. BenderBox tools directory (~/.benderbox/tools/)
+    2. llama.cpp/build*/bin/llama-cli (local build)
+    3. System PATH
     """
+    import shutil
+
+    # Check BenderBox tools directory first
+    tools_dir = Path.home() / ".benderbox" / "tools"
+    if tools_dir.exists():
+        for exe_name in ["llama-cli.exe", "llama-cli"]:
+            tool_path = tools_dir / exe_name
+            if tool_path.exists():
+                return tool_path.resolve()
+
     # Check local build directories
     local_patterns = [
         Path("llama.cpp/build/bin/llama-cli"),
@@ -379,7 +390,6 @@ def find_llama_cli() -> Optional[Path]:
             return pattern.resolve()
 
     # Check system PATH
-    import shutil
     system_cli = shutil.which("llama-cli")
     if system_cli:
         return Path(system_cli)
@@ -413,33 +423,39 @@ def inspect_gguf_metadata(model_path: Path, llama_cli_path: Optional[Path] = Non
         }
 
     try:
+        import time
+        start_time = time.time()
+
         # Run llama-cli with the model to capture metadata output
-        # We'll use minimal prompt with --log-disable to just load the model and get metadata
+        # Use --single-turn to exit after processing (avoids interactive mode)
         cmd = [
             str(llama_cli_path),
             "-m", str(model_path),
-            "-n", "0",  # Don't generate any tokens
-            "-p", "",   # Empty prompt
-            "--no-display-prompt",
+            "-n", "1",  # Generate minimal tokens
+            "-p", "x",  # Minimal prompt
+            "--single-turn",  # Exit after one turn (non-interactive)
+            "-ngl", "0",  # No GPU layers (faster initial load)
         ]
 
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=120,  # Allow more time for model loading
         )
 
+        elapsed_time = time.time() - start_time
         output = result.stdout + result.stderr
 
         # Parse the output for GGUF metadata
         metadata = _parse_llama_cli_output(output, model_path)
         metadata["raw_output_sample"] = output[:1000] if output else ""
+        metadata["extraction_time_seconds"] = round(elapsed_time, 2)
 
         return metadata
 
     except subprocess.TimeoutExpired:
-        return {"error": "llama-cli timed out"}
+        return {"error": "llama-cli timed out (>120s)", "note": "Model loading may be slow on this system"}
     except Exception as e:
         return {"error": f"Failed to inspect GGUF: {e}"}
 
