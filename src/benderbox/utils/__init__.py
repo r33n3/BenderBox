@@ -6,6 +6,8 @@ This module provides:
 - ModelSource: Enum for source types
 - ResolvedModel: Result of model resolution
 - DownloadProgress: Progress information for downloads
+- PrerequisiteManager: Manage external tool dependencies
+- PackageDefinition: Define installable packages
 """
 
 from benderbox.utils.model_source import (
@@ -16,10 +18,31 @@ from benderbox.utils.model_source import (
     DownloadProgress,
 )
 
+from benderbox.utils.prerequisites import (
+    PrerequisiteManager,
+    PackageDefinition,
+    PackageStatus,
+    PackageCheckResult,
+    InstallResult,
+    InstallMethod,
+    InstallConfig,
+    VersionInfo,
+)
+
 __all__ = [
+    # Model source handling
     "ModelSource",
     "ModelSourceHandler",
     "ModelSourceError",
     "ResolvedModel",
     "DownloadProgress",
+    # Prerequisites management
+    "PrerequisiteManager",
+    "PackageDefinition",
+    "PackageStatus",
+    "PackageCheckResult",
+    "InstallResult",
+    "InstallMethod",
+    "InstallConfig",
+    "VersionInfo",
 ]

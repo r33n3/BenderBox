@@ -344,6 +344,285 @@ def version(ctx):
     ui.print_info("AI Security Analysis Platform")
 
 
+# Prerequisites subcommand group
+@cli.group()
+@click.pass_context
+def prerequisites(ctx):
+    """Manage BenderBox prerequisites and dependencies."""
+    pass
+
+
+@prerequisites.command("check")
+@click.option("--package", "-p", help="Check specific package only")
+@click.pass_context
+def prereq_check(ctx, package: Optional[str]):
+    """Check installation status of prerequisites."""
+    from benderbox.ui.terminal import TerminalUI
+    from benderbox.utils import PrerequisiteManager, PackageStatus
+
+    ui = TerminalUI()
+    manager = PrerequisiteManager()
+
+    ui.print_banner()
+    ui.print_info("Checking prerequisites...")
+    print()
+
+    if package:
+        # Check single package
+        result = manager.check_package(package)
+        results = [result]
+    else:
+        # Check all packages
+        results = manager.check_all_packages()
+
+    # Display results in a table
+    try:
+        from rich.table import Table
+        from rich.console import Console
+
+        console = Console()
+        table = Table(title="Prerequisites Status")
+        table.add_column("Package", style="cyan")
+        table.add_column("Status", style="bold")
+        table.add_column("Version")
+        table.add_column("Path/Message")
+
+        status_styles = {
+            PackageStatus.INSTALLED: "[green]INSTALLED[/green]",
+            PackageStatus.NOT_INSTALLED: "[red]NOT INSTALLED[/red]",
+            PackageStatus.OUTDATED: "[yellow]OUTDATED[/yellow]",
+            PackageStatus.VERSION_CONFLICT: "[red]VERSION CONFLICT[/red]",
+            PackageStatus.ERROR: "[red]ERROR[/red]",
+        }
+
+        for result in results:
+            status_text = status_styles.get(result.status, str(result.status))
+            version_text = str(result.installed_version) if result.installed_version else "-"
+            path_text = result.path or result.message
+
+            table.add_row(
+                result.package,
+                status_text,
+                version_text,
+                path_text[:50] + "..." if len(path_text) > 50 else path_text,
+            )
+
+        console.print(table)
+
+        # Summary
+        installed = sum(1 for r in results if r.status == PackageStatus.INSTALLED)
+        total = len(results)
+        print()
+        if installed == total:
+            ui.print_success(f"All {total} prerequisites are installed.")
+        else:
+            ui.print_warning(f"{installed}/{total} prerequisites are installed.")
+
+    except ImportError:
+        # Fallback without rich
+        for result in results:
+            status = "OK" if result.status == PackageStatus.INSTALLED else "MISSING"
+            print(f"  {result.package}: {status}")
+            if result.message:
+                print(f"    {result.message}")
+
+
+@prerequisites.command("install")
+@click.argument("package")
+@click.option("--force", "-f", is_flag=True, help="Force reinstall")
+@click.pass_context
+def prereq_install(ctx, package: str, force: bool):
+    """Install a prerequisite package."""
+    from benderbox.ui.terminal import TerminalUI
+    from benderbox.utils import PrerequisiteManager
+
+    ui = TerminalUI()
+    manager = PrerequisiteManager()
+
+    ui.print_banner()
+
+    if package not in manager.packages:
+        ui.print_error(f"Unknown package: {package}")
+        ui.print_info("Available packages: " + ", ".join(manager.packages.keys()))
+        return
+
+    ui.print_info(f"Installing {package}...")
+
+    # Create progress callback
+    try:
+        from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
+        from rich.console import Console
+
+        console = Console()
+
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("{task.percentage:>3.0f}%"),
+            console=console,
+        ) as progress:
+            task_id = progress.add_task(f"Installing {package}...", total=100)
+
+            def on_progress(message: str, percent: float):
+                progress.update(task_id, completed=int(percent * 100), description=message)
+
+            result = asyncio.run(manager.install_package(package, force=force, progress_callback=on_progress))
+
+    except ImportError:
+        # Fallback without rich progress
+        def on_progress(message: str, percent: float):
+            print(f"  {message} ({int(percent * 100)}%)")
+
+        result = asyncio.run(manager.install_package(package, force=force, progress_callback=on_progress))
+
+    print()
+    if result.success:
+        ui.print_success(result.message)
+        if result.path:
+            ui.print_info(f"Installed to: {result.path}")
+        if result.version:
+            ui.print_info(f"Version: {result.version}")
+    else:
+        ui.print_error(result.message)
+
+
+@prerequisites.command("list")
+@click.pass_context
+def prereq_list(ctx):
+    """List all available prerequisite packages."""
+    from benderbox.ui.terminal import TerminalUI
+    from benderbox.utils import PrerequisiteManager
+
+    ui = TerminalUI()
+    manager = PrerequisiteManager()
+
+    ui.print_banner()
+    ui.print_info("Available Packages:")
+    print()
+
+    try:
+        from rich.table import Table
+        from rich.console import Console
+
+        console = Console()
+        table = Table(title="Available Prerequisites")
+        table.add_column("Package", style="cyan")
+        table.add_column("Description")
+        table.add_column("Required", style="bold")
+
+        for name, pkg in manager.packages.items():
+            required = "[green]Yes[/green]" if pkg.required else "[dim]No[/dim]"
+            table.add_row(name, pkg.description, required)
+
+        console.print(table)
+
+    except ImportError:
+        for name, pkg in manager.packages.items():
+            required = "(required)" if pkg.required else ""
+            print(f"  {name}: {pkg.description} {required}")
+
+
+@prerequisites.command("script")
+@click.option("--output", "-o", type=click.Path(), help="Output file path")
+@click.option("--packages", "-p", multiple=True, help="Specific packages to include")
+@click.pass_context
+def prereq_script(ctx, output: Optional[str], packages: tuple):
+    """Generate installation script for prerequisites."""
+    from benderbox.ui.terminal import TerminalUI
+    from benderbox.utils import PrerequisiteManager
+
+    ui = TerminalUI()
+    manager = PrerequisiteManager()
+
+    package_list = list(packages) if packages else None
+    script = manager.generate_install_script(package_list)
+
+    if output:
+        with open(output, "w") as f:
+            f.write(script)
+        ui.print_success(f"Installation script written to: {output}")
+    else:
+        print(script)
+
+
+@prerequisites.command("instructions")
+@click.argument("package")
+@click.pass_context
+def prereq_instructions(ctx, package: str):
+    """Show installation instructions for a package."""
+    from benderbox.ui.terminal import TerminalUI
+    from benderbox.utils import PrerequisiteManager
+
+    ui = TerminalUI()
+    manager = PrerequisiteManager()
+
+    if package not in manager.packages:
+        ui.print_error(f"Unknown package: {package}")
+        return
+
+    instructions = manager.get_install_instructions(package)
+    print(instructions)
+
+
+@prerequisites.command("add")
+@click.argument("name")
+@click.option("--description", "-d", required=True, help="Package description")
+@click.option("--version-command", help="Command to check version")
+@click.option("--version-pattern", help="Regex pattern to extract version")
+@click.option("--check-command", help="Command to check if installed")
+@click.option("--min-version", help="Minimum required version")
+@click.option("--required", is_flag=True, help="Mark as required package")
+@click.pass_context
+def prereq_add(
+    ctx,
+    name: str,
+    description: str,
+    version_command: Optional[str],
+    version_pattern: Optional[str],
+    check_command: Optional[str],
+    min_version: Optional[str],
+    required: bool,
+):
+    """Add a custom package definition."""
+    from benderbox.ui.terminal import TerminalUI
+    from benderbox.utils import PrerequisiteManager, PackageDefinition
+
+    ui = TerminalUI()
+    manager = PrerequisiteManager()
+
+    pkg = PackageDefinition(
+        name=name,
+        description=description,
+        required=required,
+        version_command=version_command or "",
+        version_pattern=version_pattern or "",
+        check_command=check_command or "",
+        min_version=min_version,
+    )
+
+    manager.add_package(pkg)
+    ui.print_success(f"Added package definition: {name}")
+    ui.print_info(f"Configuration saved to: {manager.config_path}")
+
+
+@prerequisites.command("remove")
+@click.argument("name")
+@click.pass_context
+def prereq_remove(ctx, name: str):
+    """Remove a custom package definition."""
+    from benderbox.ui.terminal import TerminalUI
+    from benderbox.utils import PrerequisiteManager
+
+    ui = TerminalUI()
+    manager = PrerequisiteManager()
+
+    if manager.remove_package(name):
+        ui.print_success(f"Removed package: {name}")
+    else:
+        ui.print_error(f"Cannot remove package: {name} (either doesn't exist or is a default)")
+
+
 def main():
     """Main entry point."""
     cli(obj={})
