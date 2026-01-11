@@ -623,6 +623,112 @@ def prereq_remove(ctx, name: str):
         ui.print_error(f"Cannot remove package: {name} (either doesn't exist or is a default)")
 
 
+# Interrogation command
+@cli.command()
+@click.argument("model_path", type=click.Path(exists=True))
+@click.option("-p", "--profile", default="quick", help="Interrogation profile (quick, standard, full)")
+@click.option("-c", "--censorship", default="unknown", help="Claimed censorship level")
+@click.option("-o", "--output", help="Output report file path")
+@click.option("--no-validate", is_flag=True, help="Skip censorship validation")
+@click.pass_context
+def interrogate(
+    ctx,
+    model_path: str,
+    profile: str,
+    censorship: str,
+    output: Optional[str],
+    no_validate: bool,
+):
+    """
+    Interrogate a model for safety and censorship validation.
+
+    Tests the model with various prompts to detect:
+    - Unwanted outputs (harmful content generation)
+    - Jailbreak vulnerabilities
+    - Censorship level verification
+    - Mislabeling detection
+    """
+    from pathlib import Path
+    from benderbox.ui.terminal import TerminalUI
+
+    ui = TerminalUI()
+    ui.print_banner()
+
+    try:
+        from benderbox.interrogation.engine import InterrogationEngine
+        from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
+        from rich.console import Console
+        from rich.table import Table
+
+        console = Console()
+
+        ui.print_info(f"Interrogating: {model_path}")
+        ui.print_info(f"Profile: {profile}")
+        ui.print_info(f"Claimed censorship: {censorship}")
+        print()
+
+        engine = InterrogationEngine()
+
+        # Progress tracking
+        current_status = ["Initializing..."]
+
+        def progress_callback(message: str, percent: float):
+            current_status[0] = message
+
+        # Run interrogation with progress display
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Interrogating model...", total=100)
+
+            def update_progress(message: str, percent: float):
+                progress.update(task, completed=percent * 100, description=message)
+
+            report = engine.interrogate_sync(
+                model_path=Path(model_path),
+                profile=profile,
+                claimed_censorship=censorship,
+                validate_censorship=not no_validate,
+                progress_callback=update_progress,
+            )
+
+        # Display results
+        print()
+        print(report.summary_text())
+
+        # Show detailed table
+        if report.risk_score:
+            print()
+            table = Table(title="Risk Assessment")
+            table.add_column("Metric", style="cyan")
+            table.add_column("Value", style="bold")
+
+            table.add_row("Overall Risk", f"{report.risk_score.overall_risk:.1f}/100")
+            table.add_row("Risk Level", report.risk_score.risk_level.value.upper())
+            table.add_row("Safety Risk", f"{report.risk_score.safety_risk:.1f}/100")
+            table.add_row("Jailbreak Resistance", f"{report.risk_score.jailbreak_resistance:.1f}/100")
+            table.add_row("Tests Passed", f"{report.risk_score.passed_count}/{report.prompts_tested}")
+            table.add_row("Duration", f"{report.duration_seconds:.1f}s")
+
+            console.print(table)
+
+        # Save report if output specified
+        if output:
+            report.save(Path(output))
+            ui.print_success(f"Report saved to: {output}")
+
+    except ImportError as e:
+        ui.print_error(f"Missing dependency: {e}")
+        ui.print_info("Install with: pip install rich")
+    except Exception as e:
+        ui.print_error(f"Interrogation failed: {e}")
+        logger.exception("Interrogation error")
+
+
 def main():
     """Main entry point."""
     cli(obj={})
