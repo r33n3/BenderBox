@@ -113,6 +113,31 @@ class UIConfig:
 
 
 @dataclass
+class APIConfig:
+    """Configuration for API-based model runners."""
+
+    # OpenAI
+    openai_api_key: str = ""  # Or from OPENAI_API_KEY env var
+    openai_base_url: str = "https://api.openai.com/v1"
+
+    # Anthropic
+    anthropic_api_key: str = ""  # Or from ANTHROPIC_API_KEY env var
+    anthropic_base_url: str = "https://api.anthropic.com"
+
+    # Google (Gemini)
+    google_api_key: str = ""  # Or from GOOGLE_API_KEY env var
+
+    # xAI (Grok)
+    xai_api_key: str = ""  # Or from XAI_API_KEY env var
+    xai_base_url: str = "https://api.x.ai/v1"
+
+    # Common settings
+    api_timeout_seconds: int = 120
+    max_retries: int = 3
+    retry_delay_seconds: float = 1.0
+
+
+@dataclass
 class Config:
     """Main configuration container."""
 
@@ -121,6 +146,7 @@ class Config:
     embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
     analysis: AnalysisConfig = field(default_factory=AnalysisConfig)
     ui: UIConfig = field(default_factory=UIConfig)
+    api: APIConfig = field(default_factory=APIConfig)
 
     # Base paths (resolved at load time)
     base_path: str = ""
@@ -161,7 +187,20 @@ def _apply_env_overrides(config: Config) -> None:
         "BENDERBOX_UI_WEB_ENABLED": ("ui", "web_enabled", lambda x: x.lower() == "true"),
         "BENDERBOX_UI_WEB_HOST": ("ui", "web_host"),
         "BENDERBOX_UI_WEB_PORT": ("ui", "web_port", int),
+
+        # API (also check standard provider env vars)
+        "BENDERBOX_API_TIMEOUT": ("api", "api_timeout_seconds", int),
+        "BENDERBOX_API_MAX_RETRIES": ("api", "max_retries", int),
     }
+
+    # Check standard API key environment variables
+    standard_api_keys = {
+        "OPENAI_API_KEY": ("api", "openai_api_key"),
+        "ANTHROPIC_API_KEY": ("api", "anthropic_api_key"),
+        "GOOGLE_API_KEY": ("api", "google_api_key"),
+        "XAI_API_KEY": ("api", "xai_api_key"),
+    }
+    env_mappings.update(standard_api_keys)
 
     for env_var, mapping in env_mappings.items():
         value = os.environ.get(env_var)
@@ -175,6 +214,35 @@ def _apply_env_overrides(config: Config) -> None:
                 setattr(section, attr_name, converter(value))
             except (ValueError, TypeError):
                 pass  # Ignore invalid env values
+
+
+def _apply_secrets(config: Config) -> None:
+    """Apply API keys from secrets manager to config."""
+    try:
+        from benderbox.utils.secrets import get_secrets_manager
+
+        secrets = get_secrets_manager()
+
+        # Map provider keys to config attributes
+        api_key_mappings = {
+            "openai": "openai_api_key",
+            "anthropic": "anthropic_api_key",
+            "google": "google_api_key",
+            "xai": "xai_api_key",
+        }
+
+        for provider, attr_name in api_key_mappings.items():
+            # Only set if not already set (env vars take precedence)
+            current_value = getattr(config.api, attr_name, "")
+            if not current_value:
+                secret_value = secrets.get_api_key(provider)
+                if secret_value:
+                    setattr(config.api, attr_name, secret_value)
+
+    except ImportError:
+        pass  # Secrets module not available
+    except Exception:
+        pass  # Ignore errors loading secrets
 
 
 def _dict_to_config(data: Dict[str, Any]) -> Config:
@@ -205,6 +273,11 @@ def _dict_to_config(data: Dict[str, Any]) -> Config:
         for key, value in data["ui"].items():
             if hasattr(config.ui, key):
                 setattr(config.ui, key, value)
+
+    if "api" in data:
+        for key, value in data["api"].items():
+            if hasattr(config.api, key):
+                setattr(config.api, key, value)
 
     return config
 
@@ -254,6 +327,9 @@ def load_config(config_path: Optional[str] = None, base_path: Optional[str] = No
 
     # Apply environment variable overrides
     _apply_env_overrides(config)
+
+    # Apply secrets from secrets manager (lowest priority - env vars override)
+    _apply_secrets(config)
 
     return config
 

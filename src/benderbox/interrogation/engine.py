@@ -6,7 +6,7 @@ import asyncio
 import logging
 import time
 from pathlib import Path
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Union
 
 from .analyzer.results import AnalysisResult, ResponseAnalyzer
 from .prompts.loader import PromptLibrary
@@ -14,6 +14,7 @@ from .prompts.schema import TestPrompt
 from .reports.generator import InterrogationReport, ReportGenerator
 from .runner.base import ModelRunner, RunnerConfig
 from .runner.llama_cpp import LlamaCppRunner
+from .runner.api_base import BaseAPIRunner
 from .scoring.risk import InterrogationRiskScore, RiskScorer
 from .validator.censorship import CensorshipValidator, MislabelingReport
 
@@ -46,42 +47,55 @@ class InterrogationEngine:
 
     async def interrogate(
         self,
-        model_path: Path,
+        model_path: Union[Path, str],
         profile: str = "standard",
         claimed_censorship: str = "unknown",
         validate_censorship: bool = True,
         runner_config: Optional[RunnerConfig] = None,
+        runner: Optional[ModelRunner] = None,
         progress_callback: Optional[Callable[[str, float], None]] = None,
     ) -> InterrogationReport:
         """
         Run full model interrogation.
 
         Args:
-            model_path: Path to the GGUF model file
+            model_path: Path to the GGUF model file or model identifier
             profile: Interrogation profile ("quick", "standard", "full")
             claimed_censorship: Claimed censorship level
             validate_censorship: Whether to run censorship validation
             runner_config: Configuration for model runner
+            runner: Pre-initialized model runner (if None, creates LlamaCppRunner)
             progress_callback: Callback for progress updates (message, percent)
 
         Returns:
             Complete InterrogationReport
         """
         start_time = time.time()
-        model_path = Path(model_path)
 
-        logger.info(f"Starting interrogation of {model_path.name}")
+        # Determine model name for logging
+        if runner is not None:
+            if isinstance(runner, BaseAPIRunner):
+                model_name = f"{runner.provider_name}:{runner.model_name}"
+            else:
+                model_name = str(runner.model_path.name)
+        else:
+            model_path = Path(model_path)
+            model_name = model_path.name
+
+        logger.info(f"Starting interrogation of {model_name}")
         logger.info(f"Profile: {profile}, Validate censorship: {validate_censorship}")
 
-        # Initialize runner
+        # Initialize runner if not provided
         if progress_callback:
             progress_callback("Initializing model runner...", 0.0)
 
-        try:
-            runner = LlamaCppRunner(model_path, config=runner_config)
-        except Exception as e:
-            logger.error(f"Failed to initialize runner: {e}")
-            raise
+        if runner is None:
+            try:
+                model_path = Path(model_path)
+                runner = LlamaCppRunner(model_path, config=runner_config)
+            except Exception as e:
+                logger.error(f"Failed to initialize runner: {e}")
+                raise
 
         # Load prompts
         if progress_callback:
@@ -127,14 +141,27 @@ class InterrogationEngine:
         if progress_callback:
             progress_callback("Generating report...", 0.98)
 
+        # Add API cost info to report if available
+        api_cost_info = None
+        if isinstance(runner, BaseAPIRunner):
+            api_cost_info = {
+                "provider": runner.provider_name,
+                "model": runner.model_name,
+                "prompt_tokens": runner.prompt_tokens_used,
+                "completion_tokens": runner.completion_tokens_used,
+                "total_tokens": runner.tokens_used,
+                "estimated_cost_usd": runner.estimated_cost,
+            }
+
         report = self.report_generator.generate(
             results=results,
             risk_score=risk_score,
-            model_path=str(model_path),
+            model_path=model_name,
             claimed_censorship=claimed_censorship,
             censorship_report=censorship_report,
             profile=profile,
             duration=duration,
+            api_cost_info=api_cost_info,
         )
 
         if progress_callback:
@@ -190,11 +217,12 @@ class InterrogationEngine:
 
     def interrogate_sync(
         self,
-        model_path: Path,
+        model_path: Union[Path, str],
         profile: str = "standard",
         claimed_censorship: str = "unknown",
         validate_censorship: bool = True,
         runner_config: Optional[RunnerConfig] = None,
+        runner: Optional[ModelRunner] = None,
         progress_callback: Optional[Callable[[str, float], None]] = None,
     ) -> InterrogationReport:
         """Synchronous version of interrogate."""
@@ -205,6 +233,7 @@ class InterrogationEngine:
                 claimed_censorship=claimed_censorship,
                 validate_censorship=validate_censorship,
                 runner_config=runner_config,
+                runner=runner,
                 progress_callback=progress_callback,
             )
         )

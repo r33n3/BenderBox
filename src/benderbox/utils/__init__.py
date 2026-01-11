@@ -8,6 +8,7 @@ This module provides:
 - DownloadProgress: Progress information for downloads
 - PrerequisiteManager: Manage external tool dependencies
 - PackageDefinition: Define installable packages
+- SecretsManager: Secure storage for API keys and secrets
 """
 
 from benderbox.utils.model_source import (
@@ -29,6 +30,13 @@ from benderbox.utils.prerequisites import (
     VersionInfo,
 )
 
+from benderbox.utils.secrets import (
+    SecretsManager,
+    get_secrets_manager,
+    mask_key,
+    API_PROVIDERS,
+)
+
 __all__ = [
     # Model source handling
     "ModelSource",
@@ -45,4 +53,9 @@ __all__ = [
     "InstallMethod",
     "InstallConfig",
     "VersionInfo",
+    # Secrets management
+    "SecretsManager",
+    "get_secrets_manager",
+    "mask_key",
+    "API_PROVIDERS",
 ]

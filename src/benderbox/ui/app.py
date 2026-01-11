@@ -630,6 +630,7 @@ def prereq_remove(ctx, name: str):
 @click.option("-c", "--censorship", default="unknown", help="Claimed censorship level")
 @click.option("-o", "--output", help="Output report file path")
 @click.option("--no-validate", is_flag=True, help="Skip censorship validation")
+@click.option("-y", "--yes", is_flag=True, help="Skip confirmation for API targets")
 @click.pass_context
 def interrogate(
     ctx,
@@ -638,6 +639,7 @@ def interrogate(
     censorship: str,
     output: Optional[str],
     no_validate: bool,
+    yes: bool,
 ):
     """
     Interrogate a model for safety and censorship validation.
@@ -647,18 +649,25 @@ def interrogate(
     - Hugging Face model ID: TheBloke/Llama-2-7B-GGUF
     - Hugging Face URL: https://huggingface.co/TheBloke/...
     - Direct download URL: https://example.com/model.gguf
+    - OpenAI API: openai:gpt-4-turbo, openai:gpt-3.5-turbo
+    - Anthropic API: anthropic:claude-3-5-sonnet-20241022
+    - Google API: gemini:gemini-1.5-pro
+    - xAI API: grok:grok-2
 
     Tests the model with various prompts to detect:
     - Unwanted outputs (harmful content generation)
     - Jailbreak vulnerabilities
     - Censorship level verification
     - Mislabeling detection
+
+    NOTE: API-based interrogation requires paid accounts with the respective providers.
     """
     import asyncio
     from pathlib import Path
     from benderbox.ui.terminal import TerminalUI
     from benderbox.config import load_config
     from benderbox.utils import ModelSourceHandler, ModelSource
+    from benderbox.interrogation.runner import RunnerFactory
 
     ui = TerminalUI()
     ui.print_banner()
@@ -668,52 +677,101 @@ def interrogate(
         from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, DownloadColumn, TransferSpeedColumn
         from rich.console import Console
         from rich.table import Table
+        from rich.panel import Panel
 
         console = Console()
         config = load_config()
 
-        # Resolve model source (download if needed)
-        handler = ModelSourceHandler.from_config(config)
-        source = handler.detect_source(model_target)
+        # Check if this is an API target
+        is_api = RunnerFactory.is_api_target(model_target)
+        runner = None
+        model_path = None
 
-        if source != ModelSource.LOCAL:
-            ui.print_info(f"Source: {source.value}")
-            ui.print_info(f"Resolving: {model_target}")
+        if is_api:
+            # Show cost warning for API targets
+            if not yes:
+                try:
+                    provider_key, model_name, runner_class = RunnerFactory.parse_api_target(model_target)
+                    min_cost, max_cost = RunnerFactory.estimate_api_cost(model_target, profile)
+                    prompt_count = RunnerFactory.get_prompt_count_for_profile(profile)
 
-            # Download with progress
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                BarColumn(),
-                DownloadColumn(),
-                TransferSpeedColumn(),
-                console=console,
-            ) as progress:
-                download_task = progress.add_task("Downloading model...", total=100)
+                    console.print()
+                    console.print(Panel(
+                        f"[yellow bold]API INTERROGATION WARNING[/yellow bold]\n\n"
+                        f"This will send interrogation prompts to a [bold]paid API service[/bold].\n\n"
+                        f"[cyan]Target:[/cyan] {model_target}\n"
+                        f"[cyan]Provider:[/cyan] {provider_key.upper()}\n"
+                        f"[cyan]Model:[/cyan] {model_name}\n"
+                        f"[cyan]Profile:[/cyan] {profile} ({prompt_count} prompts)\n\n"
+                        f"[bold]Estimated cost:[/bold] ${min_cost:.2f} - ${max_cost:.2f}\n\n"
+                        f"[dim]NOTE: Paid API accounts required. You will be charged by the provider.[/dim]",
+                        title="Cost Warning",
+                        border_style="yellow",
+                    ))
+                    console.print()
 
-                def download_progress(dp):
-                    if dp.total_bytes > 0:
-                        progress.update(
-                            download_task,
-                            completed=dp.percent,
-                            description=f"Downloading {dp.filename}..."
-                        )
+                    if not click.confirm("Do you want to proceed?"):
+                        console.print("[red]Cancelled[/red]")
+                        return
 
-                resolved = asyncio.run(handler.resolve(model_target, download_progress))
+                except ValueError as e:
+                    ui.print_error(str(e))
+                    return
 
-            model_path = resolved.local_path
-            if resolved.cached:
-                ui.print_info(f"Using cached model: {model_path}")
-            else:
-                ui.print_success(f"Downloaded to: {model_path}")
-        else:
-            model_path = Path(model_target)
-            if not model_path.exists():
-                ui.print_error(f"Model file not found: {model_target}")
+            # Create API runner
+            try:
+                runner = RunnerFactory.create_runner(model_target, config)
+                ui.print_info(f"Using {runner.provider_name} API: {runner.model_name}")
+            except ValueError as e:
+                ui.print_error(str(e))
                 return
 
+        else:
+            # Local/URL/HuggingFace model - resolve source
+            handler = ModelSourceHandler.from_config(config)
+            source = handler.detect_source(model_target)
+
+            if source != ModelSource.LOCAL:
+                ui.print_info(f"Source: {source.value}")
+                ui.print_info(f"Resolving: {model_target}")
+
+                # Download with progress
+                with Progress(
+                    SpinnerColumn(),
+                    TextColumn("[progress.description]{task.description}"),
+                    BarColumn(),
+                    DownloadColumn(),
+                    TransferSpeedColumn(),
+                    console=console,
+                ) as progress:
+                    download_task = progress.add_task("Downloading model...", total=100)
+
+                    def download_progress(dp):
+                        if dp.total_bytes > 0:
+                            progress.update(
+                                download_task,
+                                completed=dp.percent,
+                                description=f"Downloading {dp.filename}..."
+                            )
+
+                    resolved = asyncio.run(handler.resolve(model_target, download_progress))
+
+                model_path = resolved.local_path
+                if resolved.cached:
+                    ui.print_info(f"Using cached model: {model_path}")
+                else:
+                    ui.print_success(f"Downloaded to: {model_path}")
+            else:
+                model_path = Path(model_target)
+                if not model_path.exists():
+                    ui.print_error(f"Model file not found: {model_target}")
+                    return
+
         print()
-        ui.print_info(f"Interrogating: {model_path.name}")
+        if is_api:
+            ui.print_info(f"Interrogating: {model_target}")
+        else:
+            ui.print_info(f"Interrogating: {model_path.name}")
         ui.print_info(f"Profile: {profile}")
         ui.print_info(f"Claimed censorship: {censorship}")
         print()
@@ -734,10 +792,11 @@ def interrogate(
                 progress.update(task, completed=percent * 100, description=message)
 
             report = engine.interrogate_sync(
-                model_path=model_path,
+                model_path=model_path or model_target,
                 profile=profile,
                 claimed_censorship=censorship,
                 validate_censorship=not no_validate,
+                runner=runner,
                 progress_callback=update_progress,
             )
 
@@ -761,6 +820,22 @@ def interrogate(
 
             console.print(table)
 
+        # Show API cost summary if applicable
+        if report.api_cost_info:
+            print()
+            cost_table = Table(title="API Usage Summary")
+            cost_table.add_column("Metric", style="cyan")
+            cost_table.add_column("Value", style="bold")
+
+            cost_table.add_row("Provider", report.api_cost_info.get("provider", "Unknown"))
+            cost_table.add_row("Model", report.api_cost_info.get("model", "Unknown"))
+            cost_table.add_row("Prompt Tokens", f"{report.api_cost_info.get('prompt_tokens', 0):,}")
+            cost_table.add_row("Completion Tokens", f"{report.api_cost_info.get('completion_tokens', 0):,}")
+            cost_table.add_row("Total Tokens", f"{report.api_cost_info.get('total_tokens', 0):,}")
+            cost_table.add_row("Estimated Cost", f"${report.api_cost_info.get('estimated_cost_usd', 0):.4f}")
+
+            console.print(cost_table)
+
         # Save report if output specified
         if output:
             report.save(Path(output))
@@ -768,10 +843,259 @@ def interrogate(
 
     except ImportError as e:
         ui.print_error(f"Missing dependency: {e}")
-        ui.print_info("Install with: pip install rich")
+        ui.print_info("Install with: pip install rich httpx")
     except Exception as e:
         ui.print_error(f"Interrogation failed: {e}")
         logger.exception("Interrogation error")
+
+
+# Config command group for API keys and settings
+@cli.group()
+@click.pass_context
+def config(ctx):
+    """Manage BenderBox configuration and API keys."""
+    pass
+
+
+@config.command("api-keys")
+@click.pass_context
+def config_api_keys_list(ctx):
+    """List configured API keys and their status."""
+    from benderbox.ui.terminal import TerminalUI
+    from benderbox.utils import get_secrets_manager, API_PROVIDERS
+
+    ui = TerminalUI()
+    ui.print_banner()
+
+    secrets = get_secrets_manager()
+    keys_status = secrets.list_api_keys()
+
+    try:
+        from rich.table import Table
+        from rich.console import Console
+
+        console = Console()
+        table = Table(title="API Keys Configuration")
+        table.add_column("Provider", style="cyan")
+        table.add_column("Status", style="bold")
+        table.add_column("Key", style="dim")
+        table.add_column("Source")
+
+        for provider, info in keys_status.items():
+            if info["configured"]:
+                status = "[green]Configured[/green]"
+            else:
+                status = "[red]Not Set[/red]"
+
+            table.add_row(
+                info["name"],
+                status,
+                info["masked_key"],
+                info["source"] or "-",
+            )
+
+        console.print(table)
+        print()
+
+        # Show hints
+        ui.print_info("To configure a key: benderbox config set-key <provider>")
+        ui.print_info("Providers: openai, anthropic, google, xai")
+        print()
+        ui.print_info(f"Secrets file: {secrets.path}")
+
+    except ImportError:
+        # Fallback without rich
+        print("API Keys Status:")
+        for provider, info in keys_status.items():
+            status = "OK" if info["configured"] else "NOT SET"
+            print(f"  {info['name']}: {status} - {info['masked_key']}")
+
+
+@config.command("set-key")
+@click.argument("provider", type=click.Choice(["openai", "anthropic", "google", "xai"]))
+@click.option("--key", "-k", help="API key (if not provided, will prompt securely)")
+@click.pass_context
+def config_set_key(ctx, provider: str, key: Optional[str]):
+    """
+    Set an API key for a provider.
+
+    PROVIDER: openai, anthropic, google, or xai
+
+    The key will be stored securely in ~/.benderbox/secrets.yaml
+    """
+    from benderbox.ui.terminal import TerminalUI
+    from benderbox.utils import get_secrets_manager, API_PROVIDERS
+
+    ui = TerminalUI()
+    provider_info = API_PROVIDERS[provider]
+
+    ui.print_banner()
+    ui.print_info(f"Configuring {provider_info['name']} API Key")
+    print()
+
+    # Show help URL
+    ui.print_info(f"Get your API key at: {provider_info['url']}")
+    print()
+
+    if not key:
+        # Prompt for key with masked input
+        key = click.prompt(
+            f"Enter {provider_info['name']} API key",
+            hide_input=True,
+            confirmation_prompt=True,
+        )
+
+    if not key or not key.strip():
+        ui.print_error("API key cannot be empty")
+        return
+
+    key = key.strip()
+
+    # Validate key format (basic check)
+    expected_prefix = provider_info.get("key_prefix", "")
+    if expected_prefix and not key.startswith(expected_prefix):
+        ui.print_warning(f"Key doesn't start with expected prefix '{expected_prefix}'")
+        if not click.confirm("Save anyway?"):
+            ui.print_error("Cancelled")
+            return
+
+    # Save the key
+    secrets = get_secrets_manager()
+    if secrets.set_api_key(provider, key):
+        ui.print_success(f"{provider_info['name']} API key saved successfully")
+        ui.print_info(f"Stored in: {secrets.path}")
+    else:
+        ui.print_error("Failed to save API key")
+
+
+@config.command("remove-key")
+@click.argument("provider", type=click.Choice(["openai", "anthropic", "google", "xai"]))
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
+@click.pass_context
+def config_remove_key(ctx, provider: str, yes: bool):
+    """Remove a stored API key."""
+    from benderbox.ui.terminal import TerminalUI
+    from benderbox.utils import get_secrets_manager, API_PROVIDERS
+
+    ui = TerminalUI()
+    provider_info = API_PROVIDERS[provider]
+
+    if not yes:
+        if not click.confirm(f"Remove {provider_info['name']} API key?"):
+            ui.print_info("Cancelled")
+            return
+
+    secrets = get_secrets_manager()
+    if secrets.remove_api_key(provider):
+        ui.print_success(f"{provider_info['name']} API key removed")
+    else:
+        ui.print_error("Failed to remove API key")
+
+
+@config.command("test-key")
+@click.argument("provider", type=click.Choice(["openai", "anthropic", "google", "xai"]))
+@click.pass_context
+def config_test_key(ctx, provider: str):
+    """Test if an API key is valid by making a minimal API call."""
+    import asyncio
+    from benderbox.ui.terminal import TerminalUI
+    from benderbox.utils import get_secrets_manager, API_PROVIDERS
+
+    ui = TerminalUI()
+    provider_info = API_PROVIDERS[provider]
+
+    ui.print_banner()
+    ui.print_info(f"Testing {provider_info['name']} API key...")
+    print()
+
+    secrets = get_secrets_manager()
+    api_key = secrets.get_api_key(provider)
+
+    if not api_key:
+        ui.print_error(f"No API key configured for {provider_info['name']}")
+        ui.print_info(f"Set one with: benderbox config set-key {provider}")
+        return
+
+    async def test_api():
+        import httpx
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                if provider == "openai":
+                    response = await client.post(
+                        "https://api.openai.com/v1/chat/completions",
+                        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                        json={"model": "gpt-3.5-turbo", "messages": [{"role": "user", "content": "Hi"}], "max_tokens": 1},
+                    )
+                elif provider == "anthropic":
+                    response = await client.post(
+                        "https://api.anthropic.com/v1/messages",
+                        headers={"x-api-key": api_key, "anthropic-version": "2023-06-01", "Content-Type": "application/json"},
+                        json={"model": "claude-3-haiku-20240307", "max_tokens": 1, "messages": [{"role": "user", "content": "Hi"}]},
+                    )
+                elif provider == "google":
+                    response = await client.post(
+                        "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
+                        params={"key": api_key},
+                        headers={"Content-Type": "application/json"},
+                        json={"contents": [{"parts": [{"text": "Hi"}]}], "generationConfig": {"maxOutputTokens": 1}},
+                    )
+                elif provider == "xai":
+                    response = await client.post(
+                        "https://api.x.ai/v1/chat/completions",
+                        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                        json={"model": "grok-2", "messages": [{"role": "user", "content": "Hi"}], "max_tokens": 1},
+                    )
+
+                return response.status_code, response.json() if response.headers.get("content-type", "").startswith("application/json") else response.text
+
+        except httpx.ConnectError as e:
+            return None, f"Connection failed: {e}"
+        except httpx.TimeoutException:
+            return None, "Connection timed out"
+        except Exception as e:
+            return None, f"Error: {e}"
+
+    status_code, result = asyncio.run(test_api())
+
+    if status_code == 200:
+        ui.print_success(f"{provider_info['name']} API key is valid!")
+    elif status_code == 401:
+        ui.print_error("Invalid API key (401 Unauthorized)")
+    elif status_code == 403:
+        ui.print_error("Access denied (403 Forbidden) - check your API key permissions")
+    elif status_code == 429:
+        ui.print_warning("Rate limited (429) - key is valid but you're being rate limited")
+    elif status_code == 400:
+        # Some APIs return 400 for invalid keys
+        error_msg = ""
+        if isinstance(result, dict):
+            error_msg = result.get("error", {}).get("message", str(result))
+        else:
+            error_msg = str(result)[:100]
+
+        if "invalid" in error_msg.lower() or "api key" in error_msg.lower():
+            ui.print_error(f"Invalid API key: {error_msg}")
+        else:
+            ui.print_warning(f"Request error (400): {error_msg}")
+    elif status_code is None:
+        ui.print_error(f"Connection failed: {result}")
+    else:
+        ui.print_warning(f"Unexpected response ({status_code}): {result}")
+
+
+@config.command("show-path")
+@click.pass_context
+def config_show_path(ctx):
+    """Show the path to the secrets file."""
+    from benderbox.utils import get_secrets_manager
+
+    secrets = get_secrets_manager()
+    print(f"Secrets file: {secrets.path}")
+    if secrets.path.exists():
+        print("Status: File exists")
+    else:
+        print("Status: File does not exist (will be created when you set a key)")
 
 
 def main():

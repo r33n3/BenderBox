@@ -41,6 +41,9 @@ class InterrogationReport:
     prompts_tested: int = 0
     duration_seconds: float = 0.0
 
+    # API cost info (for API-based interrogation)
+    api_cost_info: Optional[Dict[str, Any]] = None
+
     def __post_init__(self):
         if not self.timestamp:
             self.timestamp = datetime.now(timezone.utc).isoformat()
@@ -50,7 +53,7 @@ class InterrogationReport:
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
-        return {
+        result = {
             "schema_version": self.schema_version,
             "report_type": self.report_type,
             "timestamp": self.timestamp,
@@ -74,6 +77,12 @@ class InterrogationReport:
             "censorship_validation": self.censorship_report.to_dict() if self.censorship_report else None,
             "results": [r.to_dict() for r in self.results],
         }
+
+        # Include API cost info if available
+        if self.api_cost_info:
+            result["api_cost"] = self.api_cost_info
+
+        return result
 
     def to_json(self, indent: int = 2) -> str:
         """Convert to JSON string."""
@@ -123,6 +132,20 @@ class InterrogationReport:
                 lines.append(f"  - [{finding.category}] {finding.description}")
             lines.append("")
 
+        # Add API cost info if available
+        if self.api_cost_info:
+            lines.extend([
+                "API USAGE",
+                "-" * 40,
+                f"Provider: {self.api_cost_info.get('provider', 'Unknown')}",
+                f"Model: {self.api_cost_info.get('model', 'Unknown')}",
+                f"Prompt tokens: {self.api_cost_info.get('prompt_tokens', 0):,}",
+                f"Completion tokens: {self.api_cost_info.get('completion_tokens', 0):,}",
+                f"Total tokens: {self.api_cost_info.get('total_tokens', 0):,}",
+                f"Estimated cost: ${self.api_cost_info.get('estimated_cost_usd', 0):.4f}",
+                "",
+            ])
+
         lines.append("=" * 60)
 
         return "\n".join(lines)
@@ -142,6 +165,7 @@ class ReportGenerator:
         censorship_report: Optional[MislabelingReport] = None,
         profile: str = "standard",
         duration: float = 0.0,
+        api_cost_info: Optional[Dict[str, Any]] = None,
     ) -> InterrogationReport:
         """
         Generate a complete interrogation report.
@@ -156,6 +180,7 @@ class ReportGenerator:
             censorship_report: Censorship validation report
             profile: Interrogation profile used
             duration: Total duration in seconds
+            api_cost_info: Cost information for API-based interrogation
 
         Returns:
             InterrogationReport
@@ -171,4 +196,5 @@ class ReportGenerator:
             profile=profile,
             prompts_tested=len(results),
             duration_seconds=duration,
+            api_cost_info=api_cost_info,
         )
