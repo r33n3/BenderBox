@@ -51,6 +51,18 @@ Thumbs.db
 *.swp
 *.swo
 *.tmp
+tmpclaude-*
+
+# Build tools and installers
+vs_buildtools.exe
+*.exe
+!bb.exe
+
+# Build artifacts
+*.whl
+dist/
+build/
+*.egg
 
 # reference files and notes
 *reference.md
