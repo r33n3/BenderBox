@@ -98,7 +98,13 @@ class BenderBoxApp:
         try:
             from benderbox.nlp.llm_engine import LocalLLMEngine
             self._llm_engine = LocalLLMEngine(self.config.llm)
-            logger.info("LLM engine initialized")
+            if self._llm_engine.is_available:
+                logger.info("LLM engine initialized with llama-cpp-python")
+            else:
+                logger.warning(
+                    "LLM engine initialized but llama-cpp-python not available. "
+                    "NLP features will use template-based responses only."
+                )
         except ImportError as e:
             logger.warning(f"LLM engine not available: {e}")
         except Exception as e:

@@ -105,7 +105,8 @@ class ResponseGenerator:
             Response chunks.
         """
         # For non-LLM responses, yield complete response
-        if not context.intent.requires_llm or self._llm_engine is None:
+        llm_available = self._llm_engine is not None and getattr(self._llm_engine, 'is_available', False)
+        if not context.intent.requires_llm or not llm_available:
             response = await self.generate(context)
             yield response
             return
@@ -206,7 +207,7 @@ class ResponseGenerator:
 
     async def _generate_explanation(self, context: ResponseContext) -> str:
         """Generate explanation using LLM."""
-        if self._llm_engine is None:
+        if self._llm_engine is None or not getattr(self._llm_engine, 'is_available', False):
             return self._template_explanation(context)
 
         prompt = self._build_explanation_prompt(context)
@@ -264,7 +265,7 @@ class ResponseGenerator:
             return "\n".join(lines)
 
         # Use LLM if available
-        if self._llm_engine:
+        if self._llm_engine and getattr(self._llm_engine, 'is_available', False):
             prompt = self._build_knowledge_prompt(context)
             return await self._llm_engine.generate(
                 prompt=prompt,
@@ -400,8 +401,15 @@ class ResponseGenerator:
 
     async def _answer_general_question(self, context: ResponseContext) -> str:
         """Answer general questions using LLM."""
-        if self._llm_engine is None:
-            return "I need an LLM model loaded to answer general questions. Please ensure a model is available."
+        if self._llm_engine is None or not getattr(self._llm_engine, 'is_available', False):
+            return (
+                "I need an LLM model loaded to answer general questions. "
+                "Please ensure llama-cpp-python is installed and a model is available.\n\n"
+                "For now, I can help with analysis commands like:\n"
+                "- 'analyze model.gguf'\n"
+                "- 'status'\n"
+                "- 'help'"
+            )
 
         prompt = self._build_general_prompt(context)
         return await self._llm_engine.generate(

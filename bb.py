@@ -37,8 +37,11 @@ def main():
         print("Missing dependencies. Install with:")
         print("    pip install -e .")
         print()
-        print("Or install just the core dependencies:")
-        print("    pip install pyyaml click rich httpx huggingface-hub")
+        print("For NLP features (interactive chat with local LLM):")
+        print("    pip install -e '.[nlp]'")
+        print()
+        print("Note: NLP features require Python 3.12 or earlier for pre-built wheels.")
+        print("On Python 3.13+, you need Visual Studio Build Tools to compile llama-cpp-python.")
         sys.exit(1)
 
 

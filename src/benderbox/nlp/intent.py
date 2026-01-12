@@ -155,7 +155,8 @@ class IntentRouter:
             return intent
 
         # Slow path: LLM classification (if available and needed)
-        if self._llm_engine is not None:
+        # Check both that we have an engine AND that it has llama-cpp available
+        if self._llm_engine is not None and getattr(self._llm_engine, 'is_available', False):
             try:
                 llm_intent = await self._llm_classify(query)
                 if llm_intent.confidence > (intent.confidence if intent else 0):

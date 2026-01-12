@@ -9,7 +9,25 @@
 
 ### Prerequisites
 
-- **Python 3.10+**
+- **Python 3.10+** (Python 3.11 or 3.12 recommended for best compatibility)
+- **Windows:** Visual Studio Build Tools (for compiling llama-cpp-python)
+- **Linux/Mac:** GCC/Clang compiler
+
+### Windows Prerequisites
+
+On Windows, you need Visual Studio Build Tools to compile `llama-cpp-python` for local NLP features:
+
+```powershell
+# Install via winget (Windows Package Manager)
+winget install Microsoft.VisualStudio.2022.BuildTools
+
+# Then install C++ workload (run as Administrator or download installer)
+# Option 1: Download and run the installer
+curl -L -o vs_buildtools.exe "https://aka.ms/vs/17/release/vs_buildtools.exe"
+.\vs_buildtools.exe --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --passive --wait
+```
+
+After installing Build Tools, open a **new terminal** to pick up the environment changes.
 
 ### Quick Install
 
@@ -18,15 +36,28 @@
 git clone <repository-url>
 cd BenderBox
 
-# Install dependencies
+# Install core dependencies
 pip install -e .
+
+# Install with NLP features (interactive chat with local LLM)
+pip install -e ".[nlp]"
+```
+
+### Full Install with All Features
+
+```bash
+# All features including NLP, TUI, and web
+pip install -e ".[all]"
 ```
 
 ### Minimal Install (no pip install)
 
 ```bash
-# Just install core dependencies
-pip install pyyaml click rich httpx huggingface-hub
+# Just install core dependencies (no local NLP)
+pip install pyyaml click rich httpx huggingface-hub aiosqlite
+
+# Add NLP support (requires Build Tools on Windows)
+pip install llama-cpp-python
 ```
 
 ---
@@ -365,7 +396,33 @@ python bb.py config set-key openai
 export OPENAI_API_KEY="sk-..."
 ```
 
-### "No module named 'llama_cpp'"
+### "No module named 'llama_cpp'" or "llama-cpp-python not installed"
+```bash
+# On Windows, first install Build Tools (see Prerequisites section)
+# Then install llama-cpp-python:
+pip install llama-cpp-python
+
+# Or install full NLP extras:
+pip install -e ".[nlp]"
+```
+
+### "CMake Error: CMAKE_C_COMPILER not set" (Windows)
+This means Visual Studio Build Tools C++ workload is not installed:
+```powershell
+# Download and install C++ build tools
+curl -L -o vs_buildtools.exe "https://aka.ms/vs/17/release/vs_buildtools.exe"
+.\vs_buildtools.exe --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --passive --wait
+
+# Open a NEW terminal, then retry:
+pip install llama-cpp-python
+```
+
+### "NLP features limited" warning in interactive mode
+This means llama-cpp-python isn't installed. The app still works for:
+- API model interrogation (OpenAI, Anthropic, etc.)
+- Explicit commands: `analyze`, `status`, `help`
+
+To enable full NLP:
 ```bash
 pip install llama-cpp-python
 ```
@@ -374,7 +431,7 @@ pip install llama-cpp-python
 ```bash
 pip install -e .
 # Or minimal:
-pip install pyyaml click rich httpx huggingface-hub
+pip install pyyaml click rich httpx huggingface-hub aiosqlite
 ```
 
 ---

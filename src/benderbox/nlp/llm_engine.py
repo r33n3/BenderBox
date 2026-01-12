@@ -20,6 +20,27 @@ from benderbox.config import LLMConfig, get_config
 logger = logging.getLogger(__name__)
 
 
+def is_llama_cpp_available() -> bool:
+    """Check if llama-cpp-python is installed and importable."""
+    try:
+        from llama_cpp import Llama
+        return True
+    except ImportError:
+        return False
+
+
+# Cache the availability check
+_LLAMA_CPP_AVAILABLE: Optional[bool] = None
+
+
+def check_llama_cpp_available() -> bool:
+    """Check availability with caching."""
+    global _LLAMA_CPP_AVAILABLE
+    if _LLAMA_CPP_AVAILABLE is None:
+        _LLAMA_CPP_AVAILABLE = is_llama_cpp_available()
+    return _LLAMA_CPP_AVAILABLE
+
+
 @dataclass
 class ModelInfo:
     """Information about a loaded model."""
@@ -231,6 +252,14 @@ class LocalLLMEngine:
             config = get_config().llm
         self.config = config
 
+        # Check if llama-cpp-python is available
+        self._llama_available = check_llama_cpp_available()
+        if not self._llama_available:
+            logger.warning(
+                "llama-cpp-python is not installed. LLM features will be disabled. "
+                "Install with: pip install llama-cpp-python"
+            )
+
         # Model instances (LRU ordered)
         self._loaded_models: OrderedDict[str, LlamaModel] = OrderedDict()
 
@@ -240,8 +269,20 @@ class LocalLLMEngine:
             "code": config.code_model_path,
         }
 
+    @property
+    def is_available(self) -> bool:
+        """Check if the LLM engine has llama-cpp-python available."""
+        return self._llama_available
+
     def _get_or_create_model(self, model_type: str) -> LlamaModel:
         """Get or create a model instance."""
+        if not self._llama_available:
+            raise LLMEngineError(
+                "llama-cpp-python is not installed. Install with:\n"
+                "  pip install llama-cpp-python\n\n"
+                "For GPU support, see: https://github.com/abetlen/llama-cpp-python#installation"
+            )
+
         if model_type not in self.MODEL_TYPES:
             raise ValueError(f"Unknown model type: {model_type}. Valid types: {self.MODEL_TYPES}")
 

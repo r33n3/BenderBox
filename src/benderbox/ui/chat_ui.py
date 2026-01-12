@@ -381,6 +381,14 @@ class ChatUI:
         # Print banner
         self.ui.print_banner()
         self.ui.print_info("Type 'help' for commands or ask a question.")
+
+        # Check if LLM is available and show helpful message if not
+        if self._conversation and self._conversation._llm_engine:
+            if not getattr(self._conversation._llm_engine, 'is_available', False):
+                print()
+                self.ui.print_warning("NLP features limited: llama-cpp-python not installed.")
+                self.ui.print_info("Commands like 'analyze', 'status', 'help' work fine.")
+                self.ui.print_info("For full NLP: pip install llama-cpp-python")
         print()
 
         while self._running:
