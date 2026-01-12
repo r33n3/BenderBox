@@ -34,14 +34,30 @@ def main():
     except ImportError as e:
         print(f"Error: {e}")
         print()
-        print("Missing dependencies. Install with:")
-        print("    pip install -e .")
+        print("Missing dependencies. You can either:")
         print()
-        print("For NLP features (interactive chat with local LLM):")
-        print("    pip install -e '.[nlp]'")
+        print("  1. Run the setup wizard (recommended):")
+        print("       python setup_wizard.py")
         print()
-        print("Note: NLP features require Python 3.12 or earlier for pre-built wheels.")
-        print("On Python 3.13+, you need Visual Studio Build Tools to compile llama-cpp-python.")
+        print("  2. Install manually:")
+        print("       pip install -e .")
+        print()
+        print("  3. Install with NLP features:")
+        print("       pip install -e '.[nlp]'")
+        print()
+
+        # Check if setup_wizard.py exists and offer to run it
+        setup_wizard_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "setup_wizard.py")
+        if os.path.exists(setup_wizard_path):
+            try:
+                response = input("Run setup wizard now? [Y/n]: ").strip().lower()
+                if response != 'n':
+                    import subprocess
+                    subprocess.run([sys.executable, setup_wizard_path])
+                    sys.exit(0)
+            except (EOFError, KeyboardInterrupt):
+                pass
+
         sys.exit(1)
 
 

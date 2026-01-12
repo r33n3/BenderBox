@@ -29,6 +29,23 @@ curl -L -o vs_buildtools.exe "https://aka.ms/vs/17/release/vs_buildtools.exe"
 
 After installing Build Tools, open a **new terminal** to pick up the environment changes.
 
+### Interactive Setup (Recommended)
+
+```bash
+# Clone repository
+git clone <repository-url>
+cd BenderBox
+
+# Run the setup wizard
+python setup_wizard.py
+```
+
+The setup wizard will:
+- Check your Python version and compatibility
+- Detect if build tools are installed (Windows)
+- Let you select which features to install
+- Handle dependencies automatically
+
 ### Quick Install
 
 ```bash
