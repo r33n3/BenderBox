@@ -2990,8 +2990,8 @@ def context_scan(ctx, directory: str, recursive: bool, pattern: tuple, output: O
     DIRECTORY: Directory to scan
 
     Examples:
-        benderbox context scan ./prompts
-        benderbox context scan ./skills --pattern "*.md" --pattern "*.yaml"
+        benderbox context scan ./examples/prompts
+        benderbox context scan ./examples/skills --pattern "*.md" --pattern "*.yaml"
         benderbox context scan . -r -o scan_report.md -f markdown
     """
     from pathlib import Path

@@ -190,10 +190,10 @@ python bb.py mcp interrogate "npx @modelcontextprotocol/server-filesystem ." --p
 
 ```bash
 # Analyze a skill or prompt file
-python bb.py context analyze path/to/skills.md
+python bb.py context analyze examples/skills/analyze_mcp_server.md
 
 # Scan a directory for risky instructions
-python bb.py context scan ./prompts --recursive
+python bb.py context scan ./examples/prompts --recursive
 ```
 
 ---

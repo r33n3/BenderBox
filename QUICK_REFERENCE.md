@@ -318,7 +318,10 @@ BenderBox/
 ├── benderbox_interactive.py       # UI (optional)
 ├── benderbox_dynamic_tests.py     # Tests
 │
-├── skills/                      # Agent behaviors
+├── examples/                    # Example files for analysis
+│   ├── skills/                  # AI assistant instruction templates
+│   ├── mcp_servers/             # Sample MCP server code
+│   └── prompts/                 # System prompt examples
 ├── models/                      # GGUF files
 ├── sandbox_logs/                # JSON reports
 └── docs/                        # Documentation
@@ -370,7 +373,7 @@ pip install mcp
 - **Reports:** `./sandbox_logs/benderbox_*.json`
 - **Models:** `./models/*.gguf`
 - **Docs:** `./docs/`
-- **Skills:** `./skills/`
+- **Examples:** `./examples/` (skills, MCP servers, prompts)
 
 ---
 

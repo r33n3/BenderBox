@@ -964,8 +964,7 @@ FILES & LOCATIONS
 -----------------
   Reports:      ./sandbox_logs/benderbox_*.json
   Models:       ./models/*.gguf
-  MCP Servers:  ./*.py
-  Skills:       ./skills/*.md
+  Examples:     ./examples/ (skills, MCP servers, prompts)
   Docs:         ./README.md
                 ./QUICK_REFERENCE.md
                 ./INFRASTRUCTURE_ANALYSIS_GUIDE.md

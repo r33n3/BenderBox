@@ -17,7 +17,7 @@ Perform security analysis of Markdown skill files to detect malicious patterns i
 
 ## Inputs
 - **skill_path** (string, required): Path to Markdown skill file
-  - Examples: `./skills/my_skill.md`, `custom_skill.md`
+  - Examples: `./examples/skills/my_skill.md`, `custom_skill.md`
 - **profile** (string, optional): Analysis depth
   - `infra-quick` - Fast pattern analysis (~5-10s) [DEFAULT]
   - `infra-standard` - Standard security checks (~15-30s)
@@ -217,7 +217,7 @@ Hidden or disguised instructions:
 - Check the file path is correct
 - Ensure the file exists: `ls [skill_path]`
 - Verify file is a Markdown (.md) file
-- Skills are typically in `./skills/` directory
+- Skills are typically in `./examples/skills/` directory
 ```
 
 ### If not a valid Markdown file:
