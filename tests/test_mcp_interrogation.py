@@ -16,6 +16,7 @@ from benderbox.analyzers.mcp_interrogation import (
     MCPInterrogationScore,
     SECURITY_TESTS,
     QUICK_TESTS,
+    STANDARD_TESTS,
     interrogate_mcp_server,
 )
 
@@ -159,6 +160,17 @@ class TestSecurityTests:
         all_ids = {t.id for t in SECURITY_TESTS}
         for quick_id in QUICK_TESTS:
             assert quick_id in all_ids
+
+    def test_standard_tests_subset(self):
+        """Test that standard tests are a subset of all tests."""
+        all_ids = {t.id for t in SECURITY_TESTS}
+        for standard_id in STANDARD_TESTS:
+            assert standard_id in all_ids
+
+    def test_standard_tests_includes_quick(self):
+        """Test that standard tests include all quick tests."""
+        for quick_id in QUICK_TESTS:
+            assert quick_id in STANDARD_TESTS
 
     def test_injection_tests_exist(self):
         """Test that injection tests exist."""

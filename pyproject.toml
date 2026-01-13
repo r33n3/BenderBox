@@ -36,6 +36,8 @@ dependencies = [
     # Model downloads (URL and Hugging Face support)
     "httpx>=0.25.0",
     "huggingface-hub>=0.20.0",
+    # System information (accurate RAM detection)
+    "psutil>=5.9.0",
 ]
 
 [project.optional-dependencies]

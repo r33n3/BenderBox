@@ -508,7 +508,7 @@ SECURITY_TESTS: List[MCPToolTest] = [
     ),
 ]
 
-# Quick test profile (subset for fast scanning)
+# Quick test profile (subset for fast scanning, ~15 tests)
 QUICK_TESTS = [
     "inj-cmd-001", "inj-cmd-002", "inj-sql-001",
     "trav-001", "trav-004",
@@ -516,6 +516,16 @@ QUICK_TESTS = [
     "exfil-002", "exfil-003",
     "priv-001",
     "disc-002",
+]
+
+# Standard test profile (balanced, ~30 tests)
+STANDARD_TESTS = QUICK_TESTS + [
+    "inj-cmd-003", "inj-cmd-004", "inj-sql-002", "inj-tmpl-001", "inj-tmpl-002",
+    "trav-002", "trav-003", "trav-005",
+    "bound-empty-001", "bound-long-002", "bound-unicode-001", "bound-int-001",
+    "exfil-001", "exfil-004",
+    "priv-002",
+    "disc-001", "disc-003",
 ]
 
 
@@ -586,13 +596,20 @@ class MCPInterrogator:
 
         Args:
             tool: Tool to test.
-            profile: Test profile (quick, full).
+            profile: Test profile (quick, standard, full).
 
         Returns:
             List of applicable tests.
         """
         applicable = []
-        test_ids = set(QUICK_TESTS) if profile == "quick" else None
+
+        # Determine test ID filter based on profile
+        if profile == "quick":
+            test_ids = set(QUICK_TESTS)
+        elif profile == "standard":
+            test_ids = set(STANDARD_TESTS)
+        else:  # "full" or any other value
+            test_ids = None
 
         for test in self.tests:
             # Filter by profile
@@ -766,7 +783,7 @@ class MCPInterrogator:
         Args:
             target: Server target (if not already connected).
             transport: Transport type.
-            profile: Test profile (quick, full).
+            profile: Test profile (quick, standard, full).
             progress_callback: Optional callback(message, percent).
 
         Returns:
@@ -1128,7 +1145,7 @@ async def interrogate_mcp_server(
     Args:
         target: Server target (URL or command).
         transport: Transport type.
-        profile: Test profile (quick, full).
+        profile: Test profile (quick, standard, full).
         progress_callback: Optional progress callback.
 
     Returns:
