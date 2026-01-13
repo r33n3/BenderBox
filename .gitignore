@@ -70,3 +70,7 @@ build/
 *Infrastructure*.md
 *review.md
 nul
+
+# Test artifacts (sprint/phase development tests)
+tests/sprint*_test.py
+tests/phase*_test.py
