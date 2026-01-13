@@ -323,14 +323,33 @@ def cli(ctx, verbose: bool, debug: bool, config: Optional[str]):
 @cli.command()
 @click.pass_context
 def chat(ctx):
-    """Start interactive chat interface."""
+    """
+    Start interactive chat interface for natural language queries.
+
+    REQUIREMENTS:
+        - llama-cpp-python must be installed
+        - A local LLM model must be downloaded and configured
+
+    SETUP:
+        pip install llama-cpp-python
+        benderbox models download tinyllama
+        benderbox models setup
+
+    USE 'benderbox nlp status' to check if NLP features are ready.
+
+    EXAMPLES:
+        benderbox chat                    # Start chat session
+        benderbox -i                      # Alternative interactive mode
+    """
     app: BenderBoxApp = ctx.obj["app"]
     asyncio.run(app.run_chat())
 
 
 @cli.command()
 @click.argument("target")
-@click.option("-p", "--profile", default="standard", help="Analysis profile")
+@click.option("-p", "--profile", default="standard",
+              type=click.Choice(["quick", "standard", "full"]),
+              help="Analysis profile: quick (fast), standard (balanced), full (comprehensive)")
 @click.option("-o", "--output", help="Output file path")
 @click.option("-f", "--format", default="markdown",
               type=click.Choice(["markdown", "json", "html", "csv", "sarif"]),
@@ -778,7 +797,9 @@ def prereq_remove(ctx, name: str):
 # Interrogation command
 @cli.command()
 @click.argument("model_target")
-@click.option("-p", "--profile", default="quick", help="Interrogation profile (quick, standard, full)")
+@click.option("-p", "--profile", default="quick",
+              type=click.Choice(["quick", "standard", "full"]),
+              help="Interrogation profile: quick (fast), standard (balanced), full (comprehensive)")
 @click.option("-c", "--censorship", default="unknown", help="Claimed censorship level")
 @click.option("-o", "--output", help="Output report file path")
 @click.option("-f", "--format", "output_format", default="json",
@@ -1045,7 +1066,9 @@ def interrogate(
 # Behavior analysis command
 @cli.command()
 @click.argument("model_target")
-@click.option("-p", "--profile", default="standard", help="Analysis profile (quick, standard, deep)")
+@click.option("-p", "--profile", default="standard",
+              type=click.Choice(["quick", "standard", "full"]),
+              help="Analysis profile: quick (fast), standard (balanced), full (comprehensive)")
 @click.option("-o", "--output", help="Output report file path")
 @click.pass_context
 def behavior(ctx, model_target: str, profile: str, output: Optional[str]):
@@ -1711,6 +1734,131 @@ def config_show_path(ctx):
 
 
 # Models command group for managing local NLP models
+# NLP Features command group
+@cli.group()
+@click.pass_context
+def nlp(ctx):
+    """Natural Language Processing features and status."""
+    pass
+
+
+@nlp.command("status")
+@click.pass_context
+def nlp_status(ctx):
+    """Show NLP feature status and availability."""
+    from benderbox.ui.terminal import TerminalUI
+
+    ui = TerminalUI()
+
+    print()
+    print("NLP Feature Status")
+    print("=" * 50)
+
+    # Check llama-cpp-python
+    try:
+        from llama_cpp import Llama
+        llama_status = "Available"
+        llama_color = "green"
+    except ImportError:
+        llama_status = "Not installed"
+        llama_color = "yellow"
+
+    # Check sentence-transformers
+    try:
+        import sentence_transformers
+        st_status = "Available"
+    except ImportError:
+        st_status = "Not installed"
+
+    # Check chromadb
+    try:
+        import chromadb
+        chroma_status = "Available"
+    except ImportError:
+        chroma_status = "Not installed"
+
+    # Check mcp
+    try:
+        import mcp
+        mcp_status = "Available"
+    except ImportError:
+        mcp_status = "Not installed"
+
+    print()
+    print("Core NLP Dependencies:")
+    print(f"  llama-cpp-python: {llama_status}")
+    print(f"  sentence-transformers: {st_status}")
+    print(f"  chromadb: {chroma_status}")
+    print(f"  mcp: {mcp_status}")
+
+    # Check configured models
+    from benderbox.utils.config import get_config
+    config = get_config()
+
+    print()
+    print("Configured Models:")
+    if config.llm.analysis_model_path:
+        print(f"  Analysis: {config.llm.analysis_model_path}")
+    else:
+        print("  Analysis: Not configured")
+    if config.llm.code_model_path:
+        print(f"  Code: {config.llm.code_model_path}")
+    else:
+        print("  Code: Not configured")
+
+    print()
+    print("Available Features:")
+    if llama_status == "Available" and config.llm.analysis_model_path:
+        print("  [+] Interactive chat (benderbox chat)")
+        print("  [+] Natural language queries")
+        print("  [+] Model interrogation with local LLM")
+    else:
+        print("  [-] Interactive chat (requires llama-cpp-python + model)")
+        print("  [-] Natural language queries (requires llama-cpp-python + model)")
+
+    if st_status == "Available" and chroma_status == "Available":
+        print("  [+] RAG (Retrieval-Augmented Generation)")
+    else:
+        print("  [-] RAG (requires sentence-transformers + chromadb)")
+
+    print()
+    if llama_status != "Available":
+        print("To enable NLP features:")
+        print("  pip install llama-cpp-python")
+        print("  benderbox models download tinyllama")
+        print("  benderbox models setup")
+
+
+@nlp.command("features")
+@click.pass_context
+def nlp_features(ctx):
+    """List available NLP features and commands."""
+    print()
+    print("NLP Features Overview")
+    print("=" * 50)
+    print()
+    print("INTERACTIVE CHAT:")
+    print("  benderbox chat          - Start interactive chat session")
+    print("  benderbox -i            - Interactive mode with NLP queries")
+    print()
+    print("MODEL MANAGEMENT:")
+    print("  benderbox models list   - List available/downloaded models")
+    print("  benderbox models download <id> - Download a model")
+    print("  benderbox models setup  - Configure default model")
+    print("  benderbox models test   - Test model functionality")
+    print()
+    print("ANALYSIS:")
+    print("  benderbox interrogate   - Test model safety with NLP")
+    print("  benderbox context analyze - Analyze instruction files")
+    print()
+    print("DEPENDENCIES:")
+    print("  Core: llama-cpp-python (local LLM inference)")
+    print("  RAG:  sentence-transformers, chromadb")
+    print("  MCP:  mcp (Model Context Protocol)")
+    print()
+    print("Use 'benderbox nlp status' to check installation status.")
+
+
 @cli.group()
 @click.pass_context
 def models(ctx):
@@ -1993,6 +2141,106 @@ def models_info(ctx, model_id: str):
     print(f"Use case: {model.use_case}")
     print()
     print(f"Download: benderbox models download {model_id}")
+
+
+@models.command("test")
+@click.argument("model_path", required=False)
+@click.option("--verbose", "-v", is_flag=True, help="Show detailed output")
+@click.pass_context
+def models_test(ctx, model_path: Optional[str], verbose: bool):
+    """
+    Test a local model to verify it works correctly.
+
+    MODEL_PATH is optional - uses configured default model if not provided.
+
+    Examples:
+        benderbox models test
+        benderbox models test ./models/tinyllama.gguf
+        benderbox models test --verbose
+    """
+    import time
+    from benderbox.ui.terminal import TerminalUI
+
+    ui = TerminalUI()
+
+    # Determine model path
+    if not model_path:
+        from benderbox.utils.config import get_config
+        config = get_config()
+        model_path = config.llm.analysis_model_path
+        if not model_path:
+            ui.print_error("No model path provided and no default model configured.")
+            ui.print_info("Download a model first: benderbox models download tinyllama")
+            return
+
+    # Check file exists
+    from pathlib import Path
+    model_file = Path(model_path)
+    if not model_file.exists():
+        ui.print_error(f"Model file not found: {model_path}")
+        return
+
+    print()
+    print("Model Test")
+    print("=" * 40)
+    print(f"Model: {model_file.name}")
+    print(f"Path: {model_path}")
+    print(f"Size: {model_file.stat().st_size / (1024*1024):.1f} MB")
+    print()
+
+    # Check if llama-cpp-python is available
+    try:
+        from llama_cpp import Llama
+    except ImportError:
+        ui.print_error("llama-cpp-python is not installed.")
+        ui.print_info("Install with: pip install llama-cpp-python")
+        return
+
+    # Load and test
+    print("Loading model...")
+    start_time = time.time()
+
+    try:
+        llm = Llama(
+            model_path=str(model_path),
+            n_ctx=512,
+            n_threads=4,
+            verbose=verbose,
+        )
+        load_time = time.time() - start_time
+        print(f"Load time: {load_time:.1f}s")
+        print()
+
+        # Run test inference
+        print("Running test inference...")
+        test_prompt = "Hello, I am a"
+        start_time = time.time()
+
+        output = llm(
+            test_prompt,
+            max_tokens=20,
+            stop=["\n", "."],
+            echo=False,
+        )
+
+        inference_time = time.time() - start_time
+        response = output["choices"][0]["text"].strip()
+
+        print(f"Prompt: '{test_prompt}'")
+        print(f"Response: '{response}'")
+        print(f"Inference time: {inference_time:.2f}s")
+        print()
+
+        # Success
+        ui.print_success("Model test PASSED")
+        print()
+        print("The model loaded and generated text successfully.")
+
+    except Exception as e:
+        ui.print_error(f"Model test FAILED: {e}")
+        if verbose:
+            import traceback
+            traceback.print_exc()
 
 
 # MCP Server Analysis command group
@@ -2499,9 +2747,9 @@ def mcp_call(ctx, target: str, tool_name: str, tool_args: Optional[str], transpo
 @click.option("--transport", "-t", default="auto",
               type=click.Choice(["auto", "http", "stdio"]),
               help="Transport type")
-@click.option("--profile", "-p", default="full",
-              type=click.Choice(["quick", "full"]),
-              help="Test profile: quick (~15 tests) or full (~50 tests)")
+@click.option("--profile", "-p", default="standard",
+              type=click.Choice(["quick", "standard", "full"]),
+              help="Test profile: quick (~15 tests), standard (~30 tests), full (~50 tests)")
 @click.option("--output", "-o", help="Output report file path")
 @click.option("--format", "-f", "output_format", default="text",
               type=click.Choice(["text", "markdown", "json"]),
