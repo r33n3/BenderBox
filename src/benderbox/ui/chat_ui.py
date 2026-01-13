@@ -6,7 +6,9 @@ with command handling and context awareness.
 """
 
 import asyncio
+import glob
 import logging
+import os
 import shlex
 from dataclasses import dataclass
 from datetime import datetime
@@ -16,6 +18,129 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from benderbox.ui.terminal import TerminalUI, ProgressSpinner
 
 logger = logging.getLogger(__name__)
+
+# Tab completion support
+try:
+    import readline
+    READLINE_AVAILABLE = True
+except ImportError:
+    try:
+        import pyreadline3 as readline
+        READLINE_AVAILABLE = True
+    except ImportError:
+        READLINE_AVAILABLE = False
+        readline = None
+
+
+class BenderBoxCompleter:
+    """Tab completion for BenderBox interactive mode."""
+
+    # Commands and subcommands
+    COMMANDS = [
+        "help", "help mcp", "help context", "help models", "help examples",
+        "status", "exit", "quit", "clear",
+        "analyze", "interrogate", "compare",
+        "mcp tools", "mcp interrogate", "mcp analyze", "mcp call",
+        "context analyze", "context scan", "context output",
+        "models list", "models download", "models test", "models setup",
+        "nlp status", "nlp features",
+        "search", "reports", "export",
+    ]
+
+    # Profile options
+    PROFILES = ["--profile quick", "--profile standard", "--profile full"]
+
+    def __init__(self):
+        self.matches: List[str] = []
+
+    def complete(self, text: str, state: int) -> Optional[str]:
+        """Return the next possible completion for 'text'."""
+        if state == 0:
+            # Get the full line buffer for context
+            line = readline.get_line_buffer() if readline else text
+
+            if not line.strip():
+                # Empty line - show all commands
+                self.matches = self.COMMANDS[:]
+            elif any(line.startswith(cmd) for cmd in ["analyze ", "context analyze ", "mcp analyze "]):
+                # File path completion
+                self.matches = self._complete_path(text)
+            elif "--profile" in line and text == "":
+                # Profile value completion
+                self.matches = ["quick", "standard", "full"]
+            elif text.startswith("--"):
+                # Option completion
+                self.matches = [opt for opt in self.PROFILES if opt.startswith(text)]
+            else:
+                # Command completion
+                self.matches = [cmd for cmd in self.COMMANDS if cmd.startswith(line)]
+                # Also complete partial paths
+                if not self.matches:
+                    self.matches = self._complete_path(text)
+
+        try:
+            return self.matches[state]
+        except IndexError:
+            return None
+
+    def _complete_path(self, text: str) -> List[str]:
+        """Complete file paths."""
+        if not text:
+            text = "./"
+
+        # Expand ~ to home directory
+        expanded = os.path.expanduser(text)
+
+        # Get matching paths
+        if os.path.isdir(expanded):
+            pattern = os.path.join(expanded, "*")
+        else:
+            pattern = expanded + "*"
+
+        paths = glob.glob(pattern)
+
+        # Format results
+        results = []
+        for path in paths:
+            if os.path.isdir(path):
+                results.append(path + os.sep)
+            else:
+                results.append(path)
+
+        return results[:20]  # Limit results
+
+
+def setup_tab_completion() -> None:
+    """Set up tab completion for the interactive mode."""
+    if not READLINE_AVAILABLE:
+        return
+
+    completer = BenderBoxCompleter()
+    readline.set_completer(completer.complete)
+
+    # Set completion delimiters (don't break on these chars)
+    readline.set_completer_delims(' \t\n;')
+
+    # Enable tab completion
+    if 'libedit' in readline.__doc__:
+        # macOS uses libedit
+        readline.parse_and_bind("bind ^I rl_complete")
+    else:
+        # Linux/Windows
+        readline.parse_and_bind("tab: complete")
+
+    # Enable history
+    try:
+        history_file = os.path.expanduser("~/.benderbox/history")
+        os.makedirs(os.path.dirname(history_file), exist_ok=True)
+        try:
+            readline.read_history_file(history_file)
+        except FileNotFoundError:
+            pass
+        import atexit
+        atexit.register(readline.write_history_file, history_file)
+    except Exception:
+        pass  # History is optional
 
 
 class CommandType(Enum):
@@ -1125,9 +1250,16 @@ LLM Used: {'Yes' if result.get('llm_used') else 'No (pattern-based)'}
         """Run the interactive chat loop."""
         self._running = True
 
+        # Set up tab completion
+        setup_tab_completion()
+
         # Print banner
         self.ui.print_banner()
         self.ui.print_info("Type 'help' for commands or ask a question.")
+        if READLINE_AVAILABLE:
+            self.ui.print_info("Tab completion enabled for commands and file paths.")
+        else:
+            self.ui.print_info("Tip: pip install pyreadline3 for tab completion (Windows)")
 
         # Check if LLM is available and show helpful message if not
         if self._conversation and self._conversation._llm_engine:

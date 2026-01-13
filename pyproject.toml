@@ -65,8 +65,12 @@ web = [
     "fastapi>=0.100.0",
     "uvicorn>=0.23.0",
 ]
+# Windows tab completion (Unix has readline built-in)
+readline = [
+    "pyreadline3>=3.4.0; sys_platform == 'win32'",
+]
 all = [
-    "benderbox[nlp,tui,web]",
+    "benderbox[nlp,tui,web,readline]",
 ]
 
 [project.urls]
