@@ -376,51 +376,204 @@ class ResponseGenerator:
         return "\n".join(lines)
 
     async def _format_help(self, context: ResponseContext) -> str:
-        """Format help message."""
+        """Format help message with optional sub-topic."""
+        query = context.user_query.lower() if context.user_query else ""
+
+        # Check for sub-help topics
+        if "help mcp" in query or "mcp help" in query:
+            return self._get_mcp_help()
+        elif "help context" in query or "context help" in query or "help prompt" in query:
+            return self._get_context_help()
+        elif "help model" in query or "model help" in query or "help analyze" in query:
+            return self._get_model_help()
+        elif "help example" in query or "example" in query:
+            return self._get_examples_help()
+
         return """**BenderBox - AI Security Analysis Platform**
 
 **Core Commands:**
 - `status` - Show system status
 - `help` - Show this help message
+- `help mcp` - MCP server analysis help
+- `help context` - Context/prompt analysis help
+- `help models` - Model analysis help
+- `help examples` - Show example files
 - `exit` / `quit` - Exit BenderBox
 
-**MCP Server Analysis:**
-- `mcp tools <target>` - List tools from MCP server
-- `mcp interrogate <target>` - Run security tests on MCP server
-- `mcp analyze <url>` - Static analysis of MCP server code
-- `mcp call <target> <tool>` - Call a specific tool
+**Quick Start - Try These Examples:**
+```
+context analyze examples/prompts/risky_system_prompt.md
+mcp analyze examples/mcp_servers/sample_vulnerable_server.py
+context scan examples/skills/
+```
 
-**Context/Instruction Analysis:**
-- `context analyze <file>` - Analyze instruction file for risks
-- `context scan <dir>` - Scan directory for risky files
-- `context output <text>` - Analyze model output
-
-**Model Interrogation:**
-- `interrogate <target>` - Test model for safety/censorship
-- `analyze <target>` - Analyze model metadata
-- `compare <a> <b>` - Compare two models
+**Analysis Types:**
+1. **MCP Servers** - Test MCP servers for vulnerabilities
+2. **Context/Prompts** - Analyze instruction files for risks
+3. **Models** - Test AI models for safety/censorship
 
 **Natural Language:**
-- "Analyze model.gguf for security issues"
+- "Analyze this file for security issues"
 - "Is this MCP server safe?"
-- "What are jailbreak techniques?"
+- "What jailbreak patterns were found?"
 - "Explain why the risk score is high"
 
+**Profiles:** quick | standard | full
+
+Type `help <topic>` for detailed help on: mcp, context, models, examples
+"""
+
+    def _get_mcp_help(self) -> str:
+        """Get MCP-specific help."""
+        return """**MCP Server Security Analysis**
+
+**Commands:**
+- `mcp tools <target>` - List tools from MCP server
+- `mcp interrogate <target>` - Run security tests
+- `mcp analyze <url>` - Static analysis of server code
+- `mcp call <target> <tool>` - Call a specific tool
+
 **Target Formats:**
-- MCP STDIO: `npx @modelcontextprotocol/server-filesystem .`
-- MCP HTTP: `https://mcp.example.com/api`
-- API Model: `openai:gpt-4-turbo`, `anthropic:claude-3-sonnet`
-- Local Model: `./models/llama-7b.gguf`
+- STDIO: `npx @modelcontextprotocol/server-filesystem .`
+- HTTP: `https://mcp.example.com/api`
+- Local: `node server.js`
 
-**Profiles:** quick | standard | comprehensive | adversarial
+**Try This Example:**
+```
+mcp analyze examples/mcp_servers/sample_vulnerable_server.py
+```
+This sample has intentional vulnerabilities (command injection, path traversal, SQL injection) that BenderBox will detect.
 
-**Examples:**
+**Profiles:**
+- `quick` - Fast scan (~15 tests)
+- `standard` - Balanced (~30 tests)
+- `full` - Comprehensive (~50 tests)
+
+**Example Commands:**
 ```
 mcp tools "npx @modelcontextprotocol/server-filesystem ."
 mcp interrogate "npx @server" --profile quick
-context analyze skills.md
-interrogate openai:gpt-4-turbo --profile quick
+mcp analyze https://github.com/org/mcp-server
 ```
+"""
+
+    def _get_context_help(self) -> str:
+        """Get context/prompt analysis help."""
+        return """**Context & Prompt Security Analysis**
+
+**Commands:**
+- `context analyze <file>` - Analyze instruction file
+- `context scan <dir>` - Scan directory for risky files
+- `context output <text>` - Analyze model output
+
+**What It Detects:**
+- Jailbreak instructions ("ignore previous instructions")
+- Credential exposure (API keys, passwords)
+- Code execution risks ("execute any code")
+- Data exfiltration patterns
+- Safety bypass instructions
+
+**Try These Examples:**
+```
+# Safe prompt - should have no findings
+context analyze examples/prompts/safe_system_prompt.md
+
+# Risky prompt - should flag CRITICAL issues
+context analyze examples/prompts/risky_system_prompt.md
+
+# Scan all skill files
+context scan examples/skills/ --pattern "*.md"
+```
+
+**File Types:**
+- System prompts (`.md`, `.txt`)
+- Skill definitions (`.md`, `.yaml`)
+- Agent instructions
+- Model outputs
+
+**Risk Levels:** SAFE | LOW | MEDIUM | HIGH | CRITICAL
+"""
+
+    def _get_model_help(self) -> str:
+        """Get model analysis help."""
+        return """**AI Model Security Analysis**
+
+**Commands:**
+- `analyze <model>` - Analyze model for security
+- `interrogate <target>` - Test model safety/censorship
+- `compare <a> <b>` - Compare two models
+
+**Target Formats:**
+- Local GGUF: `./models/llama-7b.gguf`
+- API Models: `openai:gpt-4-turbo`, `anthropic:claude-3-sonnet`
+
+**Get a Test Model:**
+```
+# Download TinyLlama (~700MB)
+python bb.py models download tinyllama
+
+# Test the model works
+python bb.py models test
+```
+
+**Example Commands:**
+```
+analyze ./models/tinyllama.gguf --profile quick
+interrogate openai:gpt-4-turbo --profile quick
+compare model1.gguf model2.gguf
+```
+
+**Profiles:**
+- `quick` - Fast validation (~15 tests)
+- `standard` - Balanced analysis (~50 tests)
+- `full` - Comprehensive audit (~128 tests)
+
+**What It Tests:**
+- Jailbreak resistance
+- Content filtering
+- Bias detection
+- Safety guardrails
+"""
+
+    def _get_examples_help(self) -> str:
+        """Get examples help."""
+        return """**BenderBox Examples**
+
+Example files are in the `examples/` folder:
+
+**Prompt Analysis Examples:**
+```
+examples/prompts/
+├── safe_system_prompt.md      # Well-designed prompt
+└── risky_system_prompt.md     # Dangerous patterns (for testing)
+```
+Try: `context analyze examples/prompts/risky_system_prompt.md`
+
+**MCP Server Examples:**
+```
+examples/mcp_servers/
+└── sample_vulnerable_server.py  # Server with vulnerabilities
+```
+Try: `mcp analyze examples/mcp_servers/sample_vulnerable_server.py`
+
+**Skill File Examples:**
+```
+examples/skills/
+├── analyze_gguf_model.md
+├── analyze_mcp_server.md
+├── analyze_skill_security.md
+└── ... (7 skill templates)
+```
+Try: `context analyze examples/skills/analyze_mcp_server.md`
+
+**Quick Test All Examples:**
+```
+context analyze examples/prompts/risky_system_prompt.md
+mcp analyze examples/mcp_servers/sample_vulnerable_server.py
+context scan examples/skills/
+```
+
+See `examples/README.md` for full documentation.
 """
 
     async def _answer_general_question(self, context: ResponseContext) -> str:
