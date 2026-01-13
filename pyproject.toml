@@ -26,7 +26,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 
-# Core dependencies - minimal for CLI and prerequisites
+# Core dependencies
 dependencies = [
     "pyyaml>=6.0",
     "aiosqlite>=0.19.0",
@@ -39,10 +39,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# ML/NLP dependencies (require numpy, may not work on Python 3.14+)
+# NLP dependencies for interactive chat with local LLM
+# NOTE: llama-cpp-python requires Python <=3.12 for pre-built wheels
+# On Python 3.13+, you need Visual Studio Build Tools to compile from source
 nlp = [
-    "mcp>=0.1.0",
     "llama-cpp-python>=0.2.0",
+    "mcp>=0.1.0",
     "chromadb>=0.4.0",
     "sentence-transformers>=2.2.0",
 ]
@@ -66,9 +68,10 @@ all = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/benderbox"
-Repository = "https://github.com/yourusername/benderbox"
-Documentation = "https://github.com/yourusername/benderbox#readme"
+Homepage = "https://github.com/r33n3/BenderBox"
+Repository = "https://github.com/r33n3/BenderBox"
+Documentation = "https://github.com/r33n3/BenderBox#readme"
+Issues = "https://github.com/r33n3/BenderBox/issues"
 
 [project.scripts]
 # v3.0 main entry point

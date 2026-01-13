@@ -556,3 +556,284 @@ Summary:"""
         if winner:
             return f"{winner} has better security posture. New issues: {len(finding_diff.only_in_b)}, Resolved: {len(finding_diff.only_in_a)}."
         return f"Security comparison between {target_a} and {target_b} shows similar risk levels."
+
+    async def compare_models(
+        self,
+        model_paths: List[str],
+        analysis_bridge=None,
+        profile: str = "quick",
+    ) -> RankingResult:
+        """
+        Compare multiple model files by running analysis on each.
+
+        Args:
+            model_paths: List of paths to model files.
+            analysis_bridge: AnalysisBridge for running analyses.
+            profile: Analysis profile to use.
+
+        Returns:
+            RankingResult with models ranked by safety.
+        """
+        if not analysis_bridge:
+            raise ValueError("analysis_bridge is required for model comparison")
+
+        results = []
+        for path in model_paths:
+            try:
+                result = await analysis_bridge.analyze_model(path, profile)
+                if result:
+                    results.append(result)
+            except Exception as e:
+                logger.warning(f"Failed to analyze {path}: {e}")
+                # Add placeholder result
+                results.append({
+                    "target_name": path,
+                    "summary": {"risk": {"score": 100, "level": "unknown"}},
+                    "results": [],
+                    "error": str(e),
+                })
+
+        return await self.rank_targets(results)
+
+    async def compare_reports(
+        self,
+        report_ids: List[str],
+        report_db=None,
+    ) -> RankingResult:
+        """
+        Compare multiple stored reports.
+
+        Args:
+            report_ids: List of report IDs to compare.
+            report_db: ReportDatabase for retrieving reports.
+
+        Returns:
+            RankingResult with reports ranked.
+        """
+        if not report_db:
+            raise ValueError("report_db is required for report comparison")
+
+        results = []
+        for report_id in report_ids:
+            try:
+                report = await report_db.get_report(report_id)
+                if report:
+                    results.append(report)
+            except Exception as e:
+                logger.warning(f"Failed to get report {report_id}: {e}")
+
+        return await self.rank_targets(results)
+
+    async def detect_drift(
+        self,
+        current_result: Dict[str, Any],
+        baseline_id: str,
+        report_db=None,
+        thresholds: Optional[Dict[str, float]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Detect behavioral drift from a baseline analysis.
+
+        Compares current analysis against a historical baseline to identify:
+        - Score changes beyond threshold
+        - New/resolved findings
+        - Category distribution changes
+        - Trend direction
+
+        Args:
+            current_result: Current analysis result.
+            baseline_id: Report ID of the baseline analysis.
+            report_db: ReportDatabase for retrieving baseline.
+            thresholds: Custom thresholds for drift detection.
+
+        Returns:
+            Dict with drift analysis results.
+        """
+        if not report_db:
+            raise ValueError("report_db is required for drift detection")
+
+        # Default thresholds
+        default_thresholds = {
+            "score_change": 10.0,  # Points
+            "new_findings_ratio": 0.2,  # 20% new findings
+            "category_change_count": 2,  # Number of new categories
+        }
+        thresholds = {**default_thresholds, **(thresholds or {})}
+
+        # Get baseline
+        baseline = await report_db.get_report(baseline_id)
+        if not baseline:
+            return {
+                "has_drift": False,
+                "error": f"Baseline report {baseline_id} not found",
+                "drift_indicators": [],
+            }
+
+        # Compare
+        comparison = await self.compare_analyses(baseline, current_result)
+
+        drift_indicators = []
+
+        # Check score drift
+        risk_metric = next(
+            (m for m in comparison.metrics if m.name == "risk_score"), None
+        )
+        if risk_metric:
+            score_change = abs(risk_metric.difference)
+            if score_change >= thresholds["score_change"]:
+                direction = "increased" if risk_metric.difference > 0 else "decreased"
+                drift_indicators.append({
+                    "type": "score_drift",
+                    "description": f"Risk score {direction} by {score_change:.1f} points",
+                    "baseline_value": risk_metric.target_a_value,
+                    "current_value": risk_metric.target_b_value,
+                    "change": risk_metric.difference,
+                    "severity": "high" if score_change >= 20 else "medium",
+                    "trend": risk_metric.trend.value,
+                })
+
+        # Check findings drift
+        if comparison.finding_diff:
+            baseline_count = len(comparison.finding_diff.common) + len(comparison.finding_diff.only_in_a)
+            new_ratio = len(comparison.finding_diff.only_in_b) / max(baseline_count, 1)
+
+            if new_ratio >= thresholds["new_findings_ratio"]:
+                drift_indicators.append({
+                    "type": "findings_drift",
+                    "description": f"{len(comparison.finding_diff.only_in_b)} new findings detected",
+                    "new_findings": comparison.finding_diff.only_in_b[:5],
+                    "resolved_findings": comparison.finding_diff.only_in_a[:5],
+                    "severity": "high" if new_ratio >= 0.4 else "medium",
+                })
+
+            # Check for severity changes
+            if comparison.finding_diff.severity_changes:
+                escalations = [
+                    c for c in comparison.finding_diff.severity_changes
+                    if self._is_severity_escalation(c["before"], c["after"])
+                ]
+                if escalations:
+                    drift_indicators.append({
+                        "type": "severity_escalation",
+                        "description": f"{len(escalations)} findings escalated in severity",
+                        "changes": escalations[:3],
+                        "severity": "high",
+                    })
+
+        # Statistical significance (simple check)
+        is_significant = len(drift_indicators) > 0 and any(
+            d.get("severity") == "high" for d in drift_indicators
+        )
+
+        # Trend detection
+        trend = TrendDirection.STABLE
+        if drift_indicators:
+            if risk_metric and risk_metric.difference > 0:
+                trend = TrendDirection.DEGRADING
+            elif risk_metric and risk_metric.difference < 0:
+                trend = TrendDirection.IMPROVING
+
+        return {
+            "has_drift": len(drift_indicators) > 0,
+            "is_significant": is_significant,
+            "drift_indicators": drift_indicators,
+            "trend": trend.value,
+            "baseline_id": baseline_id,
+            "baseline_target": baseline.get("target_name", "unknown"),
+            "current_target": current_result.get("target_name", "unknown"),
+            "comparison": {
+                "score_change": risk_metric.difference if risk_metric else 0,
+                "new_findings": len(comparison.finding_diff.only_in_b) if comparison.finding_diff else 0,
+                "resolved_findings": len(comparison.finding_diff.only_in_a) if comparison.finding_diff else 0,
+            },
+            "recommendations": comparison.recommendations,
+        }
+
+    async def get_historical_trend(
+        self,
+        target_name: str,
+        report_db=None,
+        limit: int = 10,
+    ) -> Dict[str, Any]:
+        """
+        Analyze trend over historical reports for a target.
+
+        Args:
+            target_name: Name of the target.
+            report_db: ReportDatabase for retrieving reports.
+            limit: Maximum number of historical reports.
+
+        Returns:
+            Dict with trend analysis.
+        """
+        if not report_db:
+            raise ValueError("report_db is required for trend analysis")
+
+        # Get report history
+        from benderbox.storage.report_db import ReportFilters
+        filters = ReportFilters(target_name=target_name, limit=limit)
+        summaries = await report_db.list_reports(filters)
+
+        if len(summaries) < 2:
+            return {
+                "has_trend": False,
+                "message": "Not enough historical data for trend analysis",
+                "data_points": len(summaries),
+            }
+
+        # Extract scores over time
+        data_points = [
+            {
+                "timestamp": s.timestamp.isoformat(),
+                "score": s.risk_score,
+                "level": s.risk_level,
+                "findings": s.finding_count,
+            }
+            for s in summaries
+        ]
+
+        # Calculate trend
+        scores = [s.risk_score for s in summaries]
+        first_half = sum(scores[:len(scores)//2]) / (len(scores)//2)
+        second_half = sum(scores[len(scores)//2:]) / max(len(scores) - len(scores)//2, 1)
+
+        if second_half < first_half - 5:
+            trend = TrendDirection.IMPROVING
+            trend_description = "Security posture is improving over time"
+        elif second_half > first_half + 5:
+            trend = TrendDirection.DEGRADING
+            trend_description = "Security posture is degrading over time"
+        else:
+            trend = TrendDirection.STABLE
+            trend_description = "Security posture is stable"
+
+        # Score statistics
+        import statistics
+        score_stats = {
+            "min": min(scores),
+            "max": max(scores),
+            "mean": statistics.mean(scores),
+            "std_dev": statistics.stdev(scores) if len(scores) > 1 else 0,
+        }
+
+        return {
+            "has_trend": True,
+            "target_name": target_name,
+            "trend": trend.value,
+            "trend_description": trend_description,
+            "data_points": data_points,
+            "score_statistics": score_stats,
+            "total_reports": len(summaries),
+            "first_report": data_points[-1]["timestamp"],
+            "latest_report": data_points[0]["timestamp"],
+        }
+
+    def _is_severity_escalation(self, before: str, after: str) -> bool:
+        """Check if severity changed to a higher level."""
+        order = ["info", "low", "medium", "high", "critical"]
+        try:
+            before_idx = order.index(before.lower())
+            after_idx = order.index(after.lower())
+            return after_idx > before_idx
+        except ValueError:
+            return False

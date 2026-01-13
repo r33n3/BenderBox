@@ -98,7 +98,13 @@ class BenderBoxApp:
         try:
             from benderbox.nlp.llm_engine import LocalLLMEngine
             self._llm_engine = LocalLLMEngine(self.config.llm)
-            logger.info("LLM engine initialized")
+            if self._llm_engine.is_available:
+                logger.info("LLM engine initialized with llama-cpp-python")
+            else:
+                logger.warning(
+                    "LLM engine initialized but llama-cpp-python not available. "
+                    "NLP features will use template-based responses only."
+                )
         except ImportError as e:
             logger.warning(f"LLM engine not available: {e}")
         except Exception as e:
@@ -135,6 +141,7 @@ class BenderBoxApp:
         profile: str = "standard",
         output: Optional[str] = None,
         format: str = "markdown",
+        open_browser: bool = False,
     ) -> Dict[str, Any]:
         """
         Run analysis on a target.
@@ -144,6 +151,7 @@ class BenderBoxApp:
             profile: Analysis profile.
             output: Output path.
             format: Output format.
+            open_browser: Auto-open HTML in browser.
 
         Returns:
             Analysis result dictionary.
@@ -248,6 +256,14 @@ class BenderBoxApp:
 
                     if export_result.success:
                         self.terminal_ui.print_success(f"Exported to: {export_result.path}")
+
+                        # Auto-open in browser for HTML format
+                        if open_browser and fmt == ExportFormat.HTML:
+                            import webbrowser
+                            from pathlib import Path
+                            file_url = Path(export_result.path).as_uri()
+                            webbrowser.open(file_url)
+                            self.terminal_ui.print_info("Opened report in browser")
                     else:
                         self.terminal_ui.print_error(f"Export failed: {export_result.error}")
                 except Exception as e:
@@ -316,12 +332,25 @@ def chat(ctx):
 @click.argument("target")
 @click.option("-p", "--profile", default="standard", help="Analysis profile")
 @click.option("-o", "--output", help="Output file path")
-@click.option("-f", "--format", default="markdown", help="Output format")
+@click.option("-f", "--format", default="markdown",
+              type=click.Choice(["markdown", "json", "html", "csv", "sarif"]),
+              help="Output format")
+@click.option("--open", "open_browser", is_flag=True, help="Auto-open HTML report in browser")
 @click.pass_context
-def analyze(ctx, target: str, profile: str, output: Optional[str], format: str):
-    """Analyze a target for security issues."""
+def analyze(ctx, target: str, profile: str, output: Optional[str], format: str, open_browser: bool):
+    """Analyze a target for security issues.
+
+    Supports multiple output formats:
+    - markdown: Human-readable Markdown report
+    - json: Machine-readable JSON
+    - html: Interactive HTML report with charts
+    - csv: Findings as CSV for spreadsheets
+    - sarif: SARIF format for tool integration
+
+    Use --open with --format html to auto-open in browser.
+    """
     app: BenderBoxApp = ctx.obj["app"]
-    asyncio.run(app.run_analysis(target, profile, output, format))
+    asyncio.run(app.run_analysis(target, profile, output, format, open_browser))
 
 
 @cli.command()
@@ -330,6 +359,129 @@ def status(ctx):
     """Show system status."""
     app: BenderBoxApp = ctx.obj["app"]
     asyncio.run(app.show_status())
+
+
+@cli.command()
+@click.argument("query", nargs=-1, required=True)
+@click.option("--type", "-t", "search_type", default="all",
+              type=click.Choice(["all", "reports", "findings", "knowledge"]),
+              help="Type of search")
+@click.option("--limit", "-l", default=10, help="Maximum results to return")
+@click.pass_context
+def search(ctx, query: tuple, search_type: str, limit: int):
+    """
+    Search reports and findings using semantic search.
+
+    QUERY: Natural language search query (multiple words allowed)
+
+    Examples:
+        benderbox search SQL injection vulnerabilities
+        benderbox search --type findings high severity
+        benderbox search --type reports model analysis
+    """
+    from benderbox.ui.terminal import TerminalUI
+
+    ui = TerminalUI()
+    ui.print_banner()
+
+    query_str = " ".join(query)
+    ui.print_info(f"Searching for: {query_str}")
+    ui.print_info(f"Search type: {search_type}")
+
+    async def do_search():
+        try:
+            from benderbox.nlp.rag import RAGPipeline
+            from benderbox.storage.report_indexer import ReportIndexer
+            from benderbox.storage.vector_store import VectorStore
+
+            vector_store = VectorStore()
+            await vector_store.initialize()
+
+            report_indexer = ReportIndexer(vector_store=vector_store)
+
+            rag = RAGPipeline(report_indexer=report_indexer)
+
+            results = await rag.search(
+                query=query_str,
+                search_type=search_type,
+                top_k=limit,
+            )
+
+            return results
+
+        except ImportError as e:
+            ui.print_error(f"Search requires additional dependencies: {e}")
+            return []
+        except Exception as e:
+            ui.print_error(f"Search failed: {e}")
+            return []
+
+    results = asyncio.run(do_search())
+
+    if not results:
+        ui.print_warning("No results found.")
+        ui.print_info("Try running some analyses first to populate the search index.")
+        return
+
+    # Display results
+    try:
+        from rich.table import Table
+        from rich.panel import Panel
+        from rich.console import Console
+
+        console = Console()
+
+        table = Table(title=f"Search Results ({len(results)} found)")
+        table.add_column("Type", style="bold", width=10)
+        table.add_column("Score", width=8)
+        table.add_column("Name/Target", width=25)
+        table.add_column("Details", width=40)
+
+        type_colors = {"report": "cyan", "finding": "yellow", "knowledge": "green"}
+
+        for result in results:
+            result_type = result.get("type", "unknown")
+            score = result.get("score", 0)
+            metadata = result.get("metadata", {})
+
+            if result_type == "report":
+                name = metadata.get("target_name", "Unknown")
+                details = f"{metadata.get('risk_level', '').upper()} ({metadata.get('risk_score', 0)}/100)"
+            elif result_type == "finding":
+                name = metadata.get("test_name", "Unknown")
+                details = f"[{metadata.get('severity', 'info').upper()}] {metadata.get('category', '')}"
+            else:
+                name = metadata.get("name", "Unknown")
+                details = metadata.get("category", "")
+
+            color = type_colors.get(result_type, "white")
+            table.add_row(
+                f"[{color}]{result_type}[/{color}]",
+                f"{score:.2f}",
+                name[:25] if name else "",
+                details[:40] if details else "",
+            )
+
+        console.print(table)
+
+        # Show top result preview
+        if results:
+            top = results[0]
+            content = top.get("content", "")[:300]
+            if len(top.get("content", "")) > 300:
+                content += "..."
+            console.print(Panel(content, title="Top Result Preview", border_style="dim"))
+
+    except ImportError:
+        # Fallback without rich
+        print(f"\nFound {len(results)} results:\n")
+        for i, result in enumerate(results, 1):
+            result_type = result.get("type", "unknown")
+            score = result.get("score", 0)
+            content = result.get("content", "")[:100]
+            print(f"{i}. [{result_type}] (score: {score:.2f})")
+            print(f"   {content}...")
+            print()
 
 
 @cli.command()
@@ -629,6 +781,10 @@ def prereq_remove(ctx, name: str):
 @click.option("-p", "--profile", default="quick", help="Interrogation profile (quick, standard, full)")
 @click.option("-c", "--censorship", default="unknown", help="Claimed censorship level")
 @click.option("-o", "--output", help="Output report file path")
+@click.option("-f", "--format", "output_format", default="json",
+              type=click.Choice(["json", "markdown", "html"]),
+              help="Output format (default: json)")
+@click.option("--open", "open_browser", is_flag=True, help="Auto-open HTML report in browser")
 @click.option("--no-validate", is_flag=True, help="Skip censorship validation")
 @click.option("-y", "--yes", is_flag=True, help="Skip confirmation for API targets")
 @click.pass_context
@@ -638,6 +794,8 @@ def interrogate(
     profile: str,
     censorship: str,
     output: Optional[str],
+    output_format: str,
+    open_browser: bool,
     no_validate: bool,
     yes: bool,
 ):
@@ -838,8 +996,43 @@ def interrogate(
 
         # Save report if output specified
         if output:
-            report.save(Path(output))
-            ui.print_success(f"Report saved to: {output}")
+            output_path = Path(output)
+
+            # Adjust extension based on format
+            if output_format == "html" and not output_path.suffix.lower() == ".html":
+                output_path = output_path.with_suffix(".html")
+            elif output_format == "markdown" and not output_path.suffix.lower() in (".md", ".markdown"):
+                output_path = output_path.with_suffix(".md")
+
+            # Generate report in specified format
+            if output_format == "html":
+                from benderbox.reporting.html_generator import HTMLReportGenerator
+                html_gen = HTMLReportGenerator()
+                report_dict = report.to_dict()
+                html_content = html_gen.generate(report_dict)
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                output_path.write_text(html_content, encoding="utf-8")
+                ui.print_success(f"HTML report saved to: {output_path}")
+
+                # Auto-open in browser
+                if open_browser:
+                    import webbrowser
+                    file_url = output_path.as_uri()
+                    webbrowser.open(file_url)
+                    ui.print_info("Opened report in browser")
+
+            elif output_format == "markdown":
+                from benderbox.reporting.report_generator import ReportGenerator
+                md_gen = ReportGenerator()
+                report_dict = report.to_dict()
+                md_content = md_gen.generate_markdown(report_dict)
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                output_path.write_text(md_content, encoding="utf-8")
+                ui.print_success(f"Markdown report saved to: {output_path}")
+            else:
+                # Default JSON format
+                report.save(output_path)
+                ui.print_success(f"Report saved to: {output_path}")
 
     except ImportError as e:
         ui.print_error(f"Missing dependency: {e}")
@@ -847,6 +1040,425 @@ def interrogate(
     except Exception as e:
         ui.print_error(f"Interrogation failed: {e}")
         logger.exception("Interrogation error")
+
+
+# Behavior analysis command
+@cli.command()
+@click.argument("model_target")
+@click.option("-p", "--profile", default="standard", help="Analysis profile (quick, standard, deep)")
+@click.option("-o", "--output", help="Output report file path")
+@click.pass_context
+def behavior(ctx, model_target: str, profile: str, output: Optional[str]):
+    """
+    Perform behavioral analysis on a model.
+
+    MODEL_TARGET can be a local file path or API target.
+
+    Tests the model's behavioral patterns including:
+    - Safety response analysis
+    - Jailbreak resistance
+    - Capability assessment
+    - Response consistency
+    """
+    import asyncio
+    from benderbox.ui.terminal import TerminalUI
+
+    ui = TerminalUI()
+    ui.print_banner()
+
+    ui.print_info(f"Analyzing behavior: {model_target}")
+    ui.print_info(f"Profile: {profile}")
+    print()
+
+    async def do_behavior_analysis():
+        try:
+            from benderbox.nlp.analysis_bridge import AnalysisBridge
+            from rich.table import Table
+            from rich.console import Console
+            from rich.panel import Panel
+
+            console = Console()
+            bridge = AnalysisBridge()
+
+            def progress_cb(msg):
+                ui.print_info(msg)
+
+            result = await bridge.analyze_behavior(
+                target=model_target,
+                profile=profile,
+                progress_callback=progress_cb,
+            )
+
+            print()
+
+            # Display results
+            profile_data = result.get("profile", {})
+            summary = result.get("summary", {})
+
+            # Summary table
+            table = Table(title="Behavior Analysis Results")
+            table.add_column("Metric", style="cyan")
+            table.add_column("Value", style="bold")
+
+            table.add_row("Safety Score", f"{profile_data.get('overall_safety_score', 0):.1f}/100")
+            table.add_row("Risk Level", summary.get("risk", {}).get("level", "unknown").upper())
+            table.add_row("Safe Outputs", f"{profile_data.get('safe_outputs', 0)}/{profile_data.get('total_outputs', 0)}")
+            table.add_row("Jailbreak Rate", f"{profile_data.get('jailbreak_success_rate', 0) * 100:.1f}%")
+
+            console.print(table)
+
+            # Capabilities table if available
+            capabilities = result.get("capabilities", {})
+            if capabilities:
+                print()
+                cap_table = Table(title="Capability Assessment")
+                cap_table.add_column("Capability", style="cyan")
+                cap_table.add_column("Score", style="bold")
+                cap_table.add_column("Tests", style="dim")
+
+                for cap_name, cap_data in capabilities.items():
+                    score_pct = cap_data.get("score", 0) * 100
+                    tests = f"{cap_data.get('tests_passed', 0)}/{cap_data.get('tests_total', 0)}"
+                    cap_table.add_row(cap_name.replace("_", " ").title(), f"{score_pct:.0f}%", tests)
+
+                console.print(cap_table)
+
+            # Risk distribution
+            risk_dist = profile_data.get("risk_distribution", {})
+            if risk_dist:
+                print()
+                risk_table = Table(title="Risk Distribution")
+                risk_table.add_column("Level", style="bold")
+                risk_table.add_column("Count")
+
+                for level, count in risk_dist.items():
+                    color = {"low": "green", "medium": "yellow", "high": "red", "critical": "red bold"}.get(level, "white")
+                    risk_table.add_row(f"[{color}]{level.upper()}[/{color}]", str(count))
+
+                console.print(risk_table)
+
+            return result
+
+        except ImportError as e:
+            ui.print_error(f"Missing dependency: {e}")
+            return None
+        except Exception as e:
+            ui.print_error(f"Behavior analysis failed: {e}")
+            return None
+
+    result = asyncio.run(do_behavior_analysis())
+
+    if result and output:
+        import json
+        from pathlib import Path
+
+        out_path = Path(output)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(result, f, indent=2)
+        ui.print_success(f"Report saved to: {output}")
+
+
+# Compare command for model/report comparison
+@cli.command()
+@click.argument("targets", nargs=-1, required=True)
+@click.option("-o", "--output", help="Output comparison report path")
+@click.option("--format", "-f", "fmt", default="markdown", type=click.Choice(["markdown", "json", "html"]))
+@click.pass_context
+def compare(ctx, targets: tuple, output: Optional[str], fmt: str):
+    """
+    Compare multiple models or reports.
+
+    TARGETS: Two or more model paths or report IDs to compare.
+
+    Examples:
+        benderbox compare model1.gguf model2.gguf
+        benderbox compare --format html model1.gguf model2.gguf -o comparison.html
+    """
+    import asyncio
+    from benderbox.ui.terminal import TerminalUI
+
+    ui = TerminalUI()
+    ui.print_banner()
+
+    if len(targets) < 2:
+        ui.print_error("At least 2 targets are required for comparison.")
+        return
+
+    ui.print_info(f"Comparing {len(targets)} targets...")
+    for target in targets:
+        ui.print_info(f"  - {target}")
+    print()
+
+    async def do_compare():
+        try:
+            from benderbox.analyzers.comparative import ComparativeAnalyzer
+            from rich.table import Table
+            from rich.console import Console
+
+            console = Console()
+            analyzer = ComparativeAnalyzer()
+
+            # For now, compare stored reports by ID
+            # In future, could analyze models on-the-fly
+            from benderbox.storage.report_db import ReportDatabase
+
+            db = ReportDatabase()
+            comparison = await analyzer.compare_reports(list(targets), db)
+
+            # Display comparison table
+            table = Table(title="Model Comparison")
+            table.add_column("Metric", style="cyan")
+            for target in targets:
+                table.add_column(target[:20], style="bold")
+
+            # Add metric rows
+            metrics = ["risk_score", "risk_level", "finding_count", "critical_count", "high_count"]
+            for metric in metrics:
+                row = [metric.replace("_", " ").title()]
+                for result in comparison.get("results", []):
+                    value = result.get(metric, "N/A")
+                    if isinstance(value, float):
+                        value = f"{value:.1f}"
+                    row.append(str(value))
+                table.add_row(*row)
+
+            console.print(table)
+
+            # Show recommendation
+            rec = comparison.get("recommendation", "")
+            if rec:
+                print()
+                ui.print_info(f"Recommendation: {rec}")
+
+            return comparison
+
+        except Exception as e:
+            ui.print_error(f"Comparison failed: {e}")
+            return None
+
+    result = asyncio.run(do_compare())
+
+    if result and output:
+        from benderbox.reporting.report_generator import ReportGenerator
+
+        generator = ReportGenerator()
+        if fmt == "markdown":
+            content = generator.generate_comparison_markdown(result)
+        elif fmt == "json":
+            import json
+            content = json.dumps(result, indent=2)
+        else:
+            content = generator.generate_comparison_html(result)
+
+        from pathlib import Path
+        out_path = Path(output)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(content, encoding="utf-8")
+        ui.print_success(f"Comparison report saved to: {output}")
+
+
+# Export command group for report exports
+@cli.group()
+@click.pass_context
+def export(ctx):
+    """Export reports and analysis results to various formats."""
+    pass
+
+
+@export.command("report")
+@click.argument("report_id")
+@click.option("-f", "--format", "output_format", default="html",
+              type=click.Choice(["html", "markdown", "json", "csv", "sarif"]),
+              help="Export format")
+@click.option("-o", "--output", help="Output file path")
+@click.option("--open", "open_browser", is_flag=True, help="Auto-open HTML in browser")
+@click.pass_context
+def export_report(ctx, report_id: str, output_format: str, output: Optional[str], open_browser: bool):
+    """
+    Export a stored report to a specified format.
+
+    REPORT_ID: The ID or path of the report to export.
+
+    Examples:
+        benderbox export report abc123 --format html --open
+        benderbox export report ./report.json -f markdown -o report.md
+    """
+    import asyncio
+    from pathlib import Path
+    from benderbox.ui.terminal import TerminalUI
+
+    ui = TerminalUI()
+    ui.print_banner()
+
+    async def do_export():
+        try:
+            from benderbox.reporting import ExportManager, ExportFormat
+
+            # Load report from ID or path
+            report_path = Path(report_id)
+            if report_path.exists():
+                import json
+                with open(report_path, "r", encoding="utf-8") as f:
+                    report_data = json.load(f)
+                ui.print_info(f"Loaded report from: {report_path}")
+            else:
+                # Try loading from report database
+                from benderbox.storage.report_db import ReportDatabase
+                db = ReportDatabase()
+                report_data = await db.get_report(report_id)
+                if not report_data:
+                    ui.print_error(f"Report not found: {report_id}")
+                    return None
+                ui.print_info(f"Loaded report: {report_id}")
+
+            # Determine output path
+            if not output:
+                target = report_data.get("target_name", "report")
+                clean_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in target)
+                ext = {"html": ".html", "markdown": ".md", "json": ".json", "csv": ".csv", "sarif": ".sarif"}.get(output_format, ".txt")
+                output_path = f"./{clean_name}_export{ext}"
+            else:
+                output_path = output
+
+            # Export
+            export_manager = ExportManager()
+            fmt = ExportFormat[output_format.upper()]
+
+            result = await export_manager.export_analysis(
+                report_data,
+                format=fmt,
+                output_path=output_path,
+            )
+
+            return result
+
+        except Exception as e:
+            ui.print_error(f"Export failed: {e}")
+            return None
+
+    result = asyncio.run(do_export())
+
+    if result and result.success:
+        ui.print_success(f"Exported to: {result.path}")
+        ui.print_info(f"Format: {result.format.value}")
+        ui.print_info(f"Size: {result.size_bytes:,} bytes")
+
+        # Auto-open HTML in browser
+        if open_browser and output_format == "html":
+            import webbrowser
+            from pathlib import Path
+            file_url = Path(result.path).as_uri()
+            webbrowser.open(file_url)
+            ui.print_info("Opened report in browser")
+    elif result:
+        ui.print_error(f"Export failed: {result.error}")
+
+
+@export.command("batch")
+@click.argument("source_dir", type=click.Path(exists=True))
+@click.option("-f", "--format", "output_format", default="html",
+              type=click.Choice(["html", "markdown", "json"]),
+              help="Export format")
+@click.option("-o", "--output-dir", help="Output directory")
+@click.option("--archive", is_flag=True, help="Create ZIP archive of exports")
+@click.pass_context
+def export_batch(ctx, source_dir: str, output_format: str, output_dir: Optional[str], archive: bool):
+    """
+    Export multiple reports from a directory.
+
+    SOURCE_DIR: Directory containing JSON report files.
+
+    Examples:
+        benderbox export batch ./reports --format html -o ./html_reports
+        benderbox export batch ./reports --format markdown --archive
+    """
+    import asyncio
+    import json
+    from pathlib import Path
+    from benderbox.ui.terminal import TerminalUI
+
+    ui = TerminalUI()
+    ui.print_banner()
+
+    source_path = Path(source_dir)
+    report_files = list(source_path.glob("*.json"))
+
+    if not report_files:
+        ui.print_error(f"No JSON report files found in: {source_dir}")
+        return
+
+    ui.print_info(f"Found {len(report_files)} report files")
+
+    async def do_batch_export():
+        try:
+            from benderbox.reporting import ExportManager, ExportFormat
+
+            analyses = []
+            for rf in report_files:
+                try:
+                    with open(rf, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        # Add source filename as target_name if missing
+                        if "target_name" not in data:
+                            data["target_name"] = rf.stem
+                        analyses.append(data)
+                except Exception as e:
+                    ui.print_warning(f"Skipping {rf.name}: {e}")
+
+            if not analyses:
+                ui.print_error("No valid reports to export")
+                return None
+
+            export_manager = ExportManager(output_dir=output_dir or "./exports")
+            fmt = ExportFormat[output_format.upper()]
+
+            result = await export_manager.batch_export(
+                analyses,
+                format=fmt,
+                output_dir=output_dir,
+                create_archive=archive,
+            )
+
+            return result
+
+        except Exception as e:
+            ui.print_error(f"Batch export failed: {e}")
+            return None
+
+    result = asyncio.run(do_batch_export())
+
+    if result:
+        ui.print_success(f"Exported {result.successful}/{result.total} reports")
+
+        if result.failed > 0:
+            ui.print_warning(f"{result.failed} reports failed to export")
+
+        if result.archive_path:
+            ui.print_info(f"Archive: {result.archive_path}")
+
+        # Show individual results
+        try:
+            from rich.table import Table
+            from rich.console import Console
+
+            console = Console()
+            table = Table(title="Export Results")
+            table.add_column("File", style="cyan")
+            table.add_column("Status")
+            table.add_column("Size")
+
+            for r in result.results:
+                status = "[green]OK[/green]" if r.success else f"[red]FAILED: {r.error}[/red]"
+                size = f"{r.size_bytes:,} bytes" if r.success else "-"
+                table.add_row(Path(r.path).name, status, size)
+
+            console.print(table)
+
+        except ImportError:
+            for r in result.results:
+                status = "OK" if r.success else f"FAILED: {r.error}"
+                print(f"  {Path(r.path).name}: {status}")
 
 
 # Config command group for API keys and settings
@@ -1192,12 +1804,15 @@ def models_list(ctx):
 @models.command("download")
 @click.argument("model_id", required=False)
 @click.option("--set-default", "-d", is_flag=True, help="Set as default model after download")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompts (for scripting/CI)")
 @click.pass_context
-def models_download(ctx, model_id: str, set_default: bool):
+def models_download(ctx, model_id: str, set_default: bool, yes: bool):
     """Download a recommended model for NLP features.
 
     MODEL_ID is the model identifier (e.g., 'tinyllama', 'phi2').
     If not specified, downloads the recommended model for your system.
+
+    Use --yes to skip confirmation prompts for automation/CI.
     """
     import asyncio
     from benderbox.ui.terminal import TerminalUI, ProgressSpinner
@@ -1224,7 +1839,7 @@ def models_download(ctx, model_id: str, set_default: bool):
     ui.print_info(f"Source: {model.huggingface_repo}")
     print()
 
-    if not click.confirm("Download this model?"):
+    if not yes and not click.confirm("Download this model?"):
         ui.print_info("Cancelled")
         return
 
@@ -1255,7 +1870,7 @@ def models_download(ctx, model_id: str, set_default: bool):
             ui.print_success(message)
             ui.print_info(f"Path: {path}")
 
-            if set_default or click.confirm("Set as default model for NLP features?"):
+            if set_default or yes or click.confirm("Set as default model for NLP features?"):
                 ok, msg = manager.setup_default_model(path)
                 if ok:
                     ui.print_success(msg)
@@ -1271,6 +1886,9 @@ def models_download(ctx, model_id: str, set_default: bool):
         if success:
             print(f"Success: {message}")
             print(f"Path: {path}")
+            if set_default or yes:
+                ok, msg = manager.setup_default_model(path)
+                print(f"Default model: {msg}")
         else:
             print(f"Error: {message}")
 

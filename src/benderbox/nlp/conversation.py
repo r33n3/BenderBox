@@ -75,7 +75,11 @@ class ConversationManager:
         self._intent_router = IntentRouter(llm_engine)
         self._context_manager = ContextManager()
         self._response_generator = ResponseGenerator(llm_engine, knowledge_base)
-        self._analysis_bridge = AnalysisBridge(log_dir)
+        self._analysis_bridge = AnalysisBridge(
+            log_dir=log_dir,
+            llm_engine=llm_engine,
+            knowledge_base=knowledge_base,
+        )
 
         # Conversation history
         self._history: List[Message] = []
@@ -88,11 +92,13 @@ class ConversationManager:
         self._llm_engine = llm_engine
         self._intent_router._set_llm_engine(llm_engine)
         self._response_generator._set_llm_engine(llm_engine)
+        self._analysis_bridge._set_llm_engine(llm_engine)
 
     def _set_knowledge_base(self, knowledge_base) -> None:
         """Set the knowledge base (for lazy initialization)."""
         self._knowledge_base = knowledge_base
         self._response_generator._set_knowledge_base(knowledge_base)
+        self._analysis_bridge._set_knowledge_base(knowledge_base)
 
     async def process_query(self, user_input: str) -> Response:
         """
@@ -278,7 +284,11 @@ class ConversationManager:
         if not target:
             # Try to extract from query
             import re
-            path_match = re.search(r'["\']?([^\s"\']+\.(gguf|py|md))["\']?', query)
+            # Match various file types: models, code, configs
+            path_match = re.search(
+                r'["\']?([^\s"\']+\.(gguf|py|js|ts|c|cpp|h|go|rs|rb|java|php|md|yaml|yml|json))["\']?',
+                query
+            )
             if path_match:
                 target = path_match.group(1)
 
@@ -286,20 +296,48 @@ class ConversationManager:
             return None
 
         # Determine analysis type and execute
-        if intent.intent_type == IntentType.ANALYZE_MODEL or target.endswith(".gguf"):
+        # IMPORTANT: Check explicit intents FIRST before file extension fallbacks
+
+        # Semantic code analysis (explicit intent takes priority)
+        if intent.intent_type == IntentType.ANALYZE_CODE:
+            depth = profile if profile in ("quick", "standard", "deep") else "standard"
+            language = intent.parameters.get("language", "python")
+
+            # Check if target is a file path or inline code
+            from pathlib import Path
+            if target and Path(target).exists():
+                return await self._analysis_bridge.analyze_file_semantic(target, depth=depth)
+            elif target:
+                # Target might be code content passed directly
+                return await self._analysis_bridge.analyze_code(
+                    code=target,
+                    language=language,
+                    depth=depth,
+                )
+            else:
+                return None
+
+        # Model analysis (explicit intent or .gguf extension)
+        elif intent.intent_type == IntentType.ANALYZE_MODEL or target.endswith(".gguf"):
             if profile.startswith("infra"):
                 profile = "standard"
             return await self._analysis_bridge.analyze_model(target, profile)
 
+        # Infrastructure analysis (explicit intent or .py for MCP servers)
         elif intent.intent_type == IntentType.ANALYZE_INFRASTRUCTURE or target.endswith(".py"):
             if not profile.startswith("infra"):
                 profile = "infra-standard"
             return await self._analysis_bridge.analyze_mcp_server(target, profile)
 
+        # Skill analysis (explicit intent or .md/.yaml)
         elif intent.intent_type == IntentType.ANALYZE_SKILL or target.endswith((".md", ".yaml")):
             if not profile.startswith("infra"):
                 profile = "infra-quick"
             return await self._analysis_bridge.analyze_skill(target, profile)
+
+        # Behavior analysis
+        elif intent.intent_type == IntentType.ANALYZE_BEHAVIOR:
+            return await self._analysis_bridge.analyze_behavior(target, profile)
 
         return None
 

@@ -9,24 +9,102 @@
 
 ### Prerequisites
 
-- **Python 3.10+**
+- **Python 3.9+** (Python 3.11 or 3.12 recommended for best compatibility)
+- **Windows:** Visual Studio Build Tools (for compiling llama-cpp-python)
+- **Linux/Mac:** GCC/Clang compiler
 
-### Quick Install
+### Windows Prerequisites
+
+On Windows, you need Visual Studio Build Tools to compile `llama-cpp-python` for local NLP features:
+
+```powershell
+# Install via winget (Windows Package Manager)
+winget install Microsoft.VisualStudio.2022.BuildTools
+
+# Then install C++ workload (run as Administrator or download installer)
+# Option 1: Download and run the installer
+curl -L -o vs_buildtools.exe "https://aka.ms/vs/17/release/vs_buildtools.exe"
+.\vs_buildtools.exe --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --passive --wait
+```
+
+After installing Build Tools, open a **new terminal** to pick up the environment changes.
+
+### Interactive Setup (Recommended)
 
 ```bash
 # Clone repository
 git clone <repository-url>
 cd BenderBox
 
-# Install dependencies
+# Run the setup wizard
+python setup_wizard.py
+```
+
+The setup wizard will:
+- Check your Python version and compatibility
+- Detect if build tools are installed (Windows)
+- Let you select which features to install
+- Handle dependencies automatically
+
+### Quick Install
+
+```bash
+# Clone repository
+git clone https://github.com/r33n3/BenderBox.git
+cd BenderBox
+
+# Install core dependencies
 pip install -e .
+
+# Install with NLP features (interactive chat with local LLM)
+pip install -e ".[nlp]"
+
+# Alternative: traditional pip install
+pip install -r requirements.txt
+```
+
+### Download a Model (Required for NLP Features)
+
+After installing with NLP features, you need to download a language model:
+
+```bash
+# See available models and your system's RAM
+python bb.py models list
+
+# Download a model (choose based on your system RAM)
+python bb.py models download tinyllama    # ~700MB, requires 4GB RAM (minimal)
+python bb.py models download phi2         # ~1.7GB, requires 8GB RAM (balanced)
+python bb.py models download mistral-7b   # ~4.4GB, requires 12GB RAM (best quality)
+
+# Set up the downloaded model as default
+python bb.py models setup
+```
+
+| Model | Size | RAM Required | Quality |
+|-------|------|--------------|---------|
+| `tinyllama` | 700MB | 4GB | Basic - fast, works on any system |
+| `tinyllama-small` | 500MB | 2GB | Basic - smallest, lowest quality |
+| `qwen2-1.5b` | 1GB | 6GB | Good - excellent for its size |
+| `phi2` | 1.7GB | 8GB | Good - Microsoft's efficient model |
+| `mistral-7b` | 4.4GB | 12GB | Best - high quality, needs more RAM |
+
+**Tip:** Run `python bb.py models list` to see which models fit your system's available RAM.
+
+### Full Install with All Features
+
+```bash
+# All features including NLP, TUI, and web
+pip install -e ".[all]"
 ```
 
 ### Minimal Install (no pip install)
 
 ```bash
-# Just install core dependencies
-pip install pyyaml click rich httpx huggingface-hub
+# Just install core dependencies (no local NLP)
+pip install pyyaml click rich httpx huggingface-hub aiosqlite
+
+# Add NLP support (requires Build Tools on Windows)
+pip install llama-cpp-python
 ```
 
 ---
@@ -356,6 +434,65 @@ api:
 
 ---
 
+## Windows PATH Setup
+
+After installing with `pip install -e .`, you may see a warning that BenderBox executables are not on PATH:
+
+```
+WARNING: The scripts benderbox.exe, benderbox-chat.exe, etc. are installed in
+'C:\Users\<user>\AppData\Roaming\Python\Python312\Scripts' which is not on PATH.
+```
+
+### Option 1: PowerShell (Recommended)
+
+Run this command in PowerShell to add the Python Scripts directory to your PATH:
+
+```powershell
+# Get the Python Scripts directory
+$pythonScripts = (python -c "import sysconfig; print(sysconfig.get_path('scripts'))")
+
+# Add to user PATH permanently
+[Environment]::SetEnvironmentVariable(
+    "Path",
+    "$env:Path;$pythonScripts",
+    [EnvironmentVariableTarget]::User
+)
+
+# Refresh current session
+$env:Path = [Environment]::GetEnvironmentVariable("Path", "User") + ";" + [Environment]::GetEnvironmentVariable("Path", "Machine")
+```
+
+### Option 2: Manual Setup (Windows Settings)
+
+1. Press `Win + R`, type `sysdm.cpl`, press Enter
+2. Click **Advanced** tab → **Environment Variables**
+3. Under **User variables**, select **Path** and click **Edit**
+4. Click **New** and add: `%APPDATA%\Python\Python312\Scripts`
+   (adjust Python version as needed)
+5. Click **OK** to save all dialogs
+6. **Restart your terminal** for changes to take effect
+
+### Verify Installation
+
+After updating PATH, open a **new terminal** and run:
+
+```cmd
+benderbox --version
+```
+
+If successful, you should see the BenderBox version number.
+
+### Alternative: Use Python Module
+
+If you prefer not to modify PATH, you can always run BenderBox as a Python module:
+
+```cmd
+python -m benderbox --help
+python -m benderbox chat
+```
+
+---
+
 ## Troubleshooting
 
 ### "OPENAI API key not configured"
@@ -365,7 +502,33 @@ python bb.py config set-key openai
 export OPENAI_API_KEY="sk-..."
 ```
 
-### "No module named 'llama_cpp'"
+### "No module named 'llama_cpp'" or "llama-cpp-python not installed"
+```bash
+# On Windows, first install Build Tools (see Prerequisites section)
+# Then install llama-cpp-python:
+pip install llama-cpp-python
+
+# Or install full NLP extras:
+pip install -e ".[nlp]"
+```
+
+### "CMake Error: CMAKE_C_COMPILER not set" (Windows)
+This means Visual Studio Build Tools C++ workload is not installed:
+```powershell
+# Download and install C++ build tools
+curl -L -o vs_buildtools.exe "https://aka.ms/vs/17/release/vs_buildtools.exe"
+.\vs_buildtools.exe --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --passive --wait
+
+# Open a NEW terminal, then retry:
+pip install llama-cpp-python
+```
+
+### "NLP features limited" warning in interactive mode
+This means llama-cpp-python isn't installed. The app still works for:
+- API model interrogation (OpenAI, Anthropic, etc.)
+- Explicit commands: `analyze`, `status`, `help`
+
+To enable full NLP:
 ```bash
 pip install llama-cpp-python
 ```
@@ -374,7 +537,7 @@ pip install llama-cpp-python
 ```bash
 pip install -e .
 # Or minimal:
-pip install pyyaml click rich httpx huggingface-hub
+pip install pyyaml click rich httpx huggingface-hub aiosqlite
 ```
 
 ---

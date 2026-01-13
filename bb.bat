@@ -7,5 +7,7 @@ REM   bb -i           - Same as above
 REM   bb analyze ...  - Run specific command
 REM   bb --help       - Show all commands
 
-cd /d "%~dp0"
-python bb.py %*
+REM Store script directory without changing working directory
+REM This preserves the user's current directory for relative paths
+set "SCRIPT_DIR=%~dp0"
+python "%SCRIPT_DIR%bb.py" %*

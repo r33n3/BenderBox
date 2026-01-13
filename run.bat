@@ -8,8 +8,10 @@ REM   run.bat chat             - Start interactive chat
 REM   run.bat config api-keys  - Manage API keys
 REM   run.bat interrogate ...  - Run interrogation
 
-cd /d "%~dp0"
-python run.py %*
+REM Store script directory without changing working directory
+REM This preserves the user's current directory for relative paths
+set "SCRIPT_DIR=%~dp0"
+python "%SCRIPT_DIR%run.py" %*
 
 REM If running without arguments or if there was an error, pause
 if "%~1"=="" (
