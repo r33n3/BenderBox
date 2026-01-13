@@ -32,6 +32,17 @@ class CommandType(Enum):
     CLEAR = "clear"
     EXIT = "exit"
     QUERY = "query"  # Natural language query
+    # MCP server commands
+    MCP = "mcp"  # MCP server operations
+    MCP_CONNECT = "mcp_connect"
+    MCP_TOOLS = "mcp_tools"
+    MCP_INTERROGATE = "mcp_interrogate"
+    MCP_CALL = "mcp_call"
+    # Context analysis commands
+    CONTEXT = "context"  # Context/instruction analysis
+    CONTEXT_ANALYZE = "context_analyze"
+    CONTEXT_SCAN = "context_scan"
+    CONTEXT_OUTPUT = "context_output"
 
 
 @dataclass
@@ -67,6 +78,17 @@ class ChatUI:
         "help": ["help", "?", "h"],
         "clear": ["clear", "cls", "reset"],
         "exit": ["exit", "quit", "q", "bye"],
+        # MCP commands
+        "mcp": ["mcp"],
+        "mcp_connect": ["mcp-connect", "connect-mcp"],
+        "mcp_tools": ["mcp-tools", "tools-mcp"],
+        "mcp_interrogate": ["mcp-interrogate", "interrogate-mcp", "mcp-test"],
+        "mcp_call": ["mcp-call", "call-mcp"],
+        # Context commands
+        "context": ["context", "ctx"],
+        "context_analyze": ["context-analyze", "analyze-context", "ctx-analyze"],
+        "context_scan": ["context-scan", "scan-context", "ctx-scan"],
+        "context_output": ["context-output", "analyze-output", "ctx-output"],
     }
 
     def __init__(
@@ -234,6 +256,35 @@ class ChatUI:
 
         elif command.command_type == CommandType.QUERY:
             await self._handle_query(command)
+
+        # MCP commands
+        elif command.command_type == CommandType.MCP:
+            await self._handle_mcp(command)
+
+        elif command.command_type == CommandType.MCP_CONNECT:
+            await self._handle_mcp_connect(command)
+
+        elif command.command_type == CommandType.MCP_TOOLS:
+            await self._handle_mcp_tools(command)
+
+        elif command.command_type == CommandType.MCP_INTERROGATE:
+            await self._handle_mcp_interrogate(command)
+
+        elif command.command_type == CommandType.MCP_CALL:
+            await self._handle_mcp_call(command)
+
+        # Context commands
+        elif command.command_type == CommandType.CONTEXT:
+            await self._handle_context(command)
+
+        elif command.command_type == CommandType.CONTEXT_ANALYZE:
+            await self._handle_context_analyze(command)
+
+        elif command.command_type == CommandType.CONTEXT_SCAN:
+            await self._handle_context_scan(command)
+
+        elif command.command_type == CommandType.CONTEXT_OUTPUT:
+            await self._handle_context_output(command)
 
         return True
 
@@ -603,6 +654,19 @@ LLM Used: {'Yes' if result.get('llm_used') else 'No (pattern-based)'}
 
         query = command.args[0]
 
+        # Check for off-topic queries and redirect to BenderBox focus
+        off_topic_keywords = ["story", "poem", "joke", "recipe", "weather", "news", "game", "movie", "music"]
+        query_lower = query.lower()
+        if any(kw in query_lower for kw in off_topic_keywords):
+            self.ui.print_info("I'm BenderBox, an AI security analysis assistant.")
+            self.ui.print_info("I can help with:")
+            self.ui.print_info("  - Model analysis and interrogation")
+            self.ui.print_info("  - MCP server security testing")
+            self.ui.print_info("  - Context/instruction file analysis")
+            self.ui.print_info("  - Code security scanning")
+            self.ui.print_info("Type 'help' to see available commands.")
+            return
+
         if self._conversation:
             with ProgressSpinner(self.ui, "Thinking..."):
                 response = await self._conversation.process_query(query)
@@ -616,6 +680,446 @@ LLM Used: {'Yes' if result.get('llm_used') else 'No (pattern-based)'}
         else:
             self.ui.print_warning("Natural language queries require conversation manager.")
             self.ui.print_info("Use explicit commands like 'analyze <path>'")
+
+    # ========== MCP Commands ==========
+
+    async def _handle_mcp(self, command: ParsedCommand) -> None:
+        """Handle MCP command group - show subcommands or delegate."""
+        if not command.args:
+            self.ui.print_info("MCP Server Commands:")
+            self.ui.print_info("  /mcp connect <target>       - Connect to MCP server")
+            self.ui.print_info("  /mcp tools <target>         - List tools from MCP server")
+            self.ui.print_info("  /mcp interrogate <target>   - Security test MCP server")
+            self.ui.print_info("  /mcp call <target> <tool>   - Call a tool")
+            self.ui.print_info("")
+            self.ui.print_info("Examples:")
+            self.ui.print_info("  /mcp tools https://github.com/org/mcp-server")
+            self.ui.print_info("  /mcp interrogate https://mcp.example.com/api")
+            return
+
+        # Delegate to subcommand
+        subcommand = command.args[0].lower()
+        remaining_args = command.args[1:]
+        new_command = ParsedCommand(
+            command_type=CommandType.QUERY,  # Default
+            args=remaining_args,
+            raw_input=command.raw_input,
+            flags=command.flags,
+        )
+
+        if subcommand in ("connect", "conn"):
+            new_command.command_type = CommandType.MCP_CONNECT
+            await self._handle_mcp_connect(new_command)
+        elif subcommand in ("tools", "list"):
+            new_command.command_type = CommandType.MCP_TOOLS
+            await self._handle_mcp_tools(new_command)
+        elif subcommand in ("interrogate", "test", "security"):
+            new_command.command_type = CommandType.MCP_INTERROGATE
+            await self._handle_mcp_interrogate(new_command)
+        elif subcommand in ("call", "invoke"):
+            new_command.command_type = CommandType.MCP_CALL
+            await self._handle_mcp_call(new_command)
+        else:
+            self.ui.print_error(f"Unknown MCP subcommand: {subcommand}")
+            self.ui.print_info("Use '/mcp' to see available subcommands.")
+
+    async def _handle_mcp_connect(self, command: ParsedCommand) -> None:
+        """Handle MCP connect command."""
+        if not command.args:
+            self.ui.print_error("Please specify a target.")
+            self.ui.print_info("Usage: /mcp connect <url|command>")
+            return
+
+        target = command.args[0]
+        transport = command.flags.get("transport", "auto")
+
+        try:
+            from benderbox.analyzers.mcp_client import MCPClient, MCPTransport
+
+            self.ui.print_info(f"Connecting to: {target}")
+
+            client = MCPClient()
+            transport_enum = MCPTransport(transport)
+
+            with ProgressSpinner(self.ui, "Connecting..."):
+                connected = await client.connect(target, transport_enum)
+
+            if connected:
+                self.ui.print_success("Connected successfully!")
+                tools = await client.list_tools()
+
+                if tools:
+                    self.ui.print_info(f"Available tools: {len(tools)}")
+                    for tool in tools[:10]:
+                        desc = tool.description[:40] + "..." if tool.description and len(tool.description) > 40 else tool.description or ""
+                        self.ui.print_info(f"  - {tool.name}: {desc}")
+                    if len(tools) > 10:
+                        self.ui.print_info(f"  ... and {len(tools) - 10} more")
+                else:
+                    self.ui.print_warning("No tools discovered")
+
+                await client.disconnect()
+            else:
+                self.ui.print_error("Connection failed")
+
+        except ImportError as e:
+            self.ui.print_error(f"Missing dependency: {e}")
+        except Exception as e:
+            self.ui.print_error(f"Connection error: {e}")
+
+    async def _handle_mcp_tools(self, command: ParsedCommand) -> None:
+        """Handle MCP tools listing command."""
+        if not command.args:
+            self.ui.print_error("Please specify a target.")
+            self.ui.print_info("Usage: /mcp tools <github_url|mcp_endpoint>")
+            return
+
+        target = command.args[0]
+
+        try:
+            from benderbox.analyzers.mcp_analyzer import analyze_mcp_server
+
+            self.ui.print_info(f"Discovering tools from: {target}")
+
+            with ProgressSpinner(self.ui, "Analyzing..."):
+                server_info = await analyze_mcp_server(target)
+
+            if not server_info.tools:
+                self.ui.print_warning("No tools discovered.")
+                return
+
+            self.ui.print_success(f"Found {len(server_info.tools)} tools:")
+
+            # Sort by risk
+            sorted_tools = sorted(server_info.tools, key=lambda t: t.risk_score, reverse=True)
+
+            for tool in sorted_tools:
+                risk_icon = {"critical": "[!]", "high": "[*]", "medium": "[~]", "low": "[ ]"}.get(tool.risk_level.value, "[ ]")
+                desc = tool.description[:40] + "..." if tool.description and len(tool.description) > 40 else tool.description or ""
+                self.ui.print_info(f"  {risk_icon} {tool.name} (risk: {tool.risk_score}) - {desc}")
+
+            self.ui.print_info(f"\nOverall Risk: {server_info.overall_risk_level.value.upper()} ({server_info.overall_risk_score}/100)")
+
+        except Exception as e:
+            self.ui.print_error(f"Failed to list tools: {e}")
+
+    async def _handle_mcp_interrogate(self, command: ParsedCommand) -> None:
+        """Handle MCP security interrogation command."""
+        if not command.args:
+            self.ui.print_error("Please specify a target.")
+            self.ui.print_info("Usage: /mcp interrogate <target> [--profile quick|full]")
+            return
+
+        target = command.args[0]
+        profile = command.flags.get("profile", "full")
+        transport = command.flags.get("transport", "auto")
+
+        try:
+            from benderbox.analyzers.mcp_interrogation import interrogate_mcp_server
+
+            self.ui.print_info(f"Interrogating: {target}")
+            self.ui.print_info(f"Profile: {profile}")
+
+            def progress_cb(msg, pct):
+                pass  # Could update spinner here
+
+            with ProgressSpinner(self.ui, "Running security tests..."):
+                score = await interrogate_mcp_server(
+                    target=target,
+                    transport=transport,
+                    profile=profile,
+                    progress_callback=progress_cb,
+                )
+
+            # Display results
+            self.ui.print_header("MCP Interrogation Results")
+
+            risk_color = "red" if score.risk_level in ("CRITICAL", "HIGH") else "yellow" if score.risk_level == "MEDIUM" else "green"
+            self.ui.print_info(f"Risk Level: {score.risk_level}")
+            self.ui.print_info(f"Risk Score: {score.overall_risk}/100")
+            self.ui.print_info(f"Tools Tested: {score.tools_tested}")
+            self.ui.print_info(f"Tests Run: {score.tests_run}")
+            self.ui.print_info(f"Vulnerabilities Found: {score.vulnerabilities_found}")
+
+            if score.critical_findings:
+                self.ui.print_warning("\nCRITICAL FINDINGS:")
+                for finding in score.critical_findings[:5]:
+                    self.ui.print_error(f"  [{finding.tool_name}] {finding.description}")
+
+            if score.high_findings:
+                self.ui.print_warning("\nHIGH FINDINGS:")
+                for finding in score.high_findings[:3]:
+                    self.ui.print_warning(f"  [{finding.tool_name}] {finding.description}")
+
+            if score.recommendations:
+                self.ui.print_info("\nRecommendations:")
+                for rec in score.recommendations[:5]:
+                    self.ui.print_info(f"  - {rec}")
+
+        except ImportError as e:
+            self.ui.print_error(f"Missing dependency: {e}")
+        except Exception as e:
+            self.ui.print_error(f"Interrogation failed: {e}")
+
+    async def _handle_mcp_call(self, command: ParsedCommand) -> None:
+        """Handle MCP tool call command."""
+        if len(command.args) < 2:
+            self.ui.print_error("Please specify target and tool name.")
+            self.ui.print_info("Usage: /mcp call <target> <tool_name> [--args '{\"key\": \"value\"}']")
+            return
+
+        target = command.args[0]
+        tool_name = command.args[1]
+        args_json = command.flags.get("args", "{}")
+
+        import json
+
+        try:
+            args = json.loads(args_json)
+        except json.JSONDecodeError as e:
+            self.ui.print_error(f"Invalid JSON arguments: {e}")
+            return
+
+        try:
+            from benderbox.analyzers.mcp_client import MCPClient, MCPTransport
+
+            client = MCPClient()
+            transport = command.flags.get("transport", "auto")
+
+            with ProgressSpinner(self.ui, "Connecting..."):
+                connected = await client.connect(target, MCPTransport(transport))
+
+            if not connected:
+                self.ui.print_error("Failed to connect")
+                return
+
+            self.ui.print_info(f"Calling {tool_name}...")
+
+            result = await client.call_tool(tool_name, args)
+
+            await client.disconnect()
+
+            if result.is_error:
+                self.ui.print_error(f"Tool error: {result.content}")
+            else:
+                self.ui.print_success("Tool executed successfully")
+                self.ui.print_info("Response:")
+                content = result.content[:1000] if result.content else "(empty)"
+                print(content)
+                if result.content and len(result.content) > 1000:
+                    self.ui.print_info(f"... (truncated, {len(result.content)} total chars)")
+
+        except Exception as e:
+            self.ui.print_error(f"Call failed: {e}")
+
+    # ========== Context Analysis Commands ==========
+
+    async def _handle_context(self, command: ParsedCommand) -> None:
+        """Handle context command group - show subcommands or delegate."""
+        if not command.args:
+            self.ui.print_info("Context Analysis Commands:")
+            self.ui.print_info("  /context analyze <file>     - Analyze instruction file")
+            self.ui.print_info("  /context scan <directory>   - Scan directory for issues")
+            self.ui.print_info("  /context output <text>      - Analyze model output")
+            self.ui.print_info("")
+            self.ui.print_info("Examples:")
+            self.ui.print_info("  /context analyze skills.md")
+            self.ui.print_info("  /context scan ./prompts")
+            return
+
+        # Delegate to subcommand
+        subcommand = command.args[0].lower()
+        remaining_args = command.args[1:]
+        new_command = ParsedCommand(
+            command_type=CommandType.QUERY,
+            args=remaining_args,
+            raw_input=command.raw_input,
+            flags=command.flags,
+        )
+
+        if subcommand in ("analyze", "check"):
+            new_command.command_type = CommandType.CONTEXT_ANALYZE
+            await self._handle_context_analyze(new_command)
+        elif subcommand in ("scan", "directory"):
+            new_command.command_type = CommandType.CONTEXT_SCAN
+            await self._handle_context_scan(new_command)
+        elif subcommand in ("output", "inference"):
+            new_command.command_type = CommandType.CONTEXT_OUTPUT
+            await self._handle_context_output(new_command)
+        else:
+            self.ui.print_error(f"Unknown context subcommand: {subcommand}")
+            self.ui.print_info("Use '/context' to see available subcommands.")
+
+    async def _handle_context_analyze(self, command: ParsedCommand) -> None:
+        """Handle context file analysis command."""
+        if not command.args:
+            self.ui.print_error("Please specify a file to analyze.")
+            self.ui.print_info("Usage: /context analyze <file> [--type skill|prompt|instruction]")
+            return
+
+        file_path = command.args[0]
+        file_type = command.flags.get("type", "auto")
+
+        from pathlib import Path
+
+        path = Path(file_path)
+        if not path.exists():
+            self.ui.print_error(f"File not found: {file_path}")
+            return
+
+        try:
+            from benderbox.analyzers.context_analyzer import ContextAnalyzer, ContextType
+
+            analyzer = ContextAnalyzer()
+
+            context_type = None
+            if file_type != "auto":
+                try:
+                    context_type = ContextType(file_type)
+                except ValueError:
+                    pass
+
+            self.ui.print_info(f"Analyzing: {file_path}")
+
+            with ProgressSpinner(self.ui, "Analyzing..."):
+                result = analyzer.analyze_file(path, context_type)
+
+            # Display results
+            self.ui.print_header("Context Analysis Results")
+            self.ui.print_info(f"File: {result.file_path}")
+            self.ui.print_info(f"Type: {result.file_type.value}")
+            self.ui.print_info(f"Risk Level: {result.risk_level.value}")
+            self.ui.print_info(f"Risk Score: {result.risk_score}/100")
+            self.ui.print_info(f"Findings: {len(result.findings)}")
+
+            if result.findings:
+                # Group by severity
+                critical = [f for f in result.findings if f.risk_level.value == "CRITICAL"]
+                high = [f for f in result.findings if f.risk_level.value == "HIGH"]
+
+                if critical:
+                    self.ui.print_error("\nCRITICAL ISSUES:")
+                    for f in critical[:5]:
+                        self.ui.print_error(f"  Line {f.line_number}: {f.description}")
+                        self.ui.print_info(f"    Match: {f.matched_text[:50]}...")
+
+                if high:
+                    self.ui.print_warning("\nHIGH SEVERITY ISSUES:")
+                    for f in high[:3]:
+                        self.ui.print_warning(f"  Line {f.line_number}: {f.description}")
+
+            if result.recommendations:
+                self.ui.print_info("\nRecommendations:")
+                for rec in result.recommendations[:5]:
+                    self.ui.print_info(f"  - {rec}")
+
+        except ImportError as e:
+            self.ui.print_error(f"Missing dependency: {e}")
+        except Exception as e:
+            self.ui.print_error(f"Analysis failed: {e}")
+
+    async def _handle_context_scan(self, command: ParsedCommand) -> None:
+        """Handle context directory scan command."""
+        if not command.args:
+            self.ui.print_error("Please specify a directory to scan.")
+            self.ui.print_info("Usage: /context scan <directory> [--pattern '*.md']")
+            return
+
+        directory = command.args[0]
+
+        from pathlib import Path
+
+        dir_path = Path(directory)
+        if not dir_path.exists() or not dir_path.is_dir():
+            self.ui.print_error(f"Directory not found: {directory}")
+            return
+
+        try:
+            from benderbox.analyzers.context_analyzer import ContextAnalyzer
+
+            analyzer = ContextAnalyzer()
+            patterns = [command.flags.get("pattern")] if command.flags.get("pattern") else None
+
+            self.ui.print_info(f"Scanning: {directory}")
+
+            with ProgressSpinner(self.ui, "Scanning directory..."):
+                results = analyzer.analyze_directory(dir_path, patterns)
+
+            if not results:
+                self.ui.print_warning("No matching files found.")
+                return
+
+            # Display summary
+            self.ui.print_header(f"Scan Results ({len(results)} files)")
+
+            # Count by risk level
+            high_risk = sum(1 for r in results if r.risk_level.value in ("CRITICAL", "HIGH"))
+            medium_risk = sum(1 for r in results if r.risk_level.value == "MEDIUM")
+            total_findings = sum(len(r.findings) for r in results)
+
+            self.ui.print_info(f"Total Files: {len(results)}")
+            self.ui.print_info(f"Total Findings: {total_findings}")
+            if high_risk > 0:
+                self.ui.print_warning(f"High/Critical Risk Files: {high_risk}")
+            if medium_risk > 0:
+                self.ui.print_info(f"Medium Risk Files: {medium_risk}")
+
+            # Show top risky files
+            risky = [r for r in results if r.risk_score > 20]
+            if risky:
+                self.ui.print_warning("\nFiles with Issues:")
+                for r in risky[:10]:
+                    self.ui.print_info(f"  {Path(r.file_path).name}: {r.risk_level.value} ({r.risk_score}/100) - {len(r.findings)} findings")
+
+        except Exception as e:
+            self.ui.print_error(f"Scan failed: {e}")
+
+    async def _handle_context_output(self, command: ParsedCommand) -> None:
+        """Handle model output analysis command."""
+        if not command.args:
+            self.ui.print_error("Please provide output text to analyze.")
+            self.ui.print_info("Usage: /context output \"model response text\"")
+            self.ui.print_info("   or: /context output --file response.txt")
+            return
+
+        from pathlib import Path
+
+        # Get content from args or file
+        file_path = command.flags.get("file")
+        if file_path:
+            path = Path(file_path)
+            if not path.exists():
+                self.ui.print_error(f"File not found: {file_path}")
+                return
+            content = path.read_text(encoding="utf-8")
+        else:
+            content = " ".join(command.args)
+
+        model_name = command.flags.get("model", "unknown")
+
+        try:
+            from benderbox.analyzers.context_analyzer import analyze_inference_output
+
+            self.ui.print_info(f"Analyzing output ({len(content)} chars)")
+
+            result = analyze_inference_output(content, model_name)
+
+            # Display results
+            self.ui.print_header("Output Analysis Results")
+            self.ui.print_info(f"Risk Level: {result.risk_level.value}")
+            self.ui.print_info(f"Risk Score: {result.risk_score}/100")
+            self.ui.print_info(f"Findings: {len(result.findings)}")
+
+            if result.findings:
+                self.ui.print_warning("\nPotential Issues Detected:")
+                for f in result.findings[:10]:
+                    self.ui.print_warning(f"  [{f.risk_level.value}] {f.description}")
+                    self.ui.print_info(f"    Match: {f.matched_text[:50]}...")
+            else:
+                self.ui.print_success("No harmful patterns detected")
+
+        except Exception as e:
+            self.ui.print_error(f"Analysis failed: {e}")
 
     async def run(self) -> None:
         """Run the interactive chat loop."""

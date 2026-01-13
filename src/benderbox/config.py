@@ -18,8 +18,12 @@ import yaml
 class LLMConfig:
     """Configuration for Local LLM Engine."""
 
-    # Model paths (relative to models/ directory or absolute)
+    # Model paths (relative to base directory or absolute)
+    # - analysis: Models for interrogating/analyzing other models
+    # - nlp: Models for BenderBox's own chat/NLP features
+    # - code: Models for code generation/analysis
     analysis_model_path: str = "models/analysis/model.gguf"
+    nlp_model_path: str = "models/nlp/model.gguf"
     code_model_path: str = "models/code/model.gguf"
 
     # Model parameters
@@ -165,6 +169,7 @@ def _apply_env_overrides(config: Config) -> None:
     env_mappings = {
         # LLM
         "BENDERBOX_LLM_ANALYSIS_MODEL": ("llm", "analysis_model_path"),
+        "BENDERBOX_LLM_NLP_MODEL": ("llm", "nlp_model_path"),
         "BENDERBOX_LLM_CODE_MODEL": ("llm", "code_model_path"),
         "BENDERBOX_LLM_CONTEXT_LENGTH": ("llm", "context_length", int),
         "BENDERBOX_LLM_THREADS": ("llm", "threads", int),
@@ -282,28 +287,80 @@ def _dict_to_config(data: Dict[str, Any]) -> Config:
     return config
 
 
+def _ensure_directories(config: "Config") -> None:
+    """
+    Ensure all required directories exist.
+
+    Creates directories for:
+    - Model storage (analysis, code, NLP models)
+    - Data storage (vector DB, reports, knowledge base)
+    - Cache directories (model downloads, embeddings)
+    """
+    directories = [
+        # Model directories
+        Path(config.llm.analysis_model_path).parent,
+        Path(config.llm.nlp_model_path).parent,
+        Path(config.llm.code_model_path).parent,
+        # Storage directories
+        Path(config.storage.vector_store_path),
+        Path(config.storage.db_path).parent,
+        Path(config.storage.knowledge_path),
+        Path(config.storage.reports_path),
+        Path(config.storage.model_cache_path),
+        # Cache directories
+        Path(config.embedding.cache_dir),
+    ]
+
+    for dir_path in directories:
+        try:
+            dir_path.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass  # Ignore errors, will fail later if needed
+
+
+def get_benderbox_home() -> Path:
+    """
+    Get the BenderBox home directory.
+
+    Uses BENDERBOX_HOME environment variable if set, otherwise ~/.benderbox/
+    """
+    env_home = os.environ.get("BENDERBOX_HOME")
+    if env_home:
+        return Path(env_home)
+    return Path.home() / ".benderbox"
+
+
 def load_config(config_path: Optional[str] = None, base_path: Optional[str] = None) -> Config:
     """
     Load configuration from YAML file with environment variable overrides.
 
     Args:
         config_path: Path to config file. If None, looks for config/benderbox.yaml
-        base_path: Base path for resolving relative paths. If None, uses cwd.
+        base_path: Base path for resolving relative paths. If None, uses ~/.benderbox/
 
     Returns:
         Config object with all settings loaded.
     """
-    # Determine base path
+    # Determine base path - default to ~/.benderbox/ for consistent storage
     if base_path:
         base = Path(base_path)
     else:
-        base = Path.cwd()
+        base = get_benderbox_home()
+
+    # Ensure base directory exists
+    base.mkdir(parents=True, exist_ok=True)
 
     # Determine config file path
+    # Check user home first, then fall back to cwd for development
     if config_path:
         config_file = Path(config_path)
     else:
         config_file = base / "config" / "benderbox.yaml"
+        if not config_file.exists():
+            # Fall back to cwd for development setups
+            cwd_config = Path.cwd() / "config" / "benderbox.yaml"
+            if cwd_config.exists():
+                config_file = cwd_config
 
     # Load config from file if it exists
     if config_file.exists():
@@ -316,14 +373,19 @@ def load_config(config_path: Optional[str] = None, base_path: Optional[str] = No
     # Set base path
     config.base_path = str(base)
 
-    # Resolve relative paths
+    # Resolve relative paths to absolute paths under base directory
     config.llm.analysis_model_path = _resolve_path(config.llm.analysis_model_path, base)
+    config.llm.nlp_model_path = _resolve_path(config.llm.nlp_model_path, base)
     config.llm.code_model_path = _resolve_path(config.llm.code_model_path, base)
     config.storage.vector_store_path = _resolve_path(config.storage.vector_store_path, base)
     config.storage.db_path = _resolve_path(config.storage.db_path, base)
     config.storage.knowledge_path = _resolve_path(config.storage.knowledge_path, base)
     config.storage.reports_path = _resolve_path(config.storage.reports_path, base)
+    config.storage.model_cache_path = _resolve_path(config.storage.model_cache_path, base)
     config.embedding.cache_dir = _resolve_path(config.embedding.cache_dir, base)
+
+    # Ensure critical directories exist
+    _ensure_directories(config)
 
     # Apply environment variable overrides
     _apply_env_overrides(config)

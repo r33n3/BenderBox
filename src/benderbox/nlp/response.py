@@ -379,24 +379,48 @@ class ResponseGenerator:
         """Format help message."""
         return """**BenderBox - AI Security Analysis Platform**
 
-**Commands:**
-- Analyze a model: "Analyze model.gguf for security issues"
-- Analyze MCP server: "Check server.py for vulnerabilities"
-- Compare models: "Compare model1.gguf vs model2.gguf"
-- Explain findings: "Explain why the risk score is high"
-- Query knowledge: "What are jailbreak techniques?"
-- List reports: "Show recent analysis reports"
-- Get status: "Show system status"
+**Core Commands:**
+- `status` - Show system status
+- `help` - Show this help message
+- `exit` / `quit` - Exit BenderBox
 
-**Analysis Profiles:**
-- quick: Fast basic checks
-- standard: Balanced analysis (default)
-- deep: Comprehensive with semantic analysis
+**MCP Server Analysis:**
+- `mcp tools <target>` - List tools from MCP server
+- `mcp interrogate <target>` - Run security tests on MCP server
+- `mcp analyze <url>` - Static analysis of MCP server code
+- `mcp call <target> <tool>` - Call a specific tool
+
+**Context/Instruction Analysis:**
+- `context analyze <file>` - Analyze instruction file for risks
+- `context scan <dir>` - Scan directory for risky files
+- `context output <text>` - Analyze model output
+
+**Model Interrogation:**
+- `interrogate <target>` - Test model for safety/censorship
+- `analyze <target>` - Analyze model metadata
+- `compare <a> <b>` - Compare two models
+
+**Natural Language:**
+- "Analyze model.gguf for security issues"
+- "Is this MCP server safe?"
+- "What are jailbreak techniques?"
+- "Explain why the risk score is high"
+
+**Target Formats:**
+- MCP STDIO: `npx @modelcontextprotocol/server-filesystem .`
+- MCP HTTP: `https://mcp.example.com/api`
+- API Model: `openai:gpt-4-turbo`, `anthropic:claude-3-sonnet`
+- Local Model: `./models/llama-7b.gguf`
+
+**Profiles:** quick | standard | comprehensive | adversarial
 
 **Examples:**
-- "Is mistral-7b.gguf safe for production?"
-- "Analyze mcp_server.py with deep profile"
-- "What vulnerabilities were found in the last scan?"
+```
+mcp tools "npx @modelcontextprotocol/server-filesystem ."
+mcp interrogate "npx @server" --profile quick
+context analyze skills.md
+interrogate openai:gpt-4-turbo --profile quick
+```
 """
 
     async def _answer_general_question(self, context: ResponseContext) -> str:
