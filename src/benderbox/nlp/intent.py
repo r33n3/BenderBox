@@ -23,6 +23,11 @@ class IntentType(Enum):
     ANALYZE_SKILL = "analyze_skill"
     ANALYZE_CODE = "analyze_code"  # Semantic code analysis
     ANALYZE_BEHAVIOR = "analyze_behavior"  # Behavior analysis
+    MCP_TOOLS = "mcp_tools"  # List MCP server tools
+    MCP_INTERROGATE = "mcp_interrogate"  # Security test MCP server
+    MCP_CALL = "mcp_call"  # Call MCP tool
+    CONTEXT_ANALYZE = "context_analyze"  # Analyze instruction file
+    CONTEXT_SCAN = "context_scan"  # Scan directory for risky files
     COMPARE = "compare"
     EXPLAIN = "explain"
     QUERY_KNOWLEDGE = "query_knowledge"
@@ -54,6 +59,28 @@ class Intent:
 # Keyword patterns for fast intent matching
 # Format: (pattern, intent_type, requires_analysis, requires_llm)
 KEYWORD_PATTERNS: List[Tuple[re.Pattern, IntentType, bool, bool]] = [
+    # MCP server intents (high priority - check first)
+    (re.compile(r"\bmcp\s+tools?\b", re.I),
+     IntentType.MCP_TOOLS, True, False),
+    (re.compile(r"\bmcp\s+interrogate\b", re.I),
+     IntentType.MCP_INTERROGATE, True, False),
+    (re.compile(r"\bmcp\s+call\b", re.I),
+     IntentType.MCP_CALL, True, False),
+    (re.compile(r"\b(list|show|get)\b.*\b(mcp|server)\b.*\btools?\b", re.I),
+     IntentType.MCP_TOOLS, True, False),
+    (re.compile(r"\b(test|interrogate|security)\b.*\b(mcp|server)\b", re.I),
+     IntentType.MCP_INTERROGATE, True, False),
+
+    # Context analysis intents
+    (re.compile(r"\bcontext\s+analyze\b", re.I),
+     IntentType.CONTEXT_ANALYZE, True, False),
+    (re.compile(r"\bcontext\s+scan\b", re.I),
+     IntentType.CONTEXT_SCAN, True, False),
+    (re.compile(r"\b(analyze|check|scan)\b.*\b(instruction|prompt|skill)\s*(file)?\b", re.I),
+     IntentType.CONTEXT_ANALYZE, True, False),
+    (re.compile(r"\b(scan|check)\b.*\b(directory|folder)\b.*\b(prompt|instruction|skill)\b", re.I),
+     IntentType.CONTEXT_SCAN, True, False),
+
     # Analysis intents
     (re.compile(r"\b(analyze|scan|check|test|examine|inspect)\b.*\b(model|gguf)\b", re.I),
      IntentType.ANALYZE_MODEL, True, False),
@@ -389,6 +416,11 @@ Respond with ONLY the intent category name (e.g., ANALYZE_MODEL) and nothing els
             IntentType.ANALYZE_SKILL: "Analyze a skill definition",
             IntentType.ANALYZE_CODE: "Perform semantic security analysis on code",
             IntentType.ANALYZE_BEHAVIOR: "Perform behavioral analysis or capability assessment",
+            IntentType.MCP_TOOLS: "List available tools from an MCP server",
+            IntentType.MCP_INTERROGATE: "Run security tests against an MCP server",
+            IntentType.MCP_CALL: "Call a specific tool on an MCP server",
+            IntentType.CONTEXT_ANALYZE: "Analyze instruction file for security risks",
+            IntentType.CONTEXT_SCAN: "Scan directory for risky instruction files",
             IntentType.COMPARE: "Compare multiple models or reports",
             IntentType.EXPLAIN: "Explain a finding or result",
             IntentType.QUERY_KNOWLEDGE: "Query security knowledge base",
