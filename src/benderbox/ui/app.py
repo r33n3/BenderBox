@@ -2183,15 +2183,19 @@ def mcp_risks(ctx):
 
 @mcp.command("tools")
 @click.argument("source")
+@click.option("--transport", "-t", default="auto",
+              type=click.Choice(["auto", "http", "stdio"]),
+              help="Transport type (auto-detected if not specified)")
 @click.pass_context
-def mcp_tools(ctx, source: str):
+def mcp_tools(ctx, source: str, transport: str):
     """
     List tools available in an MCP server.
 
-    SOURCE: GitHub URL or MCP endpoint
+    SOURCE: GitHub URL, MCP endpoint, or STDIO command
 
-    Example:
+    Examples:
         benderbox mcp tools https://github.com/browserbase/mcp-server-browserbase
+        benderbox mcp tools "npx -y @modelcontextprotocol/server-filesystem ."
     """
     import asyncio
     from benderbox.ui.terminal import TerminalUI
@@ -2199,61 +2203,149 @@ def mcp_tools(ctx, source: str):
     ui = TerminalUI()
     ui.print_banner()
 
+    def is_github_url(s: str) -> bool:
+        """Check if source is a GitHub URL."""
+        return s.startswith("https://github.com/") or s.startswith("http://github.com/")
+
+    def is_stdio_command(s: str) -> bool:
+        """Check if source looks like a STDIO command."""
+        stdio_indicators = ["npx", "node", "python", "uvx", "deno"]
+        first_word = s.split()[0] if s.split() else ""
+        return any(ind in first_word.lower() for ind in stdio_indicators)
+
     async def do_list_tools():
         try:
-            from benderbox.analyzers.mcp_analyzer import analyze_mcp_server
             from rich.table import Table
             from rich.console import Console
+            from rich.progress import Progress, SpinnerColumn, TextColumn
 
             console = Console()
 
             ui.print_info(f"Discovering tools from: {source}")
             print()
 
-            server_info = await analyze_mcp_server(source)
+            tools = []
+            server_name = source
 
-            if not server_info.tools:
-                ui.print_warning("No tools discovered.")
-                return
+            # Determine if we should use live connection or static analysis
+            use_live = is_stdio_command(source) or (transport == "stdio")
+            use_static = is_github_url(source) and transport != "stdio"
 
-            table = Table(title=f"MCP Tools - {server_info.name}")
-            table.add_column("Tool", style="cyan")
-            table.add_column("Risk", style="bold")
-            table.add_column("Score")
-            table.add_column("Capabilities", style="dim")
-            table.add_column("Description")
+            if use_live or (transport == "http" and not is_github_url(source)):
+                # Use live MCP client for STDIO commands or HTTP endpoints
+                from benderbox.analyzers.mcp_client import MCPClient, MCPTransport
 
-            risk_icons = {
-                "critical": "[red]CRIT[/red]",
-                "high": "[yellow]HIGH[/yellow]",
-                "medium": "[blue]MED[/blue]",
-                "low": "[green]LOW[/green]",
-            }
+                with Progress(
+                    SpinnerColumn(),
+                    TextColumn("[progress.description]{task.description}"),
+                    console=console,
+                ) as progress:
+                    task = progress.add_task("Connecting to MCP server...", total=None)
 
-            # Sort by risk score descending
-            sorted_tools = sorted(server_info.tools, key=lambda t: t.risk_score, reverse=True)
+                    client = MCPClient()
+                    try:
+                        # Determine transport
+                        if transport == "auto":
+                            trans = MCPTransport.STDIO if is_stdio_command(source) else MCPTransport.HTTP
+                        else:
+                            trans = MCPTransport(transport)
 
-            for tool in sorted_tools:
-                level = tool.risk_level.value
-                caps = ", ".join(tool.capabilities[:3]) if tool.capabilities else "-"
-                desc = tool.description[:40] + "..." if len(tool.description) > 40 else tool.description
+                        progress.update(task, description="Connecting...")
+                        await client.connect(source, trans)
 
-                table.add_row(
-                    tool.name,
-                    risk_icons.get(level, level),
-                    str(tool.risk_score),
-                    caps,
-                    desc or "-",
-                )
+                        progress.update(task, description="Discovering tools...")
+                        tools = client.tools
+                        server_name = source.split()[-1] if is_stdio_command(source) else source
 
-            console.print(table)
+                    finally:
+                        await client.disconnect()
 
-            print()
-            ui.print_info(f"Total: {len(server_info.tools)} tools")
-            ui.print_info(f"Overall Risk: {server_info.overall_risk_level.value.upper()} ({server_info.overall_risk_score}/100)")
+                if not tools:
+                    ui.print_warning("No tools discovered from live connection.")
+                    return
+
+                # Display tools from live connection
+                table = Table(title=f"MCP Tools - {server_name}")
+                table.add_column("Tool", style="cyan")
+                table.add_column("Description")
+                table.add_column("Parameters", style="dim")
+
+                for tool in tools:
+                    params = []
+                    if tool.input_schema and "properties" in tool.input_schema:
+                        params = list(tool.input_schema["properties"].keys())[:3]
+                    params_str = ", ".join(params) if params else "-"
+                    desc = tool.description[:50] + "..." if len(tool.description) > 50 else tool.description
+
+                    table.add_row(
+                        tool.name,
+                        desc or "-",
+                        params_str,
+                    )
+
+                console.print(table)
+                print()
+                ui.print_info(f"Total: {len(tools)} tools discovered")
+
+            elif use_static:
+                # Use static analysis for GitHub URLs
+                from benderbox.analyzers.mcp_analyzer import analyze_mcp_server
+
+                with Progress(
+                    SpinnerColumn(),
+                    TextColumn("[progress.description]{task.description}"),
+                    console=console,
+                ) as progress:
+                    task = progress.add_task("Analyzing repository...", total=None)
+                    server_info = await analyze_mcp_server(source)
+
+                if not server_info.tools:
+                    ui.print_warning("No tools discovered from static analysis.")
+                    return
+
+                table = Table(title=f"MCP Tools - {server_info.name}")
+                table.add_column("Tool", style="cyan")
+                table.add_column("Risk", style="bold")
+                table.add_column("Score")
+                table.add_column("Capabilities", style="dim")
+                table.add_column("Description")
+
+                risk_icons = {
+                    "critical": "[red]CRIT[/red]",
+                    "high": "[yellow]HIGH[/yellow]",
+                    "medium": "[blue]MED[/blue]",
+                    "low": "[green]LOW[/green]",
+                }
+
+                # Sort by risk score descending
+                sorted_tools = sorted(server_info.tools, key=lambda t: t.risk_score, reverse=True)
+
+                for tool in sorted_tools:
+                    level = tool.risk_level.value
+                    caps = ", ".join(tool.capabilities[:3]) if tool.capabilities else "-"
+                    desc = tool.description[:40] + "..." if len(tool.description) > 40 else tool.description
+
+                    table.add_row(
+                        tool.name,
+                        risk_icons.get(level, level),
+                        str(tool.risk_score),
+                        caps,
+                        desc or "-",
+                    )
+
+                console.print(table)
+                print()
+                ui.print_info(f"Total: {len(server_info.tools)} tools")
+                ui.print_info(f"Overall Risk: {server_info.overall_risk_level.value.upper()} ({server_info.overall_risk_score}/100)")
+
+            else:
+                ui.print_error("Could not determine how to analyze this source. Use --transport to specify.")
 
         except Exception as e:
             ui.print_error(f"Failed to list tools: {e}")
+            if ctx.obj and ctx.obj.get("debug"):
+                import traceback
+                traceback.print_exc()
 
     asyncio.run(do_list_tools())
 

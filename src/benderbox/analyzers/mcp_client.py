@@ -400,35 +400,66 @@ class MCPClient:
         if not self._process or not self._process.stdin or not self._process.stdout:
             raise RuntimeError("STDIO transport not connected")
 
+        request_id = request.get("id")
+
         # Send request
         message = json.dumps(request) + "\n"
         self._process.stdin.write(message.encode())
         await self._process.stdin.drain()
 
-        # Read response
-        try:
-            response_line = await asyncio.wait_for(
-                self._process.stdout.readline(),
-                timeout=self.timeout,
-            )
-
-            if not response_line:
+        # Read response - loop until we find the matching response
+        # (skip notifications, log messages, and other non-matching responses)
+        start_time = asyncio.get_event_loop().time()
+        while True:
+            elapsed = asyncio.get_event_loop().time() - start_time
+            remaining_timeout = self.timeout - elapsed
+            if remaining_timeout <= 0:
+                logger.error("Request timed out")
                 return None
 
-            result = json.loads(response_line.decode())
+            try:
+                response_line = await asyncio.wait_for(
+                    self._process.stdout.readline(),
+                    timeout=remaining_timeout,
+                )
 
-            if "error" in result:
-                logger.warning(f"RPC error: {result['error']}")
+                if not response_line:
+                    continue
+
+                line_str = response_line.decode().strip()
+                if not line_str:
+                    continue
+
+                # Skip non-JSON lines (startup messages, logs, etc.)
+                if not line_str.startswith("{"):
+                    logger.debug(f"Skipping non-JSON line: {line_str[:100]}")
+                    continue
+
+                result = json.loads(line_str)
+
+                # Check if this is a notification (no id field) - skip it
+                if "id" not in result:
+                    logger.debug(f"Skipping notification: {result.get('method', 'unknown')}")
+                    continue
+
+                # Check if this response matches our request id
+                if result.get("id") != request_id:
+                    logger.debug(f"Skipping response with non-matching id: {result.get('id')}")
+                    continue
+
+                # Found our response
+                if "error" in result:
+                    logger.warning(f"RPC error: {result['error']}")
+                    return None
+
+                return result.get("result")
+
+            except asyncio.TimeoutError:
+                logger.error("Request timed out")
                 return None
-
-            return result.get("result")
-
-        except asyncio.TimeoutError:
-            logger.error("Request timed out")
-            return None
-        except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON response: {e}")
-            return None
+            except json.JSONDecodeError as e:
+                logger.debug(f"Skipping invalid JSON line: {e}")
+                continue
 
     async def refresh_tools(self) -> List[MCPToolInfo]:
         """
