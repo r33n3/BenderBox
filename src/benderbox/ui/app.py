@@ -1804,13 +1804,20 @@ def models_list(ctx):
 @models.command("download")
 @click.argument("model_id", required=False)
 @click.option("--set-default", "-d", is_flag=True, help="Set as default model after download")
+@click.option("--purpose", "-p", type=click.Choice(["analysis", "nlp", "code"]), default="nlp",
+              help="Purpose for the model: analysis (interrogate models), nlp (chat features), code (code gen)")
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompts (for scripting/CI)")
 @click.pass_context
-def models_download(ctx, model_id: str, set_default: bool, yes: bool):
-    """Download a recommended model for NLP features.
+def models_download(ctx, model_id: str, set_default: bool, purpose: str, yes: bool):
+    """Download a recommended model.
 
     MODEL_ID is the model identifier (e.g., 'tinyllama', 'phi2').
     If not specified, downloads the recommended model for your system.
+
+    Use --purpose to specify the model's intended use:
+    - nlp: For BenderBox's chat/NLP features (default)
+    - analysis: For interrogating/analyzing other models
+    - code: For code generation features
 
     Use --yes to skip confirmation prompts for automation/CI.
     """
@@ -1837,6 +1844,7 @@ def models_download(ctx, model_id: str, set_default: bool, yes: bool):
     ui.print_info(f"Model: {model.name}")
     ui.print_info(f"Size: ~{model.size_mb} MB")
     ui.print_info(f"Source: {model.huggingface_repo}")
+    ui.print_info(f"Purpose: {purpose}")
     print()
 
     if not yes and not click.confirm("Download this model?"):
@@ -1870,8 +1878,8 @@ def models_download(ctx, model_id: str, set_default: bool, yes: bool):
             ui.print_success(message)
             ui.print_info(f"Path: {path}")
 
-            if set_default or yes or click.confirm("Set as default model for NLP features?"):
-                ok, msg = manager.setup_default_model(path)
+            if set_default or yes or click.confirm(f"Set as default {purpose} model?"):
+                ok, msg = manager.setup_default_model(path, purpose=purpose)
                 if ok:
                     ui.print_success(msg)
                 else:
@@ -1887,7 +1895,7 @@ def models_download(ctx, model_id: str, set_default: bool, yes: bool):
             print(f"Success: {message}")
             print(f"Path: {path}")
             if set_default or yes:
-                ok, msg = manager.setup_default_model(path)
+                ok, msg = manager.setup_default_model(path, purpose=purpose)
                 print(f"Default model: {msg}")
         else:
             print(f"Error: {message}")
@@ -1895,11 +1903,18 @@ def models_download(ctx, model_id: str, set_default: bool, yes: bool):
 
 @models.command("setup")
 @click.argument("model_path", required=False, type=click.Path(exists=True))
+@click.option("--purpose", "-p", type=click.Choice(["analysis", "nlp", "code"]), default="nlp",
+              help="Purpose for the model: analysis (interrogate models), nlp (chat features), code (code gen)")
 @click.pass_context
-def models_setup(ctx, model_path: str):
-    """Set up a model as the default for NLP features.
+def models_setup(ctx, model_path: str, purpose: str):
+    """Set up a model as the default for a specific purpose.
 
     If MODEL_PATH is not specified, uses the first available downloaded model.
+
+    Use --purpose to specify the model's intended use:
+    - nlp: For BenderBox's chat/NLP features (default)
+    - analysis: For interrogating/analyzing other models
+    - code: For code generation features
     """
     from pathlib import Path
     from benderbox.ui.terminal import TerminalUI
@@ -1929,15 +1944,20 @@ def models_setup(ctx, model_path: str):
             path = Path(downloaded[0]["path"])
             ui.print_info(f"Using first available model: {path.name}")
 
-    if not click.confirm(f"Set {path.name} as default model?"):
+    ui.print_info(f"Purpose: {purpose}")
+
+    if not click.confirm(f"Set {path.name} as default {purpose} model?"):
         ui.print_info("Cancelled")
         return
 
-    success, message = manager.setup_default_model(path)
+    success, message = manager.setup_default_model(path, purpose=purpose)
 
     if success:
         ui.print_success(message)
-        ui.print_info("You can now use NLP features: benderbox chat")
+        if purpose == "nlp":
+            ui.print_info("You can now use NLP features: benderbox chat")
+        elif purpose == "analysis":
+            ui.print_info("You can now analyze models: benderbox interrogate")
     else:
         ui.print_error(message)
 
@@ -1973,6 +1993,876 @@ def models_info(ctx, model_id: str):
     print(f"Use case: {model.use_case}")
     print()
     print(f"Download: benderbox models download {model_id}")
+
+
+# MCP Server Analysis command group
+@cli.group()
+@click.pass_context
+def mcp(ctx):
+    """Analyze MCP (Model Context Protocol) servers for security risks."""
+    pass
+
+
+@mcp.command("analyze")
+@click.argument("source")
+@click.option("--mode", "-m", default="auto",
+              type=click.Choice(["auto", "source", "live", "hybrid"]),
+              help="Analysis mode: auto (detect), source (GitHub), live (endpoint), hybrid (both)")
+@click.option("--transport", "-t", default="http",
+              type=click.Choice(["http", "stdio"]),
+              help="Transport type for live interrogation")
+@click.option("--output", "-o", help="Output file path")
+@click.option("--format", "-f", "output_format", default="text",
+              type=click.Choice(["text", "markdown", "json"]),
+              help="Output format")
+@click.pass_context
+def mcp_analyze(ctx, source: str, mode: str, transport: str, output: Optional[str], output_format: str):
+    """
+    Analyze an MCP server for security risks.
+
+    SOURCE can be:
+    - GitHub URL: https://github.com/owner/repo
+    - MCP endpoint: https://example.com/mcp
+    - Smithery URL: https://smithery.ai/server/@org/name
+
+    Examples:
+        benderbox mcp analyze https://github.com/browserbase/mcp-server-browserbase
+        benderbox mcp analyze https://mcp.example.com/api --mode live
+        benderbox mcp analyze https://github.com/org/repo --format markdown -o report.md
+    """
+    import asyncio
+    from benderbox.ui.terminal import TerminalUI
+
+    ui = TerminalUI()
+    ui.print_banner()
+
+    async def do_analyze():
+        try:
+            from benderbox.analyzers.mcp_analyzer import MCPAnalyzer, analyze_mcp_server
+            from rich.console import Console
+            from rich.panel import Panel
+
+            console = Console()
+
+            ui.print_info(f"Analyzing: {source}")
+            ui.print_info(f"Mode: {mode}")
+            print()
+
+            # Perform analysis
+            try:
+                from rich.progress import Progress, SpinnerColumn, TextColumn
+
+                with Progress(
+                    SpinnerColumn(),
+                    TextColumn("[progress.description]{task.description}"),
+                    console=console,
+                ) as progress:
+                    task = progress.add_task("Analyzing MCP server...", total=None)
+
+                    if mode == "hybrid":
+                        analyzer = MCPAnalyzer()
+                        # For hybrid, we need both repo and endpoint
+                        repo_url = source if "github.com" in source else None
+                        endpoint = source if source.startswith("http") and "github.com" not in source else None
+                        server_info = await analyzer.analyze_hybrid(repo_url=repo_url, endpoint=endpoint, transport=transport)
+                    else:
+                        server_info = await analyze_mcp_server(source, mode)
+
+            except ImportError:
+                # Fallback without rich progress
+                if mode == "hybrid":
+                    analyzer = MCPAnalyzer()
+                    repo_url = source if "github.com" in source else None
+                    endpoint = source if source.startswith("http") and "github.com" not in source else None
+                    server_info = await analyzer.analyze_hybrid(repo_url=repo_url, endpoint=endpoint, transport=transport)
+                else:
+                    server_info = await analyze_mcp_server(source, mode)
+
+            # Generate report
+            analyzer = MCPAnalyzer()
+            report = analyzer.generate_report(server_info, format=output_format)
+
+            # Display or save report
+            if output:
+                from pathlib import Path
+                out_path = Path(output)
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                out_path.write_text(report, encoding="utf-8")
+                ui.print_success(f"Report saved to: {output}")
+            else:
+                print()
+                print(report)
+
+            # Summary
+            print()
+            risk_colors = {
+                "critical": "red bold",
+                "high": "red",
+                "medium": "yellow",
+                "low": "green",
+            }
+            risk_level = server_info.overall_risk_level.value
+            color = risk_colors.get(risk_level, "white")
+
+            console.print(Panel(
+                f"[{color}]Risk Level: {risk_level.upper()}[/{color}]\n"
+                f"Risk Score: {server_info.overall_risk_score}/100\n"
+                f"Tools Analyzed: {len(server_info.tools)}\n"
+                f"Summary: {server_info.risk_summary}",
+                title="MCP Server Risk Assessment",
+                border_style=color.split()[0],
+            ))
+
+            return server_info
+
+        except ImportError as e:
+            ui.print_error(f"Missing dependency: {e}")
+            ui.print_info("Install with: pip install httpx")
+            return None
+        except Exception as e:
+            ui.print_error(f"Analysis failed: {e}")
+            logger.exception("MCP analysis error")
+            return None
+
+    asyncio.run(do_analyze())
+
+
+@mcp.command("risks")
+@click.pass_context
+def mcp_risks(ctx):
+    """Show the risk classification patterns used for MCP analysis."""
+    from benderbox.ui.terminal import TerminalUI
+
+    ui = TerminalUI()
+    ui.print_banner()
+
+    try:
+        from benderbox.analyzers.mcp_analyzer import RISK_PATTERNS, RiskLevel
+        from rich.table import Table
+        from rich.console import Console
+
+        console = Console()
+
+        table = Table(title="MCP Tool Risk Classification Patterns")
+        table.add_column("Capability", style="cyan")
+        table.add_column("Risk Level", style="bold")
+        table.add_column("Score")
+        table.add_column("Keywords", style="dim")
+
+        level_colors = {
+            RiskLevel.CRITICAL: "[red]CRITICAL[/red]",
+            RiskLevel.HIGH: "[yellow]HIGH[/yellow]",
+            RiskLevel.MEDIUM: "[blue]MEDIUM[/blue]",
+            RiskLevel.LOW: "[green]LOW[/green]",
+        }
+
+        for capability, config in RISK_PATTERNS.items():
+            keywords = ", ".join(config["keywords"][:4])
+            if len(config["keywords"]) > 4:
+                keywords += "..."
+
+            table.add_row(
+                capability.replace("_", " ").title(),
+                level_colors.get(config["level"], str(config["level"])),
+                str(config["score"]),
+                keywords,
+            )
+
+        console.print(table)
+
+        print()
+        ui.print_info("Risk Levels:")
+        print("  CRITICAL (80-100): Code execution, credential access, autonomous agents")
+        print("  HIGH (60-79): Network requests, browser automation, database writes")
+        print("  MEDIUM (40-59): Data extraction, file read, screenshots")
+        print("  LOW (0-39): Read-only operations, local computation")
+
+    except ImportError as e:
+        ui.print_error(f"Missing dependency: {e}")
+
+
+@mcp.command("tools")
+@click.argument("source")
+@click.pass_context
+def mcp_tools(ctx, source: str):
+    """
+    List tools available in an MCP server.
+
+    SOURCE: GitHub URL or MCP endpoint
+
+    Example:
+        benderbox mcp tools https://github.com/browserbase/mcp-server-browserbase
+    """
+    import asyncio
+    from benderbox.ui.terminal import TerminalUI
+
+    ui = TerminalUI()
+    ui.print_banner()
+
+    async def do_list_tools():
+        try:
+            from benderbox.analyzers.mcp_analyzer import analyze_mcp_server
+            from rich.table import Table
+            from rich.console import Console
+
+            console = Console()
+
+            ui.print_info(f"Discovering tools from: {source}")
+            print()
+
+            server_info = await analyze_mcp_server(source)
+
+            if not server_info.tools:
+                ui.print_warning("No tools discovered.")
+                return
+
+            table = Table(title=f"MCP Tools - {server_info.name}")
+            table.add_column("Tool", style="cyan")
+            table.add_column("Risk", style="bold")
+            table.add_column("Score")
+            table.add_column("Capabilities", style="dim")
+            table.add_column("Description")
+
+            risk_icons = {
+                "critical": "[red]CRIT[/red]",
+                "high": "[yellow]HIGH[/yellow]",
+                "medium": "[blue]MED[/blue]",
+                "low": "[green]LOW[/green]",
+            }
+
+            # Sort by risk score descending
+            sorted_tools = sorted(server_info.tools, key=lambda t: t.risk_score, reverse=True)
+
+            for tool in sorted_tools:
+                level = tool.risk_level.value
+                caps = ", ".join(tool.capabilities[:3]) if tool.capabilities else "-"
+                desc = tool.description[:40] + "..." if len(tool.description) > 40 else tool.description
+
+                table.add_row(
+                    tool.name,
+                    risk_icons.get(level, level),
+                    str(tool.risk_score),
+                    caps,
+                    desc or "-",
+                )
+
+            console.print(table)
+
+            print()
+            ui.print_info(f"Total: {len(server_info.tools)} tools")
+            ui.print_info(f"Overall Risk: {server_info.overall_risk_level.value.upper()} ({server_info.overall_risk_score}/100)")
+
+        except Exception as e:
+            ui.print_error(f"Failed to list tools: {e}")
+
+    asyncio.run(do_list_tools())
+
+
+@mcp.command("connect")
+@click.argument("target")
+@click.option("--transport", "-t", default="auto",
+              type=click.Choice(["auto", "http", "stdio"]),
+              help="Transport type")
+@click.option("--name", "-n", help="Connection name for reference")
+@click.pass_context
+def mcp_connect(ctx, target: str, transport: str, name: Optional[str]):
+    """
+    Connect to an MCP server for live interrogation.
+
+    TARGET can be:
+    - HTTP endpoint: https://mcp.example.com/api
+    - STDIO command: npx @org/mcp-server
+
+    Examples:
+        benderbox mcp connect https://mcp.example.com/api
+        benderbox mcp connect "npx @modelcontextprotocol/server-filesystem" --transport stdio
+    """
+    import asyncio
+    from benderbox.ui.terminal import TerminalUI
+
+    ui = TerminalUI()
+    ui.print_banner()
+
+    async def do_connect():
+        try:
+            from benderbox.analyzers.mcp_client import MCPClient, MCPTransport
+
+            ui.print_info(f"Connecting to: {target}")
+            ui.print_info(f"Transport: {transport}")
+            print()
+
+            client = MCPClient()
+            transport_enum = MCPTransport(transport)
+
+            connected = await client.connect(target, transport_enum)
+
+            if connected:
+                ui.print_success("Connected successfully!")
+
+                # List available tools
+                tools = await client.list_tools()
+
+                if tools:
+                    ui.print_info(f"Available tools: {len(tools)}")
+                    print()
+                    for tool in tools[:10]:  # Show first 10
+                        print(f"  - {tool.name}: {tool.description[:50]}..." if tool.description else f"  - {tool.name}")
+                    if len(tools) > 10:
+                        print(f"  ... and {len(tools) - 10} more")
+                else:
+                    ui.print_warning("No tools discovered")
+
+                await client.disconnect()
+            else:
+                ui.print_error("Connection failed")
+
+        except ImportError as e:
+            ui.print_error(f"Missing dependency: {e}")
+        except Exception as e:
+            ui.print_error(f"Connection error: {e}")
+
+    asyncio.run(do_connect())
+
+
+@mcp.command("call")
+@click.argument("target")
+@click.argument("tool_name")
+@click.option("--args", "-a", "tool_args", help="Tool arguments as JSON")
+@click.option("--transport", "-t", default="auto",
+              type=click.Choice(["auto", "http", "stdio"]),
+              help="Transport type")
+@click.pass_context
+def mcp_call(ctx, target: str, tool_name: str, tool_args: Optional[str], transport: str):
+    """
+    Call a tool on an MCP server.
+
+    TARGET: MCP server endpoint or command
+    TOOL_NAME: Name of the tool to call
+
+    Examples:
+        benderbox mcp call https://mcp.example.com/api list_files --args '{"path": "."}'
+        benderbox mcp call "npx @org/server" get_info
+    """
+    import asyncio
+    import json
+    from benderbox.ui.terminal import TerminalUI
+
+    ui = TerminalUI()
+    ui.print_banner()
+
+    async def do_call():
+        try:
+            from benderbox.analyzers.mcp_client import MCPClient, MCPTransport
+
+            ui.print_info(f"Server: {target}")
+            ui.print_info(f"Tool: {tool_name}")
+            print()
+
+            client = MCPClient()
+            transport_enum = MCPTransport(transport)
+
+            connected = await client.connect(target, transport_enum)
+            if not connected:
+                ui.print_error("Failed to connect to server")
+                return
+
+            # Parse arguments
+            args = {}
+            if tool_args:
+                try:
+                    args = json.loads(tool_args)
+                except json.JSONDecodeError as e:
+                    ui.print_error(f"Invalid JSON arguments: {e}")
+                    await client.disconnect()
+                    return
+
+            ui.print_info(f"Calling {tool_name}...")
+            print()
+
+            result = await client.call_tool(tool_name, args)
+
+            if result.is_error:
+                ui.print_error(f"Tool returned error: {result.content}")
+            else:
+                ui.print_success("Tool executed successfully")
+                print()
+                print("Response:")
+                print("-" * 40)
+                print(result.content[:2000] if result.content else "(empty response)")
+                if result.content and len(result.content) > 2000:
+                    print(f"\n... (truncated, total {len(result.content)} chars)")
+
+            await client.disconnect()
+
+        except ImportError as e:
+            ui.print_error(f"Missing dependency: {e}")
+        except Exception as e:
+            ui.print_error(f"Call failed: {e}")
+
+    asyncio.run(do_call())
+
+
+@mcp.command("interrogate")
+@click.argument("target")
+@click.option("--transport", "-t", default="auto",
+              type=click.Choice(["auto", "http", "stdio"]),
+              help="Transport type")
+@click.option("--profile", "-p", default="full",
+              type=click.Choice(["quick", "full"]),
+              help="Test profile: quick (~15 tests) or full (~50 tests)")
+@click.option("--output", "-o", help="Output report file path")
+@click.option("--format", "-f", "output_format", default="text",
+              type=click.Choice(["text", "markdown", "json"]),
+              help="Output format")
+@click.pass_context
+def mcp_interrogate(ctx, target: str, transport: str, profile: str, output: Optional[str], output_format: str):
+    """
+    Run security tests against an MCP server.
+
+    Tests tools for vulnerabilities including:
+    - Command/SQL injection
+    - Path traversal
+    - Data exfiltration
+    - Privilege escalation
+    - Information disclosure
+
+    TARGET: MCP server endpoint or command
+
+    Examples:
+        benderbox mcp interrogate https://mcp.example.com/api
+        benderbox mcp interrogate "npx @org/server" --profile quick
+        benderbox mcp interrogate https://mcp.example.com -o report.md -f markdown
+    """
+    import asyncio
+    from benderbox.ui.terminal import TerminalUI
+
+    ui = TerminalUI()
+    ui.print_banner()
+
+    async def do_interrogate():
+        try:
+            from benderbox.analyzers.mcp_interrogation import MCPInterrogator, interrogate_mcp_server
+            from benderbox.analyzers.mcp_client import MCPTransport
+            from rich.console import Console
+            from rich.panel import Panel
+            from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
+
+            console = Console()
+
+            ui.print_info(f"Target: {target}")
+            ui.print_info(f"Profile: {profile}")
+            ui.print_info(f"Transport: {transport}")
+            print()
+
+            # Run interrogation with progress
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TextColumn("{task.percentage:>3.0f}%"),
+                console=console,
+            ) as progress:
+                task = progress.add_task("Connecting...", total=100)
+
+                def update_progress(msg, pct):
+                    progress.update(task, description=msg, completed=pct)
+
+                score = await interrogate_mcp_server(
+                    target=target,
+                    transport=transport,
+                    profile=profile,
+                    progress_callback=update_progress,
+                )
+
+            # Generate and display report
+            interrogator = MCPInterrogator()
+            report = interrogator.generate_report(score, format=output_format)
+
+            print()
+
+            if output:
+                from pathlib import Path
+                out_path = Path(output)
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                out_path.write_text(report, encoding="utf-8")
+                ui.print_success(f"Report saved to: {output}")
+            else:
+                print(report)
+
+            # Summary panel
+            print()
+            risk_colors = {
+                "CRITICAL": "red bold",
+                "HIGH": "red",
+                "MEDIUM": "yellow",
+                "LOW": "green",
+                "MINIMAL": "green",
+            }
+            color = risk_colors.get(score.risk_level, "white")
+
+            console.print(Panel(
+                f"[{color}]Risk Level: {score.risk_level}[/{color}]\n"
+                f"Risk Score: {score.overall_risk}/100\n"
+                f"Tools Tested: {score.tools_tested}\n"
+                f"Tests Run: {score.tests_run}\n"
+                f"Vulnerabilities: {score.vulnerabilities_found}",
+                title="MCP Interrogation Results",
+                border_style=color.split()[0] if " " in color else color,
+            ))
+
+            # Show critical findings
+            if score.critical_findings:
+                print()
+                console.print("[red bold]CRITICAL FINDINGS:[/red bold]")
+                for finding in score.critical_findings[:5]:
+                    console.print(f"  - [{finding.tool_name}] {finding.description}")
+
+        except ImportError as e:
+            ui.print_error(f"Missing dependency: {e}")
+            ui.print_info("Install with: pip install rich")
+        except Exception as e:
+            ui.print_error(f"Interrogation failed: {e}")
+            logger.exception("MCP interrogation error")
+
+    asyncio.run(do_interrogate())
+
+
+# Context Analysis command group
+@cli.group()
+@click.pass_context
+def context(ctx):
+    """Analyze instruction files and context for security risks."""
+    pass
+
+
+@context.command("analyze")
+@click.argument("file_path", type=click.Path(exists=True))
+@click.option("--type", "-t", "file_type",
+              type=click.Choice(["auto", "skill", "prompt", "instruction", "output"]),
+              default="auto",
+              help="Type of context file")
+@click.option("--output", "-o", help="Output report file path")
+@click.option("--format", "-f", "output_format", default="text",
+              type=click.Choice(["text", "markdown", "json"]),
+              help="Output format")
+@click.pass_context
+def context_analyze(ctx, file_path: str, file_type: str, output: Optional[str], output_format: str):
+    """
+    Analyze an instruction file for security risks.
+
+    Detects dangerous patterns including:
+    - Jailbreak instructions
+    - Credential exposure
+    - Code execution risks
+    - Data exfiltration instructions
+    - Prompt injection markers
+
+    FILE_PATH: Path to the file to analyze
+
+    Examples:
+        benderbox context analyze skills.md
+        benderbox context analyze system_prompt.txt --type prompt
+        benderbox context analyze agent_instructions.yaml -o report.json -f json
+    """
+    from pathlib import Path
+    from benderbox.ui.terminal import TerminalUI
+
+    ui = TerminalUI()
+    ui.print_banner()
+
+    try:
+        from benderbox.analyzers.context_analyzer import ContextAnalyzer, ContextType
+        from rich.console import Console
+        from rich.panel import Panel
+
+        console = Console()
+
+        file_path_obj = Path(file_path)
+        ui.print_info(f"Analyzing: {file_path}")
+        ui.print_info(f"Type: {file_type}")
+        print()
+
+        analyzer = ContextAnalyzer()
+
+        # Convert type string to enum
+        context_type = None
+        if file_type != "auto":
+            context_type = ContextType(file_type)
+
+        result = analyzer.analyze_file(file_path_obj, context_type)
+
+        # Generate report
+        report = analyzer.generate_report(result, format=output_format)
+
+        if output:
+            out_path = Path(output)
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(report, encoding="utf-8")
+            ui.print_success(f"Report saved to: {output}")
+        else:
+            print(report)
+
+        # Summary panel
+        print()
+        risk_colors = {
+            "CRITICAL": "red bold",
+            "HIGH": "red",
+            "MEDIUM": "yellow",
+            "LOW": "green",
+            "INFO": "blue",
+            "SAFE": "green",
+        }
+        color = risk_colors.get(result.risk_level.value, "white")
+
+        console.print(Panel(
+            f"[{color}]Risk Level: {result.risk_level.value}[/{color}]\n"
+            f"Risk Score: {result.risk_score}/100\n"
+            f"Findings: {len(result.findings)}\n"
+            f"Dangerous Patterns: {len(result.dangerous_patterns)}",
+            title="Context Analysis Results",
+            border_style=color.split()[0] if " " in color else color,
+        ))
+
+    except ImportError as e:
+        ui.print_error(f"Missing dependency: {e}")
+    except Exception as e:
+        ui.print_error(f"Analysis failed: {e}")
+        logger.exception("Context analysis error")
+
+
+@context.command("scan")
+@click.argument("directory", type=click.Path(exists=True))
+@click.option("--recursive/--no-recursive", "-r", default=True,
+              help="Search recursively")
+@click.option("--pattern", "-p", multiple=True,
+              help="File patterns to match (e.g., '*.md', '*.yaml')")
+@click.option("--output", "-o", help="Output report file path")
+@click.option("--format", "-f", "output_format", default="text",
+              type=click.Choice(["text", "markdown", "json"]),
+              help="Output format")
+@click.pass_context
+def context_scan(ctx, directory: str, recursive: bool, pattern: tuple, output: Optional[str], output_format: str):
+    """
+    Scan a directory for context files with security issues.
+
+    Analyzes all matching files and reports findings.
+
+    DIRECTORY: Directory to scan
+
+    Examples:
+        benderbox context scan ./prompts
+        benderbox context scan ./skills --pattern "*.md" --pattern "*.yaml"
+        benderbox context scan . -r -o scan_report.md -f markdown
+    """
+    from pathlib import Path
+    from benderbox.ui.terminal import TerminalUI
+
+    ui = TerminalUI()
+    ui.print_banner()
+
+    try:
+        from benderbox.analyzers.context_analyzer import ContextAnalyzer
+        from rich.console import Console
+        from rich.table import Table
+
+        console = Console()
+
+        dir_path = Path(directory)
+        patterns = list(pattern) if pattern else None
+
+        ui.print_info(f"Scanning: {directory}")
+        ui.print_info(f"Recursive: {recursive}")
+        if patterns:
+            ui.print_info(f"Patterns: {', '.join(patterns)}")
+        print()
+
+        analyzer = ContextAnalyzer()
+        results = analyzer.analyze_directory(dir_path, patterns, recursive)
+
+        if not results:
+            ui.print_warning("No matching files found.")
+            return
+
+        # Display results table
+        table = Table(title=f"Scan Results ({len(results)} files)")
+        table.add_column("File", style="cyan")
+        table.add_column("Type")
+        table.add_column("Risk", style="bold")
+        table.add_column("Score")
+        table.add_column("Findings")
+
+        risk_colors = {
+            "CRITICAL": "[red]CRIT[/red]",
+            "HIGH": "[yellow]HIGH[/yellow]",
+            "MEDIUM": "[blue]MED[/blue]",
+            "LOW": "[green]LOW[/green]",
+            "INFO": "[dim]INFO[/dim]",
+            "SAFE": "[green]SAFE[/green]",
+        }
+
+        for result in results:
+            file_name = Path(result.file_path).name
+            if len(file_name) > 30:
+                file_name = file_name[:27] + "..."
+
+            table.add_row(
+                file_name,
+                result.file_type.value,
+                risk_colors.get(result.risk_level.value, result.risk_level.value),
+                f"{result.risk_score:.0f}",
+                str(len(result.findings)),
+            )
+
+        console.print(table)
+
+        # Summary
+        print()
+        total_findings = sum(len(r.findings) for r in results)
+        high_risk = sum(1 for r in results if r.risk_level.value in ["CRITICAL", "HIGH"])
+
+        ui.print_info(f"Total files scanned: {len(results)}")
+        ui.print_info(f"Total findings: {total_findings}")
+
+        if high_risk > 0:
+            ui.print_warning(f"High/Critical risk files: {high_risk}")
+
+        # Save detailed report if output specified
+        if output:
+            import json
+            out_path = Path(output)
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+
+            if output_format == "json":
+                report_data = {
+                    "directory": str(directory),
+                    "files_scanned": len(results),
+                    "total_findings": total_findings,
+                    "results": [
+                        {
+                            "file": r.file_path,
+                            "type": r.file_type.value,
+                            "risk_level": r.risk_level.value,
+                            "risk_score": r.risk_score,
+                            "findings": len(r.findings),
+                            "dangerous_patterns": r.dangerous_patterns[:5],
+                        }
+                        for r in results
+                    ],
+                }
+                out_path.write_text(json.dumps(report_data, indent=2), encoding="utf-8")
+            else:
+                # Generate combined report
+                lines = [
+                    "# Context Scan Report",
+                    "",
+                    f"Directory: {directory}",
+                    f"Files Scanned: {len(results)}",
+                    f"Total Findings: {total_findings}",
+                    "",
+                ]
+
+                for result in results:
+                    if result.risk_level.value in ["CRITICAL", "HIGH", "MEDIUM"]:
+                        lines.append(f"## {result.file_path}")
+                        lines.append(f"Risk: {result.risk_level.value} ({result.risk_score}/100)")
+                        lines.append(f"Findings: {len(result.findings)}")
+                        lines.append("")
+                        for finding in result.findings[:3]:
+                            lines.append(f"- **{finding.category}**: {finding.description}")
+                        lines.append("")
+
+                out_path.write_text("\n".join(lines), encoding="utf-8")
+
+            ui.print_success(f"Report saved to: {output}")
+
+    except ImportError as e:
+        ui.print_error(f"Missing dependency: {e}")
+    except Exception as e:
+        ui.print_error(f"Scan failed: {e}")
+        logger.exception("Context scan error")
+
+
+@context.command("output")
+@click.argument("text", required=False)
+@click.option("--file", "-f", "file_path", type=click.Path(exists=True),
+              help="Read output from file")
+@click.option("--model", "-m", default="unknown", help="Model name for reference")
+@click.pass_context
+def context_output(ctx, text: Optional[str], file_path: Optional[str], model: str):
+    """
+    Analyze model inference output for harmful content.
+
+    Provide output text directly or via --file.
+
+    Examples:
+        benderbox context output "Model response text here"
+        benderbox context output --file response.txt --model gpt-4
+    """
+    from pathlib import Path
+    from benderbox.ui.terminal import TerminalUI
+
+    ui = TerminalUI()
+    ui.print_banner()
+
+    # Get content
+    content = text
+    if file_path:
+        content = Path(file_path).read_text(encoding="utf-8")
+    elif not text:
+        ui.print_error("Provide output text or use --file")
+        return
+
+    try:
+        from benderbox.analyzers.context_analyzer import analyze_inference_output
+        from rich.console import Console
+        from rich.panel import Panel
+
+        console = Console()
+
+        ui.print_info(f"Analyzing output from: {model}")
+        ui.print_info(f"Content length: {len(content)} chars")
+        print()
+
+        result = analyze_inference_output(content, model)
+
+        # Display findings
+        if result.findings:
+            ui.print_warning(f"Found {len(result.findings)} potential issues:")
+            print()
+            for finding in result.findings[:10]:
+                level_color = {
+                    "CRITICAL": "red",
+                    "HIGH": "yellow",
+                    "MEDIUM": "blue",
+                }.get(finding.risk_level.value, "white")
+                console.print(f"  [{level_color}]{finding.risk_level.value}[/]: {finding.description}")
+                console.print(f"    Match: [dim]{finding.matched_text[:60]}...[/dim]")
+        else:
+            ui.print_success("No harmful patterns detected")
+
+        # Summary
+        print()
+        risk_colors = {
+            "CRITICAL": "red bold",
+            "HIGH": "red",
+            "MEDIUM": "yellow",
+            "LOW": "green",
+            "SAFE": "green",
+        }
+        color = risk_colors.get(result.risk_level.value, "white")
+
+        console.print(Panel(
+            f"[{color}]Risk Level: {result.risk_level.value}[/{color}]\n"
+            f"Risk Score: {result.risk_score}/100\n"
+            f"Findings: {len(result.findings)}",
+            title="Output Analysis Results",
+            border_style=color.split()[0] if " " in color else color,
+        ))
+
+    except ImportError as e:
+        ui.print_error(f"Missing dependency: {e}")
+    except Exception as e:
+        ui.print_error(f"Analysis failed: {e}")
 
 
 def main():

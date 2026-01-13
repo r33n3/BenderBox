@@ -221,14 +221,39 @@ class ModelManager:
 
         return None
 
-    def setup_default_model(self, model_path: Path) -> Tuple[bool, str]:
+    def get_model_dir_for_purpose(self, purpose: str) -> Path:
         """
-        Set up a model as the default analysis model.
+        Get the model directory for a given purpose.
 
-        Creates a symlink or copies the model to models/analysis/model.gguf
+        Args:
+            purpose: One of "analysis", "nlp", or "code"
+
+        Returns:
+            Path to the appropriate model directory.
+        """
+        purpose_dirs = {
+            "analysis": self.analysis_model_dir,
+            "nlp": self.nlp_model_dir,
+            "code": self.code_model_dir,
+        }
+        if purpose not in purpose_dirs:
+            raise ValueError(f"Unknown purpose: {purpose}. Must be one of: {list(purpose_dirs.keys())}")
+        return purpose_dirs[purpose]
+
+    def setup_default_model(
+        self, model_path: Path, purpose: str = "analysis"
+    ) -> Tuple[bool, str]:
+        """
+        Set up a model as the default for a specific purpose.
+
+        Creates a symlink or copies the model to the appropriate directory:
+        - analysis: models/analysis/model.gguf (for interrogating other models)
+        - nlp: models/nlp/model.gguf (for BenderBox's chat features)
+        - code: models/code/model.gguf (for code generation)
 
         Args:
             model_path: Path to the model file.
+            purpose: One of "analysis", "nlp", or "code". Default is "analysis".
 
         Returns:
             Tuple of (success, message).
@@ -236,24 +261,29 @@ class ModelManager:
         if not model_path.exists():
             return False, f"Model not found: {model_path}"
 
-        # Create analysis directory
-        self.analysis_model_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            target_dir = self.get_model_dir_for_purpose(purpose)
+        except ValueError as e:
+            return False, str(e)
 
-        target_path = self.analysis_model_dir / "model.gguf"
+        # Create target directory
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        target_path = target_dir / "model.gguf"
 
         # Remove existing if present
-        if target_path.exists():
+        if target_path.exists() or target_path.is_symlink():
             target_path.unlink()
 
         try:
             # Try to create symlink first (saves space)
             target_path.symlink_to(model_path.resolve())
-            return True, f"Linked {model_path.name} as default model"
+            return True, f"Linked {model_path.name} as default {purpose} model"
         except OSError:
             # Fall back to copy on Windows if symlinks not supported
             try:
                 shutil.copy2(model_path, target_path)
-                return True, f"Copied {model_path.name} as default model"
+                return True, f"Copied {model_path.name} as default {purpose} model"
             except Exception as e:
                 return False, f"Failed to set up model: {e}"
 
