@@ -68,9 +68,10 @@ all = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/benderbox"
-Repository = "https://github.com/yourusername/benderbox"
-Documentation = "https://github.com/yourusername/benderbox#readme"
+Homepage = "https://github.com/r33n3/BenderBox"
+Repository = "https://github.com/r33n3/BenderBox"
+Documentation = "https://github.com/r33n3/BenderBox#readme"
+Issues = "https://github.com/r33n3/BenderBox/issues"
 
 [project.scripts]
 # v3.0 main entry point

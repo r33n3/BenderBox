@@ -18,6 +18,14 @@ from .runner.api_base import BaseAPIRunner
 from .scoring.risk import InterrogationRiskScore, RiskScorer
 from .validator.censorship import CensorshipValidator, MislabelingReport
 
+# Import behavior analyzer for optional behavior analysis
+try:
+    from benderbox.analyzers.behavior import BehaviorAnalyzer, BehaviorProfile
+    HAS_BEHAVIOR_ANALYZER = True
+except ImportError:
+    HAS_BEHAVIOR_ANALYZER = False
+    BehaviorProfile = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -32,18 +40,26 @@ class InterrogationEngine:
     def __init__(
         self,
         prompts_dir: Optional[Path] = None,
+        enable_behavior_analysis: bool = True,
     ):
         """
         Initialize the interrogation engine.
 
         Args:
             prompts_dir: Directory containing prompt YAML files
+            enable_behavior_analysis: Whether to run behavior analysis
         """
         self.prompt_library = PromptLibrary(prompts_dir)
         self.analyzer = ResponseAnalyzer()
         self.scorer = RiskScorer()
         self.censorship_validator = CensorshipValidator()
         self.report_generator = ReportGenerator()
+
+        # Initialize behavior analyzer if available and enabled
+        self._behavior_analyzer = None
+        self._enable_behavior_analysis = enable_behavior_analysis
+        if enable_behavior_analysis and HAS_BEHAVIOR_ANALYZER:
+            self._behavior_analyzer = BehaviorAnalyzer()
 
     async def interrogate(
         self,
@@ -130,6 +146,29 @@ class InterrogationEngine:
             except Exception as e:
                 logger.error(f"Censorship validation failed: {e}")
 
+        # Run behavior analysis if enabled
+        behavior_profile = None
+        if self._behavior_analyzer and self._enable_behavior_analysis:
+            if progress_callback:
+                progress_callback("Running behavior analysis...", 0.90)
+
+            try:
+                # Build prompt-response pairs from results
+                prompt_response_pairs = [
+                    (r.prompt.prompt, r.response)
+                    for r in results
+                    if r.response
+                ]
+                behavior_profile = await self._behavior_analyzer.build_profile(
+                    [
+                        await self._behavior_analyzer.analyze_output(p, r)
+                        for p, r in prompt_response_pairs
+                    ],
+                    model_name=model_name,
+                )
+            except Exception as e:
+                logger.warning(f"Behavior analysis failed: {e}")
+
         # Calculate risk score
         if progress_callback:
             progress_callback("Calculating risk score...", 0.95)
@@ -162,6 +201,7 @@ class InterrogationEngine:
             profile=profile,
             duration=duration,
             api_cost_info=api_cost_info,
+            behavior_profile=behavior_profile,
         )
 
         if progress_callback:

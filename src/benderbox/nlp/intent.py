@@ -21,6 +21,8 @@ class IntentType(Enum):
     ANALYZE_MODEL = "analyze_model"
     ANALYZE_INFRASTRUCTURE = "analyze_infrastructure"
     ANALYZE_SKILL = "analyze_skill"
+    ANALYZE_CODE = "analyze_code"  # Semantic code analysis
+    ANALYZE_BEHAVIOR = "analyze_behavior"  # Behavior analysis
     COMPARE = "compare"
     EXPLAIN = "explain"
     QUERY_KNOWLEDGE = "query_knowledge"
@@ -62,6 +64,26 @@ KEYWORD_PATTERNS: List[Tuple[re.Pattern, IntentType, bool, bool]] = [
     (re.compile(r"\bis\s+.+\s+(safe|secure|risky|dangerous)\b", re.I),
      IntentType.ANALYZE_MODEL, True, True),
 
+    # Semantic code analysis intents
+    (re.compile(r"\b(analyze|scan|check|review)\b.*\b(code|this code|the code)\b", re.I),
+     IntentType.ANALYZE_CODE, True, False),
+    (re.compile(r"\b(semantic|security)\s+(analysis|scan)\b", re.I),
+     IntentType.ANALYZE_CODE, True, False),
+    (re.compile(r"\b(analyze|scan|check)\b.*\b(file|source)\b", re.I),
+     IntentType.ANALYZE_CODE, True, False),
+    (re.compile(r"\bfind\b.*\b(vulnerabilities|issues|bugs|security)\b.*\b(in|this)\b", re.I),
+     IntentType.ANALYZE_CODE, True, False),
+    (re.compile(r"\b(is this|is the)\s+(code|file)\s+(safe|secure|vulnerable)\b", re.I),
+     IntentType.ANALYZE_CODE, True, True),
+
+    # Behavior analysis intents
+    (re.compile(r"\b(analyze|check|assess|evaluate)\b.*\b(behavior|behavioral|safety|responses)\b", re.I),
+     IntentType.ANALYZE_BEHAVIOR, True, False),
+    (re.compile(r"\b(behavior|capability|capabilities)\s+(analysis|assessment|test)\b", re.I),
+     IntentType.ANALYZE_BEHAVIOR, True, False),
+    (re.compile(r"\b(detect|find)\b.*\b(inconsistenc|drift|anomal)\b", re.I),
+     IntentType.ANALYZE_BEHAVIOR, True, False),
+
     # Comparison intents
     (re.compile(r"\b(compare|versus|vs\.?|difference between)\b", re.I),
      IntentType.COMPARE, True, True),
@@ -100,10 +122,12 @@ KEYWORD_PATTERNS: List[Tuple[re.Pattern, IntentType, bool, bool]] = [
 # Parameter extraction patterns
 PARAMETER_PATTERNS = {
     "model_path": re.compile(r"['\"]?([^\s'\"]+\.gguf)['\"]?", re.I),
-    "file_path": re.compile(r"['\"]?([^\s'\"]+\.(py|js|ts|yaml|yml|json))['\"]?", re.I),
+    "file_path": re.compile(r"['\"]?([^\s'\"]+\.(py|js|ts|yaml|yml|json|c|cpp|h|go|rs|rb|java|php))['\"]?", re.I),
+    "code_file": re.compile(r"['\"]?([^\s'\"]+\.(py|js|ts|c|cpp|h|go|rs|rb|java|php))['\"]?", re.I),
     "profile": re.compile(r"\b(quick|standard|deep|semantic|infra-quick|infra-standard)\b", re.I),
     "severity": re.compile(r"\b(critical|high|medium|low|info)\b", re.I),
-    "target_type": re.compile(r"\b(model|mcp|server|skill|infrastructure)\b", re.I),
+    "target_type": re.compile(r"\b(model|mcp|server|skill|infrastructure|code|file)\b", re.I),
+    "language": re.compile(r"\b(python|javascript|typescript|java|go|rust|ruby|php|c\+\+|c)\b", re.I),
 }
 
 
@@ -238,6 +262,19 @@ class IntentRouter:
             if file_matches:
                 params["target"] = file_matches[0][0] if file_matches else None
 
+        if intent_type == IntentType.ANALYZE_CODE:
+            # Look for code files
+            code_matches = PARAMETER_PATTERNS["code_file"].findall(query)
+            if code_matches:
+                params["target"] = code_matches[0][0] if code_matches else None
+            # Check for language hint
+            lang_match = PARAMETER_PATTERNS["language"].search(query)
+            if lang_match:
+                params["language"] = lang_match.group(1).lower()
+            # Default depth for semantic analysis
+            if "profile" not in params:
+                params["profile"] = "standard"
+
         # Profile extraction
         profile_match = PARAMETER_PATTERNS["profile"].search(query)
         if profile_match:
@@ -284,6 +321,8 @@ class IntentRouter:
 ANALYZE_MODEL: User wants to analyze/scan/test an AI model for safety
 ANALYZE_INFRASTRUCTURE: User wants to analyze MCP servers or infrastructure
 ANALYZE_SKILL: User wants to analyze a skill definition
+ANALYZE_CODE: User wants semantic analysis of source code for security issues
+ANALYZE_BEHAVIOR: User wants behavioral analysis, capability assessment, or drift detection
 COMPARE: User wants to compare multiple models or reports
 EXPLAIN: User wants explanation of a finding or result
 QUERY_KNOWLEDGE: User wants information about security topics
@@ -318,6 +357,8 @@ Respond with ONLY the intent category name (e.g., ANALYZE_MODEL) and nothing els
                         IntentType.ANALYZE_MODEL,
                         IntentType.ANALYZE_INFRASTRUCTURE,
                         IntentType.ANALYZE_SKILL,
+                        IntentType.ANALYZE_CODE,
+                        IntentType.ANALYZE_BEHAVIOR,
                         IntentType.COMPARE,
                     ),
                     requires_llm=intent_type in (
@@ -326,6 +367,8 @@ Respond with ONLY the intent category name (e.g., ANALYZE_MODEL) and nothing els
                         IntentType.GENERATE_REPORT,
                         IntentType.COMPARE,
                         IntentType.GENERAL_QUESTION,
+                        IntentType.ANALYZE_CODE,  # May use LLM for semantic analysis
+                        IntentType.ANALYZE_BEHAVIOR,  # May use LLM for behavior analysis
                     ),
                     raw_query=query,
                 )
@@ -344,6 +387,8 @@ Respond with ONLY the intent category name (e.g., ANALYZE_MODEL) and nothing els
             IntentType.ANALYZE_MODEL: "Analyze an AI model for safety and security",
             IntentType.ANALYZE_INFRASTRUCTURE: "Analyze MCP server or infrastructure",
             IntentType.ANALYZE_SKILL: "Analyze a skill definition",
+            IntentType.ANALYZE_CODE: "Perform semantic security analysis on code",
+            IntentType.ANALYZE_BEHAVIOR: "Perform behavioral analysis or capability assessment",
             IntentType.COMPARE: "Compare multiple models or reports",
             IntentType.EXPLAIN: "Explain a finding or result",
             IntentType.QUERY_KNOWLEDGE: "Query security knowledge base",

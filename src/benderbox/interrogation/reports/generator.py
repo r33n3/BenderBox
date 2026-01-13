@@ -12,6 +12,14 @@ from ..analyzer.results import AnalysisResult
 from ..scoring.risk import InterrogationRiskScore
 from ..validator.censorship import MislabelingReport
 
+# Import behavior profile type for optional behavior analysis
+try:
+    from benderbox.analyzers.behavior import BehaviorProfile
+    HAS_BEHAVIOR_PROFILE = True
+except ImportError:
+    HAS_BEHAVIOR_PROFILE = False
+    BehaviorProfile = None
+
 
 @dataclass
 class InterrogationReport:
@@ -43,6 +51,9 @@ class InterrogationReport:
 
     # API cost info (for API-based interrogation)
     api_cost_info: Optional[Dict[str, Any]] = None
+
+    # Behavior analysis profile
+    behavior_profile: Optional[Any] = None  # BehaviorProfile type when available
 
     def __post_init__(self):
         if not self.timestamp:
@@ -81,6 +92,19 @@ class InterrogationReport:
         # Include API cost info if available
         if self.api_cost_info:
             result["api_cost"] = self.api_cost_info
+
+        # Include behavior profile if available
+        if self.behavior_profile:
+            result["behavior_profile"] = {
+                "model_name": self.behavior_profile.model_name,
+                "total_outputs": self.behavior_profile.total_outputs,
+                "safe_outputs": self.behavior_profile.safe_outputs,
+                "unsafe_outputs": self.behavior_profile.unsafe_outputs,
+                "jailbreak_success_rate": self.behavior_profile.jailbreak_success_rate,
+                "overall_safety_score": self.behavior_profile.overall_safety_score,
+                "risk_distribution": self.behavior_profile.risk_distribution,
+                "category_distribution": self.behavior_profile.category_distribution,
+            }
 
         return result
 
@@ -146,6 +170,22 @@ class InterrogationReport:
                 "",
             ])
 
+        # Add behavior profile if available
+        if self.behavior_profile:
+            lines.extend([
+                "BEHAVIOR ANALYSIS",
+                "-" * 40,
+                f"Safety Score: {self.behavior_profile.overall_safety_score:.1f}/100",
+                f"Safe Outputs: {self.behavior_profile.safe_outputs}/{self.behavior_profile.total_outputs}",
+                f"Jailbreak Success Rate: {self.behavior_profile.jailbreak_success_rate * 100:.1f}%",
+                "",
+            ])
+            if self.behavior_profile.notable_findings:
+                lines.append("Notable Behavioral Signals:")
+                for signal in self.behavior_profile.notable_findings[:3]:
+                    lines.append(f"  - [{signal.risk_level.value.upper()}] {signal.description}")
+                lines.append("")
+
         lines.append("=" * 60)
 
         return "\n".join(lines)
@@ -166,6 +206,7 @@ class ReportGenerator:
         profile: str = "standard",
         duration: float = 0.0,
         api_cost_info: Optional[Dict[str, Any]] = None,
+        behavior_profile: Optional[Any] = None,
     ) -> InterrogationReport:
         """
         Generate a complete interrogation report.
@@ -181,6 +222,7 @@ class ReportGenerator:
             profile: Interrogation profile used
             duration: Total duration in seconds
             api_cost_info: Cost information for API-based interrogation
+            behavior_profile: BehaviorProfile from behavior analysis
 
         Returns:
             InterrogationReport
@@ -197,4 +239,5 @@ class ReportGenerator:
             prompts_tested=len(results),
             duration_seconds=duration,
             api_cost_info=api_cost_info,
+            behavior_profile=behavior_profile,
         )

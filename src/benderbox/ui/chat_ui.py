@@ -22,6 +22,8 @@ class CommandType(Enum):
     """Types of chat commands."""
 
     ANALYZE = "analyze"
+    SEMANTIC = "semantic"  # Semantic code analysis
+    SEARCH = "search"  # Semantic search across reports
     COMPARE = "compare"
     STATUS = "status"
     REPORTS = "reports"
@@ -56,6 +58,8 @@ class ChatUI:
     # Command aliases
     COMMAND_ALIASES = {
         "analyze": ["analyze", "scan", "check", "test", "a"],
+        "semantic": ["semantic", "code", "review", "security-scan", "sec"],
+        "search": ["search", "find", "lookup", "query-reports"],
         "compare": ["compare", "diff", "vs", "c"],
         "status": ["status", "info", "state", "s"],
         "reports": ["reports", "list", "history", "r"],
@@ -147,11 +151,14 @@ class ChatUI:
 
     def _parse_args(self, args_str: str) -> Tuple[List[str], Dict[str, str]]:
         """Parse arguments and flags from string."""
+        import sys
+
         if not args_str:
             return [], {}
 
         try:
-            parts = shlex.split(args_str)
+            # Use posix=False on Windows to preserve backslashes in paths
+            parts = shlex.split(args_str, posix=(sys.platform != "win32"))
         except ValueError:
             parts = args_str.split()
 
@@ -212,6 +219,12 @@ class ChatUI:
 
         elif command.command_type == CommandType.ANALYZE:
             await self._handle_analyze(command)
+
+        elif command.command_type == CommandType.SEMANTIC:
+            await self._handle_semantic(command)
+
+        elif command.command_type == CommandType.SEARCH:
+            await self._handle_search(command)
 
         elif command.command_type == CommandType.COMPARE:
             await self._handle_compare(command)
@@ -304,6 +317,236 @@ class ChatUI:
                 self.ui.print_markdown(response.content)
         else:
             self.ui.print_warning("Analysis requires conversation manager.")
+
+    async def _handle_semantic(self, command: ParsedCommand) -> None:
+        """Handle semantic code analysis command."""
+        if not command.args:
+            self.ui.print_error("Please specify a file to analyze.")
+            self.ui.print_info("Usage: semantic <file.py> [--depth quick|standard|deep]")
+            return
+
+        target = command.args[0]
+        depth = command.flags.get("depth", command.flags.get("profile", "standard"))
+
+        self.ui.print_info(f"Target: {target}")
+        self.ui.print_info(f"Analysis depth: {depth}")
+
+        if self._conversation:
+            # Use the analyze_code intent
+            query = f"analyze code {target} with {depth} depth"
+
+            spinner_msg = f"Performing semantic analysis on {target}..."
+            with ProgressSpinner(self.ui, spinner_msg):
+                response = await self._conversation.process_query(query)
+
+            self._last_result = response.analysis_result
+
+            if response.analysis_result:
+                self._print_semantic_result(response.analysis_result)
+            else:
+                self.ui.print_markdown(response.content)
+        else:
+            self.ui.print_warning("Semantic analysis requires conversation manager.")
+
+    def _print_semantic_result(self, result: Dict[str, Any]) -> None:
+        """Print semantic analysis result with formatting."""
+        # Check if this is a semantic analysis result
+        if result.get("analysis_type") != "semantic":
+            self.ui.print_analysis_summary(result)
+            return
+
+        summary = result.get("summary", {})
+        findings = result.get("findings", [])
+
+        # Print header
+        self.ui.print_header(f"Semantic Analysis: {result.get('target', 'Unknown')}")
+
+        # Print summary
+        risk_score = summary.get("risk_score", 0)
+        risk_color = "red" if risk_score >= 70 else "yellow" if risk_score >= 40 else "green"
+
+        if self.ui.console:
+            from rich.table import Table
+            from rich.panel import Panel
+
+            # Summary panel
+            summary_text = f"""
+Risk Score: [{risk_color}]{risk_score:.0f}/100[/{risk_color}]
+Critical: {summary.get('critical_count', 0)} | High: {summary.get('high_count', 0)}
+Analysis Depth: {result.get('analysis_depth', 'standard')}
+LLM Used: {'Yes' if result.get('llm_used') else 'No (pattern-based)'}
+
+{summary.get('text', 'No summary available.')}
+"""
+            self.ui.console.print(Panel(summary_text, title="Summary", border_style="cyan"))
+
+            # Findings table
+            if findings:
+                table = Table(title="Security Findings", show_header=True)
+                table.add_column("Severity", style="bold")
+                table.add_column("Category")
+                table.add_column("Title")
+                table.add_column("Location")
+                table.add_column("Confidence")
+
+                severity_colors = {
+                    "critical": "red bold",
+                    "high": "red",
+                    "medium": "yellow",
+                    "low": "cyan",
+                    "info": "dim",
+                }
+
+                for finding in findings:
+                    severity = finding.get("severity", "info")
+                    style = severity_colors.get(severity, "")
+                    table.add_row(
+                        f"[{style}]{severity.upper()}[/{style}]",
+                        finding.get("category", ""),
+                        finding.get("title", ""),
+                        finding.get("location", "-"),
+                        f"{finding.get('confidence', 0):.0%}",
+                    )
+
+                self.ui.console.print(table)
+
+                # Print details for critical/high findings
+                critical_high = [f for f in findings if f.get("severity") in ("critical", "high")]
+                if critical_high:
+                    self.ui.console.print("\n[bold]Finding Details:[/bold]")
+                    for finding in critical_high[:5]:  # Limit to top 5
+                        self.ui.console.print(f"\n[bold]{finding.get('title')}[/bold]")
+                        self.ui.console.print(f"  {finding.get('description', 'No description')}")
+                        if finding.get("recommendation"):
+                            self.ui.console.print(f"  [green]Recommendation:[/green] {finding.get('recommendation')}")
+                        if finding.get("cwe_id"):
+                            self.ui.console.print(f"  [dim]CWE: {finding.get('cwe_id')}[/dim]")
+            else:
+                self.ui.print_success("No security issues found!")
+        else:
+            # Plain text fallback
+            print(f"\nRisk Score: {risk_score:.0f}/100")
+            print(f"Critical: {summary.get('critical_count', 0)} | High: {summary.get('high_count', 0)}")
+            print(f"\n{summary.get('text', '')}\n")
+
+            if findings:
+                print("Findings:")
+                for finding in findings:
+                    print(f"  [{finding.get('severity', 'INFO').upper()}] {finding.get('title')}")
+                    print(f"    {finding.get('description', '')}")
+            else:
+                print("No security issues found!")
+
+    async def _handle_search(self, command: ParsedCommand) -> None:
+        """Handle semantic search command."""
+        if not command.args:
+            self.ui.print_error("Please specify a search query.")
+            self.ui.print_info("Usage: search <query> [--type reports|findings|all]")
+            return
+
+        query = " ".join(command.args)
+        search_type = command.flags.get("type", "all")
+        top_k = int(command.flags.get("limit", "10"))
+
+        self.ui.print_info(f"Searching for: {query}")
+
+        try:
+            from benderbox.nlp.rag import RAGPipeline
+            from benderbox.storage.report_indexer import ReportIndexer
+            from benderbox.storage.vector_store import VectorStore
+
+            # Initialize RAG pipeline
+            vector_store = VectorStore()
+            await vector_store.initialize()
+
+            report_indexer = ReportIndexer(vector_store=vector_store)
+
+            rag = RAGPipeline(
+                report_indexer=report_indexer,
+                knowledge_base=getattr(self._conversation, "_knowledge_base", None) if self._conversation else None,
+            )
+
+            with ProgressSpinner(self.ui, "Searching..."):
+                results = await rag.search(
+                    query=query,
+                    search_type=search_type,
+                    top_k=top_k,
+                )
+
+            if results:
+                self._print_search_results(results, query)
+            else:
+                self.ui.print_warning("No results found.")
+                self.ui.print_info("Try running some analyses first to populate the search index.")
+
+        except ImportError as e:
+            self.ui.print_error(f"Search requires additional dependencies: {e}")
+        except Exception as e:
+            logger.error(f"Search error: {e}")
+            self.ui.print_error(f"Search failed: {e}")
+
+    def _print_search_results(self, results: List[Dict[str, Any]], query: str) -> None:
+        """Print search results with formatting."""
+        self.ui.print_header(f"Search Results for: {query}")
+
+        if self.ui.console:
+            from rich.table import Table
+            from rich.panel import Panel
+
+            table = Table(title=f"Found {len(results)} results", show_header=True)
+            table.add_column("Type", style="bold", width=10)
+            table.add_column("Score", width=8)
+            table.add_column("Name/Target", width=25)
+            table.add_column("Details", width=40)
+
+            type_colors = {
+                "report": "cyan",
+                "finding": "yellow",
+                "knowledge": "green",
+            }
+
+            for result in results:
+                result_type = result.get("type", "unknown")
+                score = result.get("score", 0)
+                metadata = result.get("metadata", {})
+
+                # Get name based on type
+                if result_type == "report":
+                    name = metadata.get("target_name", "Unknown")
+                    details = f"{metadata.get('risk_level', '').upper()} ({metadata.get('risk_score', 0)}/100)"
+                elif result_type == "finding":
+                    name = metadata.get("test_name", "Unknown")
+                    details = f"[{metadata.get('severity', 'info').upper()}] {metadata.get('category', '')}"
+                else:
+                    name = metadata.get("name", "Unknown")
+                    details = metadata.get("category", "")
+
+                color = type_colors.get(result_type, "white")
+                table.add_row(
+                    f"[{color}]{result_type}[/{color}]",
+                    f"{score:.2f}",
+                    name[:25],
+                    details[:40],
+                )
+
+            self.ui.console.print(table)
+
+            # Show top result content
+            if results:
+                top = results[0]
+                content = top.get("content", "")[:300]
+                if len(top.get("content", "")) > 300:
+                    content += "..."
+                self.ui.console.print(Panel(content, title="Top Result Preview", border_style="dim"))
+        else:
+            print(f"\nFound {len(results)} results:\n")
+            for i, result in enumerate(results, 1):
+                result_type = result.get("type", "unknown")
+                score = result.get("score", 0)
+                content = result.get("content", "")[:100]
+                print(f"{i}. [{result_type}] (score: {score:.2f})")
+                print(f"   {content}...")
+                print()
 
     async def _handle_compare(self, command: ParsedCommand) -> None:
         """Handle compare command."""

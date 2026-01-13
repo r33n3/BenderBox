@@ -1,0 +1,8 @@
+# BenderBox Requirements
+# Install with: pip install -r requirements.txt
+#
+# This file provides traditional pip-style installation.
+# For full feature control, use: pip install -e ".[nlp,tui,web]"
+
+# Editable install - reads dependencies from pyproject.toml
+-e .

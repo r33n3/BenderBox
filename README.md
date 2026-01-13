@@ -9,7 +9,7 @@
 
 ### Prerequisites
 
-- **Python 3.10+** (Python 3.11 or 3.12 recommended for best compatibility)
+- **Python 3.9+** (Python 3.11 or 3.12 recommended for best compatibility)
 - **Windows:** Visual Studio Build Tools (for compiling llama-cpp-python)
 - **Linux/Mac:** GCC/Clang compiler
 
@@ -50,7 +50,7 @@ The setup wizard will:
 
 ```bash
 # Clone repository
-git clone <repository-url>
+git clone https://github.com/r33n3/BenderBox.git
 cd BenderBox
 
 # Install core dependencies
@@ -58,7 +58,37 @@ pip install -e .
 
 # Install with NLP features (interactive chat with local LLM)
 pip install -e ".[nlp]"
+
+# Alternative: traditional pip install
+pip install -r requirements.txt
 ```
+
+### Download a Model (Required for NLP Features)
+
+After installing with NLP features, you need to download a language model:
+
+```bash
+# See available models and your system's RAM
+python bb.py models list
+
+# Download a model (choose based on your system RAM)
+python bb.py models download tinyllama    # ~700MB, requires 4GB RAM (minimal)
+python bb.py models download phi2         # ~1.7GB, requires 8GB RAM (balanced)
+python bb.py models download mistral-7b   # ~4.4GB, requires 12GB RAM (best quality)
+
+# Set up the downloaded model as default
+python bb.py models setup
+```
+
+| Model | Size | RAM Required | Quality |
+|-------|------|--------------|---------|
+| `tinyllama` | 700MB | 4GB | Basic - fast, works on any system |
+| `tinyllama-small` | 500MB | 2GB | Basic - smallest, lowest quality |
+| `qwen2-1.5b` | 1GB | 6GB | Good - excellent for its size |
+| `phi2` | 1.7GB | 8GB | Good - Microsoft's efficient model |
+| `mistral-7b` | 4.4GB | 12GB | Best - high quality, needs more RAM |
+
+**Tip:** Run `python bb.py models list` to see which models fit your system's available RAM.
 
 ### Full Install with All Features
 
@@ -400,6 +430,65 @@ storage:
 api:
   api_timeout_seconds: 120
   max_retries: 3
+```
+
+---
+
+## Windows PATH Setup
+
+After installing with `pip install -e .`, you may see a warning that BenderBox executables are not on PATH:
+
+```
+WARNING: The scripts benderbox.exe, benderbox-chat.exe, etc. are installed in
+'C:\Users\<user>\AppData\Roaming\Python\Python312\Scripts' which is not on PATH.
+```
+
+### Option 1: PowerShell (Recommended)
+
+Run this command in PowerShell to add the Python Scripts directory to your PATH:
+
+```powershell
+# Get the Python Scripts directory
+$pythonScripts = (python -c "import sysconfig; print(sysconfig.get_path('scripts'))")
+
+# Add to user PATH permanently
+[Environment]::SetEnvironmentVariable(
+    "Path",
+    "$env:Path;$pythonScripts",
+    [EnvironmentVariableTarget]::User
+)
+
+# Refresh current session
+$env:Path = [Environment]::GetEnvironmentVariable("Path", "User") + ";" + [Environment]::GetEnvironmentVariable("Path", "Machine")
+```
+
+### Option 2: Manual Setup (Windows Settings)
+
+1. Press `Win + R`, type `sysdm.cpl`, press Enter
+2. Click **Advanced** tab → **Environment Variables**
+3. Under **User variables**, select **Path** and click **Edit**
+4. Click **New** and add: `%APPDATA%\Python\Python312\Scripts`
+   (adjust Python version as needed)
+5. Click **OK** to save all dialogs
+6. **Restart your terminal** for changes to take effect
+
+### Verify Installation
+
+After updating PATH, open a **new terminal** and run:
+
+```cmd
+benderbox --version
+```
+
+If successful, you should see the BenderBox version number.
+
+### Alternative: Use Python Module
+
+If you prefer not to modify PATH, you can always run BenderBox as a Python module:
+
+```cmd
+python -m benderbox --help
+python -m benderbox chat
 ```
 
 ---

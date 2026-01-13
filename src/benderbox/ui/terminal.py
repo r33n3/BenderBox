@@ -329,6 +329,8 @@ class TerminalUI:
 | Command | Description |
 |---------|-------------|
 | `analyze <path>` | Analyze a model or file |
+| `semantic <file>` | Semantic security analysis of code |
+| `search <query>` | Search reports and findings |
 | `compare <path1> <path2>` | Compare two targets |
 | `status` | Show system status |
 | `reports` | List recent reports |
@@ -336,10 +338,29 @@ class TerminalUI:
 | `clear` | Clear conversation |
 | `exit` | Exit BenderBox |
 
+## Semantic Code Analysis
+
+| Command | Aliases |
+|---------|---------|
+| `semantic <file.py>` | `code`, `review`, `sec` |
+| `semantic <file> --depth deep` | For thorough LLM-powered analysis |
+
+## Semantic Search
+
+| Command | Description |
+|---------|-------------|
+| `search <query>` | Search all reports and findings |
+| `search <query> --type reports` | Search only reports |
+| `search <query> --type findings` | Search only findings |
+| `search <query> --limit 20` | Return more results |
+
 ## Analysis Examples
 
 - "Analyze model.gguf for security issues"
 - "Check server.py with deep profile"
+- "semantic utils.py --depth deep"
+- "search SQL injection vulnerabilities"
+- "Review this code for vulnerabilities"
 - "Is this model safe for production?"
 - "What jailbreak techniques exist?"
 
@@ -348,6 +369,8 @@ class TerminalUI:
 - Use natural language to describe what you want
 - Reference previous analyses with "it" or "the model"
 - Ask for explanations: "Why is the risk high?"
+- Use `semantic` for LLM-powered code security analysis
+- Use `search` to find past analyses and similar findings
 """
         if self.console:
             self.console.print(Markdown(help_text))
@@ -381,6 +404,13 @@ class TerminalUI:
             self.console.print(f"[bold blue]ℹ[/bold blue] {message}")
         else:
             print(f"ℹ {message}")
+
+    def print_header(self, title: str) -> None:
+        """Print a section header."""
+        if self.console:
+            self.console.print(f"\n[bold cyan]═══ {title} ═══[/bold cyan]\n")
+        else:
+            print(f"\n=== {title} ===\n")
 
     def print_markdown(self, content: str) -> None:
         """

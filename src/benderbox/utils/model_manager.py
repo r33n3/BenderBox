@@ -106,13 +106,34 @@ class ModelManager:
         Initialize ModelManager.
 
         Args:
-            base_path: Base path for BenderBox. Defaults to cwd.
+            base_path: Base path for BenderBox. Defaults to ~/.benderbox/.
         """
-        self.base_path = base_path or Path.cwd()
+        if base_path is None:
+            base_path = Path.home() / ".benderbox"
+        self.base_path = base_path
+
+        # Define directory structure
         self.models_dir = self.base_path / "models"
         self.data_models_dir = self.base_path / "data" / "models"
         self.analysis_model_dir = self.models_dir / "analysis"
         self.code_model_dir = self.models_dir / "code"
+        self.nlp_model_dir = self.models_dir / "nlp"
+
+        # Create all required directories on initialization
+        self._ensure_directories()
+
+    def _ensure_directories(self) -> None:
+        """Create all required directories if they don't exist."""
+        directories = [
+            self.base_path,
+            self.models_dir,
+            self.data_models_dir,
+            self.analysis_model_dir,
+            self.code_model_dir,
+            self.nlp_model_dir,
+        ]
+        for dir_path in directories:
+            dir_path.mkdir(parents=True, exist_ok=True)
 
     def get_downloaded_models(self) -> List[Dict]:
         """
@@ -260,24 +281,23 @@ class ModelManager:
             from benderbox.utils.model_source import ModelSourceHandler
 
             handler = ModelSourceHandler(
-                cache_dir=str(self.data_models_dir),
+                cache_path=self.data_models_dir,
             )
 
             # Download from HuggingFace
+            # Format target as repo/filename for specific file download
             if progress_callback:
                 progress_callback(f"Downloading {model.name}...", 0)
 
-            result = await handler.resolve(
-                model.huggingface_repo,
-                preferred_file=model.filename,
-            )
+            target = f"{model.huggingface_repo}/{model.filename}"
+            result = await handler.resolve(target)
 
-            if result.success and result.local_path:
+            if result.local_path and result.local_path.exists():
                 if progress_callback:
                     progress_callback(f"Downloaded {model.name}", 100)
-                return True, f"Downloaded {model.name}", Path(result.local_path)
+                return True, f"Downloaded {model.name}", result.local_path
             else:
-                return False, f"Download failed: {result.error}", None
+                return False, "Download failed: file not found after download", None
 
         except ImportError as e:
             return False, f"Missing dependency: {e}", None
@@ -285,13 +305,134 @@ class ModelManager:
             return False, f"Download error: {e}", None
 
     def get_system_ram_gb(self) -> int:
-        """Get system RAM in GB."""
+        """
+        Get system RAM in GB using multiple detection methods.
+
+        Uses cross-validation to ensure accurate detection on Windows.
+        Falls back gracefully if dependencies are missing.
+        """
+        detected_values = []
+
+        # Method 1: psutil (cross-platform, most reliable)
         try:
             import psutil
-            return psutil.virtual_memory().total // (1024 ** 3)
+            ram_bytes = psutil.virtual_memory().total
+            ram_gb = ram_bytes // (1024 ** 3)
+            detected_values.append(("psutil", ram_gb))
+            logger.debug(f"psutil detected {ram_gb}GB RAM ({ram_bytes} bytes)")
         except ImportError:
-            # Default assumption
-            return 8
+            logger.debug("psutil not available for RAM detection")
+        except Exception as e:
+            logger.debug(f"psutil RAM detection failed: {e}")
+
+        # Method 2: Windows-specific via ctypes (fallback)
+        if os.name == "nt":
+            try:
+                import ctypes
+
+                class MEMORYSTATUSEX(ctypes.Structure):
+                    _fields_ = [
+                        ("dwLength", ctypes.c_ulong),
+                        ("dwMemoryLoad", ctypes.c_ulong),
+                        ("ullTotalPhys", ctypes.c_ulonglong),
+                        ("ullAvailPhys", ctypes.c_ulonglong),
+                        ("ullTotalPageFile", ctypes.c_ulonglong),
+                        ("ullAvailPageFile", ctypes.c_ulonglong),
+                        ("ullTotalVirtual", ctypes.c_ulonglong),
+                        ("ullAvailVirtual", ctypes.c_ulonglong),
+                        ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+                    ]
+
+                mem_status = MEMORYSTATUSEX()
+                mem_status.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+                if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(mem_status)):
+                    ram_bytes = mem_status.ullTotalPhys
+                    ram_gb = ram_bytes // (1024 ** 3)
+                    detected_values.append(("ctypes", ram_gb))
+                    logger.debug(f"ctypes detected {ram_gb}GB RAM ({ram_bytes} bytes)")
+            except Exception as e:
+                logger.debug(f"ctypes RAM detection failed: {e}")
+
+        # Cross-validate results
+        if detected_values:
+            # Log all detected values for debugging
+            for method, value in detected_values:
+                logger.debug(f"RAM detection [{method}]: {value}GB")
+
+            # If we have multiple values, check for consistency
+            if len(detected_values) > 1:
+                values = [v for _, v in detected_values]
+                # If values differ significantly (>10%), prefer ctypes on Windows
+                if max(values) > min(values) * 1.1:
+                    logger.warning(
+                        f"RAM detection inconsistency: {detected_values}. "
+                        "Using highest value."
+                    )
+                    return max(values)
+
+            # Return the first (most reliable) value
+            return detected_values[0][1]
+
+        # Fallback: conservative default
+        logger.warning("Could not detect system RAM, defaulting to 8GB")
+        return 8
+
+    def get_system_ram_info(self) -> Dict:
+        """
+        Get detailed RAM information for diagnostics.
+
+        Returns:
+            Dictionary with RAM details from all detection methods.
+        """
+        info = {
+            "detected_gb": self.get_system_ram_gb(),
+            "methods": {},
+        }
+
+        # psutil method
+        try:
+            import psutil
+            mem = psutil.virtual_memory()
+            info["methods"]["psutil"] = {
+                "total_bytes": mem.total,
+                "total_gb": mem.total // (1024 ** 3),
+                "available_gb": mem.available // (1024 ** 3),
+                "percent_used": mem.percent,
+            }
+        except Exception as e:
+            info["methods"]["psutil"] = {"error": str(e)}
+
+        # Windows ctypes method
+        if os.name == "nt":
+            try:
+                import ctypes
+
+                class MEMORYSTATUSEX(ctypes.Structure):
+                    _fields_ = [
+                        ("dwLength", ctypes.c_ulong),
+                        ("dwMemoryLoad", ctypes.c_ulong),
+                        ("ullTotalPhys", ctypes.c_ulonglong),
+                        ("ullAvailPhys", ctypes.c_ulonglong),
+                        ("ullTotalPageFile", ctypes.c_ulonglong),
+                        ("ullAvailPageFile", ctypes.c_ulonglong),
+                        ("ullTotalVirtual", ctypes.c_ulonglong),
+                        ("ullAvailVirtual", ctypes.c_ulonglong),
+                        ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+                    ]
+
+                mem_status = MEMORYSTATUSEX()
+                mem_status.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+                if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(mem_status)):
+                    info["methods"]["ctypes"] = {
+                        "total_bytes": mem_status.ullTotalPhys,
+                        "total_gb": mem_status.ullTotalPhys // (1024 ** 3),
+                        "available_gb": mem_status.ullAvailPhys // (1024 ** 3),
+                        "memory_load": mem_status.dwMemoryLoad,
+                    }
+            except Exception as e:
+                info["methods"]["ctypes"] = {"error": str(e)}
+
+        return info
 
 
 def get_model_manager(base_path: Optional[Path] = None) -> ModelManager:

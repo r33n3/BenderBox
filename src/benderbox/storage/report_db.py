@@ -12,9 +12,12 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from benderbox.config import get_config
+
+if TYPE_CHECKING:
+    from benderbox.storage.report_indexer import ReportIndexer
 
 logger = logging.getLogger(__name__)
 
@@ -74,18 +77,29 @@ class ReportDatabase:
     SQLite database for storing analysis reports.
 
     Uses aiosqlite for async operations.
+    Optionally integrates with ReportIndexer for semantic search.
     """
 
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(
+        self,
+        db_path: Optional[str] = None,
+        indexer: Optional["ReportIndexer"] = None,
+    ):
         """
         Initialize ReportDatabase.
 
         Args:
             db_path: Path to SQLite database file. Uses config default if not provided.
+            indexer: Optional ReportIndexer for vector store indexing.
         """
         config = get_config().storage
         self.db_path = db_path or config.db_path
         self._initialized = False
+        self._indexer = indexer
+
+    def set_indexer(self, indexer: "ReportIndexer") -> None:
+        """Set the report indexer for semantic search integration."""
+        self._indexer = indexer
 
     async def _get_connection(self):
         """Get aiosqlite connection."""
@@ -250,6 +264,16 @@ class ReportDatabase:
             await db.commit()
 
         logger.debug(f"Saved report {report_id} with {len(results)} findings")
+
+        # Index report for semantic search if indexer is configured
+        if self._indexer:
+            try:
+                await self._indexer.index_report(report, report_id=report_id)
+                logger.debug(f"Indexed report {report_id} for semantic search")
+            except Exception as e:
+                # Don't fail the save if indexing fails
+                logger.warning(f"Failed to index report {report_id}: {e}")
+
         return report_id
 
     async def get_report(self, report_id: str) -> Optional[Dict[str, Any]]:
@@ -486,6 +510,13 @@ class ReportDatabase:
             await db.execute("DELETE FROM findings WHERE report_id = ?", (report_id,))
             await db.execute("DELETE FROM reports WHERE id = ?", (report_id,))
             await db.commit()
+
+        # Remove from vector store index if indexer is configured
+        if self._indexer:
+            try:
+                await self._indexer.delete_report_index(report_id)
+            except Exception as e:
+                logger.warning(f"Failed to remove report {report_id} from index: {e}")
 
         logger.debug(f"Deleted report {report_id}")
         return True

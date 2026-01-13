@@ -91,12 +91,13 @@ class LlamaModel:
         if not path.exists():
             raise ModelNotFoundError(
                 f"Model file not found: {self.model_path}\n\n"
-                f"To use BenderBox's NLP features, you need to download a GGUF model.\n"
-                f"Recommended models:\n"
-                f"  - Analysis: Mistral-7B-Instruct (mistral-7b-instruct-v0.2.Q4_K_M.gguf)\n"
-                f"  - Code: CodeLlama-7B (codellama-7b-instruct.Q4_K_M.gguf)\n\n"
-                f"Download from: https://huggingface.co/TheBloke\n"
-                f"Place the model file at: {self.model_path}"
+                f"To use BenderBox's NLP features, download a model:\n\n"
+                f"  python bb.py models list              # See available models for your system\n"
+                f"  python bb.py models download <id>     # Download a model\n"
+                f"  python bb.py models setup             # Configure default model\n\n"
+                f"Quick start (recommended for most systems):\n"
+                f"  python bb.py models download tinyllama\n"
+                f"  python bb.py models setup"
             )
 
         try:
