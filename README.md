@@ -22,18 +22,14 @@ BenderBox is a comprehensive platform for analyzing AI models, MCP servers, and 
 ## Quick Start
 
 ```bash
-# 1. Clone and install
+# 1. Clone the repository
 git clone https://github.com/r33n3/BenderBox.git
 cd BenderBox
-pip install -e .
 
-# 2. Start interactive mode
+# 2. Run the installer for your OS (see Installation section below)
+
+# 3. Start BenderBox
 python bb.py -i
-
-# 3. Try these commands:
-#    status                    - Check system status
-#    help                      - See available commands
-#    mcp tools npx @modelcontextprotocol/server-filesystem .  - List MCP server tools
 ```
 
 ---
@@ -43,49 +39,93 @@ python bb.py -i
 ### Prerequisites
 
 - **Python 3.9+** (Python 3.11 or 3.12 recommended)
-- **Windows:** Visual Studio Build Tools (for NLP features only)
-- **Linux/Mac:** GCC/Clang compiler (for NLP features only)
+- **Git** (to clone the repository)
 
-### Option 1: Interactive Setup Wizard (Recommended)
+### Windows Installation
 
-```bash
-git clone https://github.com/r33n3/BenderBox.git
-cd BenderBox
+```powershell
+# Option A: Double-click install.bat
+# Or run from command prompt:
+install.bat
+
+# Option B: Run setup wizard directly
 python setup_wizard.py
+
+# Option C: Manual install
+pip install -e .
 ```
 
-The wizard guides you through:
+**Prerequisites script (optional):**
+```powershell
+# Install prerequisites including llama-cli for GGUF analysis
+.\scripts\install-prerequisites.ps1 -All
+```
+
+### Linux / macOS Installation
+
+```bash
+# Option A: Run the install script
+chmod +x install.sh
+./install.sh
+
+# Option B: Run setup wizard directly
+python3 setup_wizard.py
+
+# Option C: Manual install
+pip3 install -e .
+```
+
+**Prerequisites script (optional):**
+```bash
+# Install prerequisites including llama-cli for GGUF analysis
+chmod +x scripts/install-prerequisites.sh
+./scripts/install-prerequisites.sh --all
+```
+
+### Installation Files Summary
+
+| File | Platform | Description |
+|------|----------|-------------|
+| `install.bat` | Windows | Double-click installer launcher |
+| `install.sh` | Linux/Mac | Bash installer launcher |
+| `setup_wizard.py` | All | Interactive setup wizard (auto-detects OS) |
+| `scripts/install-prerequisites.ps1` | Windows | PowerShell prerequisites installer |
+| `scripts/install-prerequisites.sh` | Linux/Mac | Bash prerequisites installer |
+
+### Setup Wizard Features
+
+The setup wizard (`python setup_wizard.py`) guides you through:
 - Python version verification
 - Build tools detection (Windows)
-- Feature selection (core, NLP, all)
+- Feature selection:
+  - **Core** - CLI, analysis features (required)
+  - **NLP** - Local LLM chat with GGUF models
+  - **MCP** - Model Context Protocol server
+  - **TUI** - Rich terminal interface
+  - **Web** - FastAPI web interface
+  - **Dev** - Testing and development tools
 - Automatic dependency installation
+- Installation verification
 
-### Option 2: Quick Install
+### Manual Installation Options
 
 ```bash
-# Clone repository
-git clone https://github.com/r33n3/BenderBox.git
-cd BenderBox
-
-# Install core (no local NLP, but all analysis features work)
+# Core only (all analysis features, no local NLP)
 pip install -e .
 
-# OR install with NLP features (requires build tools on Windows)
+# With NLP/local LLM support
 pip install -e ".[nlp]"
 
-# OR install everything
+# Everything
 pip install -e ".[all]"
-```
 
-### Option 3: Minimal Install (No pip install -e)
-
-```bash
+# Minimal (no pip install -e)
 pip install pyyaml click rich httpx huggingface-hub aiosqlite
 ```
 
 ### Windows Build Tools (Only for NLP Features)
 
-If you want local NLP chat features, install Visual Studio Build Tools:
+If you want local NLP chat features on Windows, install Visual Studio Build Tools:
 
 ```powershell
 # Download and install C++ build tools
