@@ -28,6 +28,7 @@ class IntentType(Enum):
     MCP_CALL = "mcp_call"  # Call MCP tool
     CONTEXT_ANALYZE = "context_analyze"  # Analyze instruction file
     CONTEXT_SCAN = "context_scan"  # Scan directory for risky files
+    LIST_MODELS = "list_models"  # List available models
     COMPARE = "compare"
     EXPLAIN = "explain"
     QUERY_KNOWLEDGE = "query_knowledge"
@@ -144,10 +145,20 @@ KEYWORD_PATTERNS: List[Tuple[re.Pattern, IntentType, bool, bool]] = [
     (re.compile(r"\btell me about\b", re.I),
      IntentType.QUERY_KNOWLEDGE, False, True),
 
+    # Model listing intents
+    (re.compile(r"\b(list|show|what)\b.*\bmodels?\b", re.I),
+     IntentType.LIST_MODELS, False, False),
+    (re.compile(r"\bmodels?\s+(list|available|downloaded)\b", re.I),
+     IntentType.LIST_MODELS, False, False),
+    (re.compile(r"\bwhat\b.*\b(analysis|nlp)\s+models?\b", re.I),
+     IntentType.LIST_MODELS, False, False),
+    (re.compile(r"\bavailable\s+models?\b", re.I),
+     IntentType.LIST_MODELS, False, False),
+    (re.compile(r"\bmodels?\s+for\s+(analysis|nlp)\b", re.I),
+     IntentType.LIST_MODELS, False, False),
+
     # Status intents
     (re.compile(r"\b(status|state|info|health)\b", re.I),
-     IntentType.GET_STATUS, False, False),
-    (re.compile(r"\bwhat models?\b.*\b(loaded|available)\b", re.I),
      IntentType.GET_STATUS, False, False),
 
     # Help intents
@@ -158,12 +169,15 @@ KEYWORD_PATTERNS: List[Tuple[re.Pattern, IntentType, bool, bool]] = [
 # Parameter extraction patterns
 PARAMETER_PATTERNS = {
     "model_path": re.compile(r"['\"]?([^\s'\"]+\.gguf)['\"]?", re.I),
+    "model_name": re.compile(r"\b(analyze|test|scan|check)\s+(?:model\s+)?([a-zA-Z0-9_\-]+)\b", re.I),
     "file_path": re.compile(r"['\"]?([^\s'\"]+\.(py|js|ts|yaml|yml|json|c|cpp|h|go|rs|rb|java|php))['\"]?", re.I),
     "code_file": re.compile(r"['\"]?([^\s'\"]+\.(py|js|ts|c|cpp|h|go|rs|rb|java|php))['\"]?", re.I),
-    "profile": re.compile(r"\b(quick|standard|deep|semantic|infra-quick|infra-standard)\b", re.I),
+    # Profiles: model analysis + infrastructure profiles
+    "profile": re.compile(r"\b(quick|standard|full|deep|adversarial|infra-quick|infra-standard|infra-deep)\b", re.I),
     "severity": re.compile(r"\b(critical|high|medium|low|info)\b", re.I),
     "target_type": re.compile(r"\b(model|mcp|server|skill|infrastructure|code|file)\b", re.I),
     "language": re.compile(r"\b(python|javascript|typescript|java|go|rust|ruby|php|c\+\+|c)\b", re.I),
+    "model_purpose": re.compile(r"\bfor\s+(analysis|nlp)\b", re.I),
 }
 
 
@@ -284,13 +298,26 @@ class IntentRouter:
 
         # Extract based on intent type
         if intent_type in (IntentType.ANALYZE_MODEL, IntentType.COMPARE):
-            # Look for model paths
+            # Look for model paths first (e.g., ./model.gguf)
             model_matches = PARAMETER_PATTERNS["model_path"].findall(query)
             if model_matches:
                 if len(model_matches) == 1:
                     params["target"] = model_matches[0]
                 else:
                     params["targets"] = model_matches
+            else:
+                # Look for model name (e.g., "analyze llama")
+                name_match = PARAMETER_PATTERNS["model_name"].search(query)
+                if name_match:
+                    params["model_name"] = name_match.group(2)
+
+        if intent_type == IntentType.LIST_MODELS:
+            # Extract purpose filter (analysis or nlp)
+            purpose_match = PARAMETER_PATTERNS["model_purpose"].search(query)
+            if purpose_match:
+                params["purpose"] = purpose_match.group(1).lower()
+            else:
+                params["purpose"] = "all"
 
         if intent_type in (IntentType.ANALYZE_INFRASTRUCTURE, IntentType.ANALYZE_SKILL):
             # Look for file paths
@@ -430,6 +457,7 @@ Respond with ONLY the intent category name (e.g., ANALYZE_MODEL) and nothing els
             IntentType.MCP_CALL: "Call a specific tool on an MCP server",
             IntentType.CONTEXT_ANALYZE: "Analyze instruction file for security risks",
             IntentType.CONTEXT_SCAN: "Scan directory for risky instruction files",
+            IntentType.LIST_MODELS: "List available models for analysis or NLP",
             IntentType.COMPARE: "Compare multiple models or reports",
             IntentType.EXPLAIN: "Explain a finding or result",
             IntentType.QUERY_KNOWLEDGE: "Query security knowledge base",

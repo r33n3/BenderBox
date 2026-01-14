@@ -129,6 +129,7 @@ class ResponseGenerator:
             IntentType.CONTEXT_ANALYZE: self._format_context_analysis,
             IntentType.ANALYZE_CODE: self._format_analysis_result,
             IntentType.ANALYZE_BEHAVIOR: self._format_analysis_result,
+            IntentType.LIST_MODELS: self._format_model_list,
             IntentType.COMPARE: self._format_comparison,
             IntentType.EXPLAIN: self._generate_explanation,
             IntentType.QUERY_KNOWLEDGE: self._answer_knowledge_query,
@@ -412,6 +413,46 @@ class ResponseGenerator:
         if categories:
             return max(categories, key=categories.get)
         return "general"
+
+    async def _format_model_list(self, context: ResponseContext) -> str:
+        """Format model list for NLP chat."""
+        from benderbox.utils.model_manager import ModelManager
+
+        manager = ModelManager()
+        purpose = context.intent.parameters.get("purpose", "all")
+
+        lines = ["**Available Models**", ""]
+
+        if purpose in ("analysis", "all"):
+            analysis_models = manager.list_analysis_models()
+            lines.append("**Analysis Models** (models/analysis/):")
+            if analysis_models:
+                for m in analysis_models:
+                    lines.append(f"- `{m['name']}` ({m['size_mb']} MB)")
+            else:
+                lines.append("  No analysis models found.")
+                lines.append("  Add with: `benderbox models add <file> --for analysis`")
+            lines.append("")
+
+        if purpose in ("nlp", "all"):
+            nlp_models = manager.list_nlp_models()
+            lines.append("**NLP Models** (models/nlp/):")
+            if nlp_models:
+                for m in nlp_models:
+                    lines.append(f"- `{m['name']}` ({m['size_mb']} MB)")
+            else:
+                lines.append("  No NLP models found.")
+                lines.append("  Download with: `benderbox models download tinyllama`")
+            lines.append("")
+
+        if purpose == "all":
+            lines.append("**Commands:**")
+            lines.append("- `models list --for analysis` - List analysis targets")
+            lines.append("- `models list --for nlp` - List NLP/chat models")
+            lines.append("- `models add <path> --for analysis` - Add model for analysis")
+            lines.append("- `analyze <model-name>` - Analyze by name")
+
+        return "\n".join(lines)
 
     async def _format_comparison(self, context: ResponseContext) -> str:
         """Format comparison results."""

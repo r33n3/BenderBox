@@ -1842,10 +1842,14 @@ def nlp_features(ctx):
     print("  benderbox -i            - Interactive mode with NLP queries")
     print()
     print("MODEL MANAGEMENT:")
-    print("  benderbox models list   - List available/downloaded models")
-    print("  benderbox models download <id> - Download a model")
-    print("  benderbox models setup  - Configure default model")
-    print("  benderbox models test   - Test model functionality")
+    print("  benderbox models list              - List all models")
+    print("  benderbox models list --for analysis - List analysis targets")
+    print("  benderbox models list --for nlp    - List NLP/chat models")
+    print("  benderbox models add <path> --for analysis - Add model for analysis")
+    print("  benderbox models add <path> --for nlp - Add model for chat")
+    print("  benderbox models download <id>     - Download recommended model")
+    print("  benderbox models setup             - Configure default model")
+    print("  benderbox models test              - Test model functionality")
     print()
     print("ANALYSIS:")
     print("  benderbox interrogate   - Test model safety with NLP")
@@ -1867,9 +1871,17 @@ def models(ctx):
 
 
 @models.command("list")
+@click.option("--for", "purpose", type=click.Choice(["analysis", "nlp", "all"]), default="all",
+              help="Filter by purpose: analysis (models to analyze), nlp (BenderBox chat), all (default)")
 @click.pass_context
-def models_list(ctx):
-    """List downloaded and recommended models."""
+def models_list(ctx, purpose: str):
+    """List downloaded and recommended models.
+
+    Examples:
+        benderbox models list                # All models
+        benderbox models list --for nlp      # NLP model only
+        benderbox models list --for analysis # Analysis targets only
+    """
     from benderbox.ui.terminal import TerminalUI
     from benderbox.utils.model_manager import ModelManager, RECOMMENDED_MODELS
 
@@ -1884,69 +1896,124 @@ def models_list(ctx):
 
         console = Console()
 
-        # Show downloaded models
-        downloaded = manager.get_downloaded_models()
+        # Show models based on purpose filter
+        if purpose == "analysis" or purpose == "all":
+            analysis_models = manager.list_analysis_models()
+            if analysis_models:
+                table = Table(title="Analysis Models (models/analysis/)")
+                table.add_column("Name", style="cyan")
+                table.add_column("Filename", style="dim")
+                table.add_column("Size", style="green")
 
-        if downloaded:
-            table = Table(title="Downloaded Models")
-            table.add_column("Name", style="cyan")
-            table.add_column("Size", style="green")
-            table.add_column("Location", style="dim")
+                for model in analysis_models:
+                    table.add_row(
+                        model["name"],
+                        model["filename"],
+                        f"{model['size_mb']} MB",
+                    )
 
-            for model in downloaded:
-                table.add_row(
-                    model["name"],
-                    f"{model['size_mb']} MB",
-                    model["location"],
+                console.print(table)
+            elif purpose == "analysis":
+                ui.print_warning("No analysis models found in models/analysis/")
+                ui.print_info("Add models with: benderbox models add <path> --for analysis")
+            print()
+
+        if purpose == "nlp" or purpose == "all":
+            nlp_models = manager.list_nlp_models()
+            if nlp_models:
+                table = Table(title="NLP Models (models/nlp/)")
+                table.add_column("Name", style="cyan")
+                table.add_column("Filename", style="dim")
+                table.add_column("Size", style="green")
+
+                for model in nlp_models:
+                    table.add_row(
+                        model["name"],
+                        model["filename"],
+                        f"{model['size_mb']} MB",
+                    )
+
+                console.print(table)
+            elif purpose == "nlp":
+                ui.print_warning("No NLP models found in models/nlp/")
+                ui.print_info("Download with: benderbox models download tinyllama --purpose nlp")
+            print()
+
+        # Show all downloaded models when purpose is "all"
+        if purpose == "all":
+            downloaded = manager.get_downloaded_models()
+            # Filter out models already shown in analysis/nlp tables
+            other_models = [m for m in downloaded
+                          if "models/analysis" not in m["location"]
+                          and "models/nlp" not in m["location"]
+                          and "models\\analysis" not in m["location"]
+                          and "models\\nlp" not in m["location"]]
+
+            if other_models:
+                table = Table(title="Other Downloaded Models")
+                table.add_column("Name", style="cyan")
+                table.add_column("Size", style="green")
+                table.add_column("Location", style="dim")
+
+                for model in other_models:
+                    table.add_row(
+                        model["name"],
+                        f"{model['size_mb']} MB",
+                        model["location"],
+                    )
+
+                console.print(table)
+                print()
+
+            # Show default model status
+            default_path = manager.get_default_model_path()
+            if default_path:
+                ui.print_success(f"Default analysis model: {default_path.name}")
+                ui.print_info(f"Path: {default_path}")
+            else:
+                ui.print_warning("No default analysis model configured.")
+                ui.print_info("Set one with: benderbox models setup")
+
+            print()
+
+            # Show recommended models
+            rec_table = Table(title="Recommended Models for Download")
+            rec_table.add_column("ID", style="cyan")
+            rec_table.add_column("Name", style="bold")
+            rec_table.add_column("Size", style="green")
+            rec_table.add_column("RAM Needed", style="yellow")
+            rec_table.add_column("Quality")
+            rec_table.add_column("Description", style="dim")
+
+            for key, model in RECOMMENDED_MODELS.items():
+                quality_color = {"basic": "yellow", "good": "green", "best": "cyan"}
+                rec_table.add_row(
+                    key,
+                    model.name,
+                    f"{model.size_mb} MB",
+                    f"{model.min_ram_gb}+ GB",
+                    f"[{quality_color.get(model.quality, 'white')}]{model.quality}[/]",
+                    model.description[:50] + "..." if len(model.description) > 50 else model.description,
                 )
 
-            console.print(table)
-        else:
-            ui.print_warning("No models downloaded yet.")
-
-        print()
-
-        # Show default model status
-        default_path = manager.get_default_model_path()
-        if default_path:
-            ui.print_success(f"Default model: {default_path.name}")
-            ui.print_info(f"Path: {default_path}")
-        else:
-            ui.print_warning("No default model configured.")
-            ui.print_info("Set one with: benderbox models setup")
-
-        print()
-
-        # Show recommended models
-        rec_table = Table(title="Recommended Models")
-        rec_table.add_column("ID", style="cyan")
-        rec_table.add_column("Name", style="bold")
-        rec_table.add_column("Size", style="green")
-        rec_table.add_column("RAM Needed", style="yellow")
-        rec_table.add_column("Quality")
-        rec_table.add_column("Description", style="dim")
-
-        for key, model in RECOMMENDED_MODELS.items():
-            quality_color = {"basic": "yellow", "good": "green", "best": "cyan"}
-            rec_table.add_row(
-                key,
-                model.name,
-                f"{model.size_mb} MB",
-                f"{model.min_ram_gb}+ GB",
-                f"[{quality_color.get(model.quality, 'white')}]{model.quality}[/]",
-                model.description[:50] + "..." if len(model.description) > 50 else model.description,
-            )
-
-        console.print(rec_table)
-        print()
-        ui.print_info("Download a model: benderbox models download <id>")
-        ui.print_info("For your system (14GB RAM): 'tinyllama' or 'phi2' recommended")
+            console.print(rec_table)
+            print()
+            ui.print_info("Download a model: benderbox models download <id>")
+            ui.print_info("For your system: 'tinyllama' or 'phi2' recommended")
 
     except ImportError:
         # Fallback without rich
-        print("Downloaded models:")
-        for model in downloaded:
-            print(f"  - {model['name']} ({model['size_mb']} MB)")
+        if purpose in ("analysis", "all"):
+            analysis_models = manager.list_analysis_models()
+            print("Analysis Models:")
+            for model in analysis_models:
+                print(f"  - {model['name']} ({model['size_mb']} MB)")
+
+        if purpose in ("nlp", "all"):
+            nlp_models = manager.list_nlp_models()
+            print("NLP Models:")
+            for model in nlp_models:
+                print(f"  - {model['name']} ({model['size_mb']} MB)")
 
 
 @models.command("download")
@@ -2047,6 +2114,73 @@ def models_download(ctx, model_id: str, set_default: bool, purpose: str, yes: bo
                 print(f"Default model: {msg}")
         else:
             print(f"Error: {message}")
+
+
+@models.command("add")
+@click.argument("model_path", type=click.Path(exists=True))
+@click.option("--for", "purpose", type=click.Choice(["analysis", "nlp"]), default="analysis",
+              help="Purpose: analysis (models to analyze) or nlp (BenderBox chat)")
+@click.option("--copy/--link", default=True,
+              help="Copy the model (default) or create a symlink")
+@click.pass_context
+def models_add(ctx, model_path: str, purpose: str, copy: bool):
+    """Add a model to the analysis or NLP folder.
+
+    Copies (or links) a model file to the appropriate BenderBox folder
+    so it can be discovered for analysis or NLP.
+
+    Examples:
+        benderbox models add ./my-model.gguf --for analysis
+        benderbox models add ./chat-model.gguf --for nlp
+        benderbox models add ./model.gguf --link  # Symlink instead of copy
+    """
+    import shutil
+    from pathlib import Path
+    from benderbox.ui.terminal import TerminalUI
+    from benderbox.utils.model_manager import ModelManager
+
+    ui = TerminalUI()
+    ui.print_banner()
+
+    source = Path(model_path)
+    if not source.suffix.lower() == ".gguf":
+        ui.print_error("Model file must be a .gguf file")
+        return
+
+    manager = ModelManager()
+    target_dir = manager.get_model_dir_for_purpose(purpose)
+    target_path = target_dir / source.name
+
+    if target_path.exists():
+        ui.print_warning(f"Model already exists: {target_path}")
+        if not click.confirm("Overwrite?"):
+            ui.print_info("Cancelled")
+            return
+        target_path.unlink()
+
+    try:
+        if copy:
+            ui.print_info(f"Copying {source.name} to {purpose} folder...")
+            shutil.copy2(source, target_path)
+            ui.print_success(f"Copied to: {target_path}")
+        else:
+            ui.print_info(f"Linking {source.name} to {purpose} folder...")
+            target_path.symlink_to(source.resolve())
+            ui.print_success(f"Linked to: {target_path}")
+
+        ui.print_info(f"\nModel is now available for {purpose}.")
+        if purpose == "analysis":
+            ui.print_info("Analyze it with: benderbox analyze " + source.stem)
+        else:
+            ui.print_info("Use it for chat with: benderbox -i")
+
+    except OSError as e:
+        if not copy:
+            ui.print_warning(f"Symlink failed ({e}), falling back to copy...")
+            shutil.copy2(source, target_path)
+            ui.print_success(f"Copied to: {target_path}")
+        else:
+            ui.print_error(f"Failed to add model: {e}")
 
 
 @models.command("setup")

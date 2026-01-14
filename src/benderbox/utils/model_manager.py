@@ -241,6 +241,119 @@ class ModelManager:
             raise ValueError(f"Unknown purpose: {purpose}. Must be one of: {list(purpose_dirs.keys())}")
         return purpose_dirs[purpose]
 
+    def list_analysis_models(self) -> List[Dict]:
+        """
+        List all models available for analysis in the analysis folder.
+
+        Returns:
+            List of model info dictionaries with name, path, and size.
+        """
+        models = []
+        if self.analysis_model_dir.exists():
+            for gguf in self.analysis_model_dir.glob("*.gguf"):
+                models.append({
+                    "name": gguf.stem,  # filename without extension
+                    "filename": gguf.name,
+                    "path": str(gguf),
+                    "size_mb": gguf.stat().st_size // (1024 * 1024),
+                    "purpose": "analysis",
+                })
+        return sorted(models, key=lambda m: m["name"].lower())
+
+    def list_nlp_models(self) -> List[Dict]:
+        """
+        List all models available for NLP/chat in the nlp folder.
+
+        Returns:
+            List of model info dictionaries with name, path, and size.
+        """
+        models = []
+        if self.nlp_model_dir.exists():
+            for gguf in self.nlp_model_dir.glob("*.gguf"):
+                models.append({
+                    "name": gguf.stem,
+                    "filename": gguf.name,
+                    "path": str(gguf),
+                    "size_mb": gguf.stat().st_size // (1024 * 1024),
+                    "purpose": "nlp",
+                })
+        return sorted(models, key=lambda m: m["name"].lower())
+
+    def find_model_by_name(self, name: str, purpose: str = "analysis") -> Optional[Path]:
+        """
+        Find a model by name with fuzzy matching.
+
+        Args:
+            name: Model name (partial match supported, case-insensitive)
+            purpose: "analysis" or "nlp"
+
+        Returns:
+            Path to the model if found, None otherwise.
+
+        Search order:
+        1. Exact match (filename without extension)
+        2. Exact match (full filename with .gguf)
+        3. Fuzzy match (name contained in filename)
+        """
+        model_dir = self.get_model_dir_for_purpose(purpose)
+        if not model_dir.exists():
+            return None
+
+        name_lower = name.lower().strip()
+
+        # 1. Exact match (stem)
+        for gguf in model_dir.glob("*.gguf"):
+            if gguf.stem.lower() == name_lower:
+                return gguf
+
+        # 2. Exact match (full filename)
+        if not name_lower.endswith(".gguf"):
+            name_with_ext = name_lower + ".gguf"
+        else:
+            name_with_ext = name_lower
+
+        for gguf in model_dir.glob("*.gguf"):
+            if gguf.name.lower() == name_with_ext:
+                return gguf
+
+        # 3. Fuzzy match (name contained in filename)
+        matches = []
+        for gguf in model_dir.glob("*.gguf"):
+            if name_lower in gguf.stem.lower():
+                matches.append(gguf)
+
+        if len(matches) == 1:
+            return matches[0]
+        elif len(matches) > 1:
+            # Return shortest match (most specific)
+            return min(matches, key=lambda p: len(p.stem))
+
+        return None
+
+    def get_model_suggestions(self, partial_name: str, purpose: str = "analysis") -> List[str]:
+        """
+        Get suggestions for model names based on partial input.
+
+        Args:
+            partial_name: Partial model name to match
+            purpose: "analysis" or "nlp"
+
+        Returns:
+            List of matching model names.
+        """
+        model_dir = self.get_model_dir_for_purpose(purpose)
+        if not model_dir.exists():
+            return []
+
+        partial_lower = partial_name.lower().strip()
+        suggestions = []
+
+        for gguf in model_dir.glob("*.gguf"):
+            if partial_lower in gguf.stem.lower():
+                suggestions.append(gguf.stem)
+
+        return sorted(suggestions)
+
     def setup_default_model(
         self, model_path: Path, purpose: str = "analysis"
     ) -> Tuple[bool, str]:
