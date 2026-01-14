@@ -446,8 +446,9 @@ class ChatUI:
         return False
 
     async def _handle_help(self, command: ParsedCommand) -> None:
-        """Handle help command."""
-        self.ui.print_help()
+        """Handle help command with optional category."""
+        category = command.args[0] if command.args else None
+        self.ui.print_help(category)
 
     async def _handle_clear(self, command: ParsedCommand) -> None:
         """Handle clear command."""

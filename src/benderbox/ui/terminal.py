@@ -321,57 +321,204 @@ class TerminalUI:
             print(f"  Name: {model_info.get('name', 'Unknown')}")
             print(f"  Path: {model_info.get('path', 'N/A')}")
 
-    def print_help(self) -> None:
-        """Print help information."""
-        help_text = """
-## Available Commands
+    def print_help(self, category: str = None) -> None:
+        """Print help information, optionally filtered by category."""
+
+        main_help = """
+# BenderBox Help
+
+Type `help <category>` for detailed help on a topic.
+
+## Categories
+
+| Category | Description |
+|----------|-------------|
+| `help models` | Model analysis & management |
+| `help mcp` | MCP server security testing |
+| `help context` | Context/instruction file analysis |
+| `help reports` | Report management & export |
+| `help examples` | Usage examples |
+
+## Quick Reference
 
 | Command | Description |
 |---------|-------------|
-| `analyze <path>` | Analyze a model or file |
-| `semantic <file>` | Semantic security analysis of code |
-| `search <query>` | Search reports and findings |
-| `compare <path1> <path2>` | Compare two targets |
+| `/models` | List available models |
+| `/load <name>` | Load model for analysis |
+| `/current` | Show loaded model |
+| `analyze <target>` | Analyze model/file |
+| `compare <a> <b>` | Compare two targets |
+| `/mcp tools <target>` | List MCP server tools |
 | `status` | Show system status |
-| `reports` | List recent reports |
-| `help` | Show this help |
-| `clear` | Clear conversation |
 | `exit` | Exit BenderBox |
+"""
 
-## Semantic Code Analysis
+        models_help = """
+# Model Analysis & Management
 
-| Command | Aliases |
-|---------|---------|
-| `semantic <file.py>` | `code`, `review`, `sec` |
-| `semantic <file> --depth deep` | For thorough LLM-powered analysis |
-
-## Semantic Search
+## Model Commands
 
 | Command | Description |
 |---------|-------------|
-| `search <query>` | Search all reports and findings |
-| `search <query> --type reports` | Search only reports |
-| `search <query> --type findings` | Search only findings |
-| `search <query> --limit 20` | Return more results |
+| `/models` | List all available models |
+| `/models list --for analysis` | List analysis models only |
+| `/models list --for nlp` | List NLP models only |
+| `/load <name>` | Load model by name for analysis |
+| `/current` | Show currently loaded model |
+| `/unload` | Unload current model |
 
-## Analysis Examples
+## Analysis Commands
 
-- "Analyze model.gguf for security issues"
-- "Check server.py with deep profile"
-- "semantic utils.py --depth deep"
-- "search SQL injection vulnerabilities"
-- "Review this code for vulnerabilities"
-- "Is this model safe for production?"
-- "What jailbreak techniques exist?"
+| Command | Description |
+|---------|-------------|
+| `analyze <model>` | Analyze model (uses loaded if none specified) |
+| `analyze <model> --profile quick` | Fast analysis (~15 tests) |
+| `analyze <model> --profile standard` | Balanced analysis (~50 tests) |
+| `analyze <model> --profile full` | Comprehensive (~100+ tests) |
+| `analyze <model> --profile adversarial` | Jailbreak resistance tests |
+| `interrogate <model>` | Interactive model interrogation |
+| `compare <model1> <model2>` | Compare two models |
 
-## Tips
+## Examples
 
-- Use natural language to describe what you want
-- Reference previous analyses with "it" or "the model"
-- Ask for explanations: "Why is the risk high?"
-- Use `semantic` for LLM-powered code security analysis
-- Use `search` to find past analyses and similar findings
+- `/load llama-7b` - Load model by name
+- `analyze` - Analyze the loaded model
+- `analyze llama with full profile` - Analyze by name with profile
+- "What models do I have?" - Natural language model listing
 """
+
+        mcp_help = """
+# MCP Server Security Testing
+
+## MCP Commands
+
+| Command | Description |
+|---------|-------------|
+| `/mcp tools <target>` | List tools from MCP server |
+| `/mcp interrogate <target>` | Security test MCP server |
+| `/mcp connect <target>` | Connect to MCP server |
+| `/mcp call <target> <tool>` | Call a specific tool |
+
+## Profiles
+
+| Profile | Description |
+|---------|-------------|
+| `infra-quick` | Fast static analysis |
+| `infra-standard` | Standard security tests (default) |
+| `infra-deep` | Comprehensive security audit |
+
+## Examples
+
+- `/mcp tools https://github.com/org/mcp-server`
+- `/mcp interrogate server.py --profile infra-deep`
+- "Test this MCP server for vulnerabilities"
+- "What tools does this server expose?"
+"""
+
+        context_help = """
+# Context & Instruction Analysis
+
+## Context Commands
+
+| Command | Description |
+|---------|-------------|
+| `/context analyze <file>` | Analyze instruction file |
+| `/context scan <directory>` | Scan directory for issues |
+| `/context output <text>` | Analyze model output |
+
+## Supported File Types
+
+- Skill files (`.md`, `.yaml`, `.json`)
+- System prompts (`.txt`, `.md`)
+- Agent instructions
+- Inference outputs
+
+## Examples
+
+- `/context analyze skills.md`
+- `/context scan ./prompts`
+- "Analyze this prompt for security risks"
+- "Scan this directory for dangerous patterns"
+"""
+
+        reports_help = """
+# Report Management
+
+## Report Commands
+
+| Command | Description |
+|---------|-------------|
+| `reports` | List recent analysis reports |
+| `export --format json` | Export last result as JSON |
+| `export --format html --open` | Export and open HTML report |
+| "view reports" | Open report viewer in browser |
+
+## Export Formats
+
+| Format | Description |
+|--------|-------------|
+| `markdown` | Human-readable Markdown |
+| `json` | Machine-readable JSON |
+| `html` | Interactive HTML with charts |
+| `csv` | CSV for spreadsheets |
+| `sarif` | SARIF for tool integration |
+
+## Examples
+
+- `reports` - Show recent analyses
+- "Open the report viewer"
+- "Export this as HTML"
+"""
+
+        examples_help = """
+# Usage Examples
+
+## Model Analysis
+
+- `analyze model.gguf --profile full`
+- `/load llama-7b` then `analyze`
+- "Analyze llama with adversarial profile"
+- "Compare llama to mistral"
+- "Is this model safe for production?"
+
+## MCP Security
+
+- `/mcp interrogate server.py`
+- "Test this MCP server for injection vulnerabilities"
+- "What tools does github.com/org/server expose?"
+
+## Code Analysis
+
+- `semantic utils.py --depth deep`
+- "Review this Python file for security issues"
+- `search SQL injection`
+
+## Natural Language
+
+- "What models do I have?"
+- "List my analysis reports"
+- "Why is the risk score high?"
+- "Explain the jailbreak findings"
+"""
+
+        # Category mapping
+        categories = {
+            "models": models_help,
+            "model": models_help,
+            "mcp": mcp_help,
+            "context": context_help,
+            "ctx": context_help,
+            "reports": reports_help,
+            "report": reports_help,
+            "examples": examples_help,
+            "example": examples_help,
+        }
+
+        if category and category.lower() in categories:
+            help_text = categories[category.lower()]
+        else:
+            help_text = main_help
+
         if self.console:
             self.console.print(Markdown(help_text))
         else:
