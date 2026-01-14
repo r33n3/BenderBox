@@ -20,14 +20,15 @@ def find_llama_cli() -> Optional[Path]:
     Find llama-cli executable.
 
     Checks:
-    1. BenderBox tools directory (~/.benderbox/tools/)
+    1. BenderBox tools directory (./tools/)
     2. llama.cpp/build*/bin/llama-cli (local build)
     3. System PATH
     """
     import shutil
+    from benderbox.config import get_benderbox_home
 
     # Check BenderBox tools directory first
-    tools_dir = Path.home() / ".benderbox" / "tools"
+    tools_dir = get_benderbox_home() / "tools"
     if tools_dir.exists():
         for exe_name in ["llama-cli.exe", "llama-cli"]:
             tool_path = tools_dir / exe_name

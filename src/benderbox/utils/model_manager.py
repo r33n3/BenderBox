@@ -106,10 +106,11 @@ class ModelManager:
         Initialize ModelManager.
 
         Args:
-            base_path: Base path for BenderBox. Defaults to ~/.benderbox/.
+            base_path: Base path for BenderBox. Defaults to deployment folder.
         """
         if base_path is None:
-            base_path = Path.home() / ".benderbox"
+            from benderbox.config import get_benderbox_home
+            base_path = get_benderbox_home()
         self.base_path = base_path
 
         # Define directory structure

@@ -282,8 +282,10 @@ class PrerequisiteManager:
             tools_path: Path to store downloaded tools.
             config_path: Path to user package configuration.
         """
-        self.tools_path = tools_path or Path.home() / ".benderbox" / "tools"
-        self.config_path = config_path or Path.home() / ".benderbox" / "prerequisites.json"
+        from benderbox.config import get_benderbox_home
+        base = get_benderbox_home()
+        self.tools_path = tools_path or base / "tools"
+        self.config_path = config_path or base / "data" / "prerequisites.json"
 
         # Ensure paths exist
         self.tools_path.mkdir(parents=True, exist_ok=True)
@@ -1062,10 +1064,11 @@ class PrerequisiteManager:
 
 def create_default_config() -> Dict[str, Any]:
     """Create default prerequisites configuration."""
+    from benderbox.config import get_benderbox_home
     return {
         "packages": {},
         "settings": {
-            "tools_path": str(Path.home() / ".benderbox" / "tools"),
+            "tools_path": str(get_benderbox_home() / "tools"),
             "auto_install": False,
             "check_updates": True,
         },

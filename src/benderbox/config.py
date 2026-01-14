@@ -9,32 +9,22 @@ Provides centralized configuration management with support for:
 DEFAULT PATHS
 =============
 
-BenderBox stores all data in a single home directory:
+BenderBox stores all data in the deployment folder (where bb.py is located):
 
-    Windows:  C:\\Users\\<username>\\.benderbox\\
-    Linux:    ~/.benderbox/
-    macOS:    ~/.benderbox/
-
-This can be customized with the BENDERBOX_HOME environment variable.
-
-DIRECTORY STRUCTURE
-===================
-
-    ~/.benderbox/
-    ├── config/
-    │   └── benderbox.yaml     # Main configuration file
+    BenderBox/
+    ├── bb.py                  # Main entry point
+    ├── models/
+    │   ├── nlp/               # BenderBox's own chat model (TinyLlama)
+    │   └── analysis/          # Models to be analyzed/interrogated
     ├── data/
     │   ├── benderbox.db       # SQLite database (reports, sessions)
     │   ├── chromadb/          # Vector store for semantic search
     │   ├── knowledge/         # Knowledge base entries
-    │   ├── models/            # Downloaded model cache
-    │   └── reports/           # Generated analysis reports
-    ├── models/
-    │   ├── analysis/          # Models for analyzing other models
-    │   ├── code/              # Code analysis models
-    │   ├── embeddings/        # Embedding model cache
-    │   └── nlp/               # Chat/NLP models (e.g., TinyLlama)
+    │   ├── reports/           # Generated analysis reports
+    │   └── secrets.yaml       # API keys (gitignored)
     └── tools/                 # External tools (llama-cli, etc.)
+
+This can be customized with the BENDERBOX_HOME environment variable.
 
 ENVIRONMENT VARIABLES
 =====================
@@ -53,7 +43,7 @@ Override specific settings with BENDERBOX_* variables:
 CONFIGURATION FILE
 ==================
 
-Create ~/.benderbox/config/benderbox.yaml to customize settings:
+Create BenderBox/data/config.yaml to customize settings:
 
     llm:
       context_length: 8192
@@ -385,16 +375,140 @@ def _ensure_directories(config: "Config") -> None:
             pass  # Ignore errors, will fail later if needed
 
 
+def _get_deployment_dir() -> Path:
+    """
+    Get the BenderBox deployment directory (where bb.py is located).
+
+    This finds the root BenderBox folder by looking for bb.py.
+    """
+    # Start from this file's location and go up to find bb.py
+    current = Path(__file__).resolve()
+
+    # Go up the directory tree looking for bb.py
+    for parent in [current] + list(current.parents):
+        if (parent / "bb.py").exists():
+            return parent
+
+    # Fallback to current working directory
+    cwd = Path.cwd()
+    if (cwd / "bb.py").exists():
+        return cwd
+
+    # Last resort: use the src parent
+    return current.parent.parent.parent
+
+
 def get_benderbox_home() -> Path:
     """
     Get the BenderBox home directory.
 
-    Uses BENDERBOX_HOME environment variable if set, otherwise ~/.benderbox/
+    Priority:
+    1. BENDERBOX_HOME environment variable if set
+    2. Deployment directory (where bb.py is located)
+
+    All data (models, reports, etc.) is stored in this directory.
     """
     env_home = os.environ.get("BENDERBOX_HOME")
     if env_home:
         return Path(env_home)
+    return _get_deployment_dir()
+
+
+def get_legacy_home() -> Path:
+    """Get the legacy ~/.benderbox/ directory for migration."""
     return Path.home() / ".benderbox"
+
+
+def migrate_from_legacy(force: bool = False) -> Dict[str, Any]:
+    """
+    Migrate data from legacy ~/.benderbox/ to deployment folder.
+
+    Args:
+        force: If True, overwrite existing files in destination.
+
+    Returns:
+        Dictionary with migration results:
+        - migrated: List of files migrated
+        - skipped: List of files skipped (already exist)
+        - errors: List of errors encountered
+    """
+    import shutil
+
+    legacy = get_legacy_home()
+    deployment = get_benderbox_home()
+
+    results = {
+        "migrated": [],
+        "skipped": [],
+        "errors": [],
+        "legacy_path": str(legacy),
+        "deployment_path": str(deployment),
+    }
+
+    if not legacy.exists():
+        return results
+
+    # Migration mappings: (legacy_subpath, deployment_subpath)
+    migrations = [
+        ("models", "models"),
+        ("data", "data"),
+        ("tools", "tools"),
+        ("secrets.yaml", "data/secrets.yaml"),
+    ]
+
+    for legacy_sub, deploy_sub in migrations:
+        src = legacy / legacy_sub
+        dst = deployment / deploy_sub
+
+        if not src.exists():
+            continue
+
+        try:
+            if src.is_file():
+                # File migration
+                if dst.exists() and not force:
+                    results["skipped"].append(str(src))
+                    continue
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dst)
+                results["migrated"].append(f"{src} -> {dst}")
+            else:
+                # Directory migration
+                for item in src.rglob("*"):
+                    if item.is_file():
+                        rel_path = item.relative_to(src)
+                        dest_file = dst / rel_path
+
+                        if dest_file.exists() and not force:
+                            results["skipped"].append(str(item))
+                            continue
+
+                        dest_file.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(item, dest_file)
+                        results["migrated"].append(f"{item} -> {dest_file}")
+        except Exception as e:
+            results["errors"].append(f"{src}: {e}")
+
+    return results
+
+
+def check_migration_needed() -> bool:
+    """Check if migration from legacy ~/.benderbox/ is needed."""
+    legacy = get_legacy_home()
+    deployment = get_benderbox_home()
+
+    # No legacy folder exists
+    if not legacy.exists():
+        return False
+
+    # Check if legacy has content that deployment doesn't
+    legacy_has_models = (legacy / "models").exists() and any((legacy / "models").rglob("*.gguf"))
+    legacy_has_data = (legacy / "data").exists()
+
+    deploy_has_models = (deployment / "models").exists() and any((deployment / "models").rglob("*.gguf"))
+
+    # Migration needed if legacy has stuff we don't
+    return legacy_has_models and not deploy_has_models
 
 
 def load_config(config_path: Optional[str] = None, base_path: Optional[str] = None) -> Config:
@@ -402,13 +516,13 @@ def load_config(config_path: Optional[str] = None, base_path: Optional[str] = No
     Load configuration from YAML file with environment variable overrides.
 
     Args:
-        config_path: Path to config file. If None, looks for config/benderbox.yaml
-        base_path: Base path for resolving relative paths. If None, uses ~/.benderbox/
+        config_path: Path to config file. If None, looks for data/config.yaml
+        base_path: Base path for resolving relative paths. If None, uses deployment folder.
 
     Returns:
         Config object with all settings loaded.
     """
-    # Determine base path - default to ~/.benderbox/ for consistent storage
+    # Determine base path - default to deployment folder for consistent storage
     if base_path:
         base = Path(base_path)
     else:
@@ -418,16 +532,16 @@ def load_config(config_path: Optional[str] = None, base_path: Optional[str] = No
     base.mkdir(parents=True, exist_ok=True)
 
     # Determine config file path
-    # Check user home first, then fall back to cwd for development
     if config_path:
         config_file = Path(config_path)
     else:
-        config_file = base / "config" / "benderbox.yaml"
+        # Check new location first: data/config.yaml
+        config_file = base / "data" / "config.yaml"
         if not config_file.exists():
-            # Fall back to cwd for development setups
-            cwd_config = Path.cwd() / "config" / "benderbox.yaml"
-            if cwd_config.exists():
-                config_file = cwd_config
+            # Fall back to legacy location
+            legacy_config = base / "config" / "benderbox.yaml"
+            if legacy_config.exists():
+                config_file = legacy_config
 
     # Load config from file if it exists
     if config_file.exists():
@@ -518,7 +632,7 @@ def get_config_info() -> Dict[str, Any]:
 
     return {
         "home": str(home),
-        "config_file": str(home / "config" / "benderbox.yaml"),
+        "config_file": str(home / "data" / "config.yaml"),
         "paths": {
             "models": {
                 "analysis": config.llm.analysis_model_path,

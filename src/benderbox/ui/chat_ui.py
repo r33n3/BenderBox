@@ -131,7 +131,8 @@ def setup_tab_completion() -> None:
 
     # Enable history
     try:
-        history_file = os.path.expanduser("~/.benderbox/history")
+        from benderbox.config import get_benderbox_home
+        history_file = str(get_benderbox_home() / "data" / "history")
         os.makedirs(os.path.dirname(history_file), exist_ok=True)
         try:
             readline.read_history_file(history_file)

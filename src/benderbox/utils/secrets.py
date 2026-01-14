@@ -2,7 +2,7 @@
 Secure secrets management for BenderBox.
 
 Handles storage and retrieval of sensitive data like API keys.
-Stores secrets in ~/.benderbox/secrets.yaml with restricted permissions.
+Stores secrets in BenderBox/data/secrets.yaml with restricted permissions.
 """
 
 import logging
@@ -52,7 +52,8 @@ API_PROVIDERS = {
 
 def get_secrets_path() -> Path:
     """Get the path to the secrets file."""
-    return Path.home() / ".benderbox" / "secrets.yaml"
+    from benderbox.config import get_benderbox_home
+    return get_benderbox_home() / "data" / "secrets.yaml"
 
 
 def mask_key(key: str, visible_chars: int = 4) -> str:
@@ -103,7 +104,7 @@ class SecretsManager:
     """
     Manages secure storage of API keys and other secrets.
 
-    Secrets are stored in ~/.benderbox/secrets.yaml with restricted permissions.
+    Secrets are stored in BenderBox/data/secrets.yaml with restricted permissions.
     Environment variables take precedence over stored secrets.
     """
 
@@ -112,7 +113,7 @@ class SecretsManager:
         Initialize the secrets manager.
 
         Args:
-            secrets_path: Custom path for secrets file (default: ~/.benderbox/secrets.yaml)
+            secrets_path: Custom path for secrets file (default: BenderBox/data/secrets.yaml)
         """
         self._path = secrets_path or get_secrets_path()
         self._secrets: Dict[str, Any] = {}

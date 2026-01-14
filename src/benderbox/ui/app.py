@@ -1556,7 +1556,7 @@ def config_set_key(ctx, provider: str, key: Optional[str]):
 
     PROVIDER: openai, anthropic, google, or xai
 
-    The key will be stored securely in ~/.benderbox/secrets.yaml
+    The key will be stored securely in BenderBox/data/secrets.yaml
     """
     from benderbox.ui.terminal import TerminalUI
     from benderbox.utils import get_secrets_manager, API_PROVIDERS

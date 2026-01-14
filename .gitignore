@@ -34,8 +34,13 @@ analysis_logs/
 
 # Data dumps or test payloads
 data/
+!data/README.md
 *.bin
 *.dat
+
+# Downloaded tools (llama-cli, etc.)
+tools/
+!tools/README.md
 
 # OS / Editor junk
 .DS_Store
