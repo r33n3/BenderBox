@@ -232,6 +232,113 @@ class MCPSourceAnalyzer:
         self.cache_dir = cache_dir or Path(tempfile.gettempdir()) / "benderbox_mcp_cache"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
+    async def resolve_source(self, source: str) -> str:
+        """
+        Resolve various source formats to a GitHub URL.
+
+        Supports:
+        - GitHub URLs (pass through)
+        - mcpservers.org URLs (extract GitHub link)
+        - Smithery URLs (convert to GitHub)
+        - npm package names (lookup on npm registry)
+
+        Args:
+            source: Source URL or package name
+
+        Returns:
+            GitHub repository URL
+        """
+        # Already a GitHub URL
+        if "github.com" in source:
+            return source
+
+        # mcpservers.org URL - fetch page and extract GitHub link
+        if "mcpservers.org" in source:
+            return await self._resolve_mcpservers_url(source)
+
+        # Smithery URL (smithery.ai/server/@org/name)
+        if "smithery.ai" in source:
+            return await self._resolve_smithery_url(source)
+
+        # npm package name (e.g., @modelcontextprotocol/server-filesystem)
+        if source.startswith("@") or "/" not in source:
+            return await self._resolve_npm_package(source)
+
+        # Unknown format, return as-is
+        return source
+
+    async def _resolve_mcpservers_url(self, url: str) -> str:
+        """Extract GitHub URL from mcpservers.org page."""
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            try:
+                response = await client.get(url, timeout=30)
+                if response.status_code == 200:
+                    # Look for GitHub link in page
+                    import re
+                    github_match = re.search(
+                        r'href=["\']?(https://github\.com/[^"\'>\s]+)["\']?',
+                        response.text
+                    )
+                    if github_match:
+                        github_url = github_match.group(1)
+                        logger.info(f"Resolved mcpservers.org -> {github_url}")
+                        return github_url
+
+                # Try to convert URL path to GitHub
+                # /servers/owner/repo -> github.com/owner/repo
+                parsed = urlparse(url)
+                parts = parsed.path.strip("/").split("/")
+                if len(parts) >= 3 and parts[0] == "servers":
+                    github_url = f"https://github.com/{parts[1]}/{parts[2]}"
+                    logger.info(f"Converted mcpservers.org path -> {github_url}")
+                    return github_url
+
+            except Exception as e:
+                logger.warning(f"Failed to resolve mcpservers.org URL: {e}")
+
+        raise ValueError(f"Could not resolve GitHub URL from: {url}")
+
+    async def _resolve_smithery_url(self, url: str) -> str:
+        """Convert Smithery URL to GitHub."""
+        # smithery.ai/server/@org/name -> github.com/org/name
+        parsed = urlparse(url)
+        parts = parsed.path.strip("/").split("/")
+        if len(parts) >= 3 and parts[0] == "server":
+            org = parts[1].lstrip("@")
+            name = parts[2]
+            return f"https://github.com/{org}/{name}"
+        raise ValueError(f"Could not parse Smithery URL: {url}")
+
+    async def _resolve_npm_package(self, package: str) -> str:
+        """Lookup npm package to find GitHub repo."""
+        async with httpx.AsyncClient() as client:
+            try:
+                # Query npm registry
+                npm_url = f"https://registry.npmjs.org/{package}"
+                response = await client.get(npm_url, timeout=30)
+                if response.status_code == 200:
+                    data = response.json()
+                    # Check repository field
+                    repo = data.get("repository", {})
+                    if isinstance(repo, dict):
+                        repo_url = repo.get("url", "")
+                    else:
+                        repo_url = str(repo)
+
+                    # Clean up git URL
+                    if "github.com" in repo_url:
+                        # git+https://github.com/org/repo.git -> https://github.com/org/repo
+                        repo_url = repo_url.replace("git+", "").replace(".git", "")
+                        if repo_url.startswith("git://"):
+                            repo_url = repo_url.replace("git://", "https://")
+                        logger.info(f"Resolved npm package {package} -> {repo_url}")
+                        return repo_url
+
+            except Exception as e:
+                logger.warning(f"Failed to resolve npm package: {e}")
+
+        raise ValueError(f"Could not find GitHub repo for npm package: {package}")
+
     async def analyze_github_repo(self, repo_url: str) -> MCPServerInfo:
         """
         Analyze an MCP server from its GitHub repository.
@@ -1097,8 +1204,15 @@ async def analyze_mcp_server(
     """
     Analyze an MCP server.
 
+    Supports multiple source formats:
+    - GitHub URLs: https://github.com/owner/repo
+    - mcpservers.org URLs: https://mcpservers.org/servers/owner/repo
+    - Smithery URLs: https://smithery.ai/server/@org/name
+    - npm packages: @modelcontextprotocol/server-filesystem
+    - Live endpoints: http://localhost:3000/mcp
+
     Args:
-        source: GitHub URL, npm package, or endpoint
+        source: GitHub URL, mcpservers.org URL, npm package, or endpoint
         mode: Analysis mode ("source", "live", "hybrid", "auto")
 
     Returns:
@@ -1106,8 +1220,21 @@ async def analyze_mcp_server(
     """
     analyzer = MCPAnalyzer()
 
+    # First resolve the source to a GitHub URL if needed
+    original_source = source
+    if mode in ("auto", "source"):
+        try:
+            resolved = await analyzer.source_analyzer.resolve_source(source)
+            if resolved != source:
+                logger.info(f"Resolved {source} -> {resolved}")
+                source = resolved
+        except ValueError as e:
+            # If resolution fails and not a direct URL, raise error
+            if not source.startswith("http"):
+                raise ValueError(f"Could not resolve source: {source}") from e
+
     if mode == "auto":
-        # Detect source type
+        # Detect source type after resolution
         if "github.com" in source:
             mode = "source"
         elif source.startswith("http"):
