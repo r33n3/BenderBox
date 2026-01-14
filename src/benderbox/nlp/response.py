@@ -3,6 +3,8 @@ Response Generator for BenderBox
 
 Generates natural language responses for analysis results, explanations,
 and knowledge queries using templates and LLM generation.
+
+Includes Bender Narrator Layer for personality.
 """
 
 import logging
@@ -10,6 +12,7 @@ from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 from benderbox.nlp.intent import Intent, IntentType
+from benderbox.nlp.persona import BenderPersona, Severity
 
 logger = logging.getLogger(__name__)
 
@@ -72,18 +75,29 @@ class ResponseGenerator:
 
     Uses a combination of templates for structured data and LLM
     generation for explanations and knowledge queries.
+
+    Includes Bender Narrator Layer for personality.
     """
 
-    def __init__(self, llm_engine=None, knowledge_base=None):
+    def __init__(
+        self,
+        llm_engine=None,
+        knowledge_base=None,
+        quiet: bool = False,
+        serious: bool = False,
+    ):
         """
         Initialize ResponseGenerator.
 
         Args:
             llm_engine: LocalLLMEngine for generation.
             knowledge_base: KnowledgeBase for knowledge queries.
+            quiet: Suppress Bender personality (data only).
+            serious: Start in serious mode (minimal jokes).
         """
         self._llm_engine = llm_engine
         self._knowledge_base = knowledge_base
+        self._persona = BenderPersona(quiet=quiet, serious=serious)
 
     def _set_llm_engine(self, llm_engine) -> None:
         """Set the LLM engine (for lazy initialization)."""
@@ -105,13 +119,16 @@ class ResponseGenerator:
         """
         # Handle errors first
         if context.error:
-            return self._format_error(context.error)
+            return self._format_error(context.error, context.intent.intent_type.value)
 
         # Route to appropriate handler based on intent
         handlers = {
             IntentType.ANALYZE_MODEL: self._format_analysis_result,
             IntentType.ANALYZE_INFRASTRUCTURE: self._format_analysis_result,
             IntentType.ANALYZE_SKILL: self._format_analysis_result,
+            IntentType.CONTEXT_ANALYZE: self._format_context_analysis,
+            IntentType.ANALYZE_CODE: self._format_analysis_result,
+            IntentType.ANALYZE_BEHAVIOR: self._format_analysis_result,
             IntentType.COMPARE: self._format_comparison,
             IntentType.EXPLAIN: self._generate_explanation,
             IntentType.QUERY_KNOWLEDGE: self._answer_knowledge_query,
@@ -155,10 +172,10 @@ class ResponseGenerator:
             yield chunk
 
     async def _format_analysis_result(self, context: ResponseContext) -> str:
-        """Format analysis result into natural language."""
+        """Format analysis result with Bender personality."""
         result = context.analysis_result
         if not result:
-            return "No analysis results available."
+            return self._persona.format_error("No analysis results available.", "analysis")
 
         # Extract key information
         summary = result.get("summary", {})
@@ -168,45 +185,233 @@ class ResponseGenerator:
         target_name = result.get("target_name", "Unknown target")
         profile = result.get("profile", "standard")
 
+        # Get severity for Bender reactions
+        severity = self._persona.get_severity(risk_score)
+
         # Count results by status
         results = result.get("results", [])
         passed = sum(1 for r in results if r.get("status") == "passed")
         failed = sum(1 for r in results if r.get("status") == "failed")
         warnings = sum(1 for r in results if r.get("status") == "warning")
 
-        # Build response
-        lines = [
-            f"**Analysis Complete: {target_name}**",
-            "",
-            f"**Risk Level:** {risk_level} (Score: {risk_score}/100)",
-            f"**Profile:** {profile}",
-            "",
-            "**Results Summary:**",
-            f"- Passed: {passed}",
-            f"- Failed: {failed}",
-            f"- Warnings: {warnings}",
-        ]
+        # Build response with Bender personality
+        lines = []
 
-        # Add critical findings
+        # Badge and reaction
+        lines.append(f"**[{severity.value}] Analysis Complete: {target_name}**")
+        lines.append("")
+
+        # Bender one-liner reaction
+        reaction = self._persona.get_reaction(severity)
+        if reaction:
+            lines.append(f'"{reaction}"')
+            lines.append("")
+
+        # Structured facts (scannable)
+        lines.append(f"Risk Score: {risk_score}/100")
+        lines.append(f"Profile: {profile}")
+        lines.append(f"Tests: {passed} passed, {failed} failed, {warnings} warnings")
+
+        # Critical findings with Bender flavor
         critical_findings = [r for r in results if r.get("severity") in ("critical", "high")]
         if critical_findings:
-            lines.extend(["", "**Critical Findings:**"])
+            lines.extend(["", "**Findings:**"])
             for finding in critical_findings[:5]:  # Limit to top 5
-                lines.append(f"- [{finding.get('severity', 'unknown').upper()}] {finding.get('test_name', 'Unknown')}")
+                finding_sev = finding.get("severity", "unknown").upper()
+                test_name = finding.get("test_name", "Unknown")
+                category = finding.get("category", "general")
+
+                # Record finding in persona state
+                self._persona.state.record_finding(
+                    Severity.CRITICAL if finding_sev == "CRITICAL" else
+                    Severity.HIGH if finding_sev == "HIGH" else
+                    Severity.MEDIUM if finding_sev == "MEDIUM" else Severity.LOW
+                )
+
+                lines.append(f"- [{finding_sev}][{category.upper()}] {test_name}")
                 if finding.get("details", {}).get("message"):
                     lines.append(f"  {finding['details']['message'][:100]}...")
 
-        # Add recommendation
+        # Next steps (imperative verbs)
+        lines.extend(["", "**Next Steps:**"])
         if risk_level == "CRITICAL":
-            lines.extend(["", "**Recommendation:** Do not deploy. Immediate security review required."])
+            lines.append("- STOP. Do not deploy.")
+            lines.append("- Review all critical findings immediately.")
+            lines.append("- Run `report view` for detailed breakdown.")
         elif risk_level == "HIGH":
-            lines.extend(["", "**Recommendation:** Address critical issues before deployment."])
+            lines.append("- Address critical issues before deployment.")
+            lines.append("- Run `report view` for remediation details.")
         elif risk_level == "MEDIUM":
-            lines.extend(["", "**Recommendation:** Review findings and mitigate where possible."])
+            lines.append("- Review findings and mitigate where possible.")
+            lines.append("- Run `report view` for full analysis.")
         else:
-            lines.extend(["", "**Recommendation:** Safe for deployment with standard monitoring."])
+            lines.append("- Safe for deployment with standard monitoring.")
+            lines.append("- Run `report view` to see full details.")
+
+        # Regret index if warranted
+        regret = self._persona.state.get_regret_comment()
+        if regret:
+            lines.append("")
+            lines.append(regret)
+
+        # Recovery stinger (end of scan)
+        stinger = self._persona.format_recovery_stinger()
+        if stinger:
+            lines.append("")
+            lines.append("---")
+            lines.append(stinger)
+
+        # Reset persona for next scan
+        self._persona.reset()
 
         return "\n".join(lines)
+
+    async def _format_context_analysis(self, context: ResponseContext) -> str:
+        """Format context/prompt analysis with Bender personality."""
+        result = context.analysis_result
+        if not result:
+            return self._persona.format_error("No context analysis results.", "context_analyze")
+
+        # Handle both dict and ContextAnalysisResult objects
+        if hasattr(result, "risk_score"):
+            # ContextAnalysisResult object (dataclass)
+            risk_score = int(result.risk_score)
+            risk_level = result.risk_level.value if hasattr(result.risk_level, "value") else str(result.risk_level)
+            target_name = result.file_path or "Unknown"
+            findings = result.findings or []
+            # Use file_type not context_type for ContextAnalysisResult
+            context_type = result.file_type.value if hasattr(result.file_type, "value") else str(getattr(result, "file_type", "unknown"))
+        elif isinstance(result, dict):
+            # Dict format
+            risk_score = result.get("risk_score", result.get("overall_risk", {}).get("score", 0))
+            risk_level = result.get("risk_level", result.get("overall_risk", {}).get("level", "unknown"))
+            if hasattr(risk_level, "value"):
+                risk_level = risk_level.value
+            target_name = result.get("file_path", result.get("target_name", "Unknown"))
+            findings = result.get("findings", [])
+            context_type = result.get("context_type", result.get("file_type", "unknown"))
+            if hasattr(context_type, "value"):
+                context_type = context_type.value
+        else:
+            return self._persona.format_error(f"Unknown result type: {type(result)}", "context_analyze")
+
+        # Get severity for Bender reactions
+        severity = self._persona.get_severity(risk_score)
+
+        lines = []
+
+        # Badge and reaction
+        lines.append(f"**[{severity.value}] Context Analysis: {target_name}**")
+        lines.append("")
+
+        # Bender one-liner reaction (category-aware)
+        dominant_category = self._get_dominant_category(findings)
+        reaction = self._persona.get_reaction(severity, dominant_category)
+        if reaction:
+            lines.append(f'"{reaction}"')
+            lines.append("")
+
+        # Structured facts
+        lines.append(f"Risk Score: {risk_score}/100")
+        lines.append(f"Risk Level: {risk_level.upper() if isinstance(risk_level, str) else risk_level}")
+        lines.append(f"Type: {context_type}")
+        lines.append(f"Findings: {len(findings)}")
+
+        # Format findings with Bender style
+        if findings:
+            lines.extend(["", "**Findings:**"])
+
+            for finding in findings[:7]:  # Limit to top 7
+                # Handle both Finding objects and dicts
+                # Finding dataclass uses: risk_level, category, description, line_number
+                if hasattr(finding, "risk_level"):
+                    f_sev = finding.risk_level.value if hasattr(finding.risk_level, "value") else str(finding.risk_level)
+                    f_cat = getattr(finding, "category", "general")
+                    f_msg = getattr(finding, "description", str(finding))
+                    f_line = getattr(finding, "line_number", None)
+                elif hasattr(finding, "severity"):
+                    # Alternate naming (severity instead of risk_level)
+                    f_sev = finding.severity.value if hasattr(finding.severity, "value") else str(finding.severity)
+                    f_cat = getattr(finding, "category", "general")
+                    f_msg = getattr(finding, "message", getattr(finding, "description", str(finding)))
+                    f_line = getattr(finding, "line_number", None)
+                elif isinstance(finding, dict):
+                    f_sev = finding.get("severity", finding.get("risk_level", "unknown"))
+                    if hasattr(f_sev, "value"):
+                        f_sev = f_sev.value
+                    f_cat = finding.get("category", "general")
+                    f_msg = finding.get("message", finding.get("description", str(finding)))
+                    f_line = finding.get("line_number")
+                else:
+                    f_sev = "unknown"
+                    f_cat = "general"
+                    f_msg = str(finding)
+                    f_line = None
+
+                # Record in persona state
+                self._persona.state.record_finding(
+                    Severity.CRITICAL if f_sev.upper() == "CRITICAL" else
+                    Severity.HIGH if f_sev.upper() == "HIGH" else
+                    Severity.MEDIUM if f_sev.upper() in ("MEDIUM", "MED") else Severity.LOW
+                )
+
+                # Format: [SEV][CAT] message
+                badge = f"[{f_sev.upper()}][{f_cat.upper()}]"
+                loc = f" (line {f_line})" if f_line else ""
+                lines.append(f"- {badge} {f_msg[:80]}{loc}")
+
+        # Next steps
+        lines.extend(["", "**Next Steps:**"])
+        if severity == Severity.CRITICAL:
+            lines.append("- STOP. This content contains dangerous patterns.")
+            lines.append("- Review and remove identified risks before use.")
+            lines.append("- Run `report view` for full remediation guidance.")
+        elif severity == Severity.HIGH:
+            lines.append("- Review all findings carefully.")
+            lines.append("- Address high-severity issues before deployment.")
+            lines.append("- Run `report view` for detailed breakdown.")
+        elif severity == Severity.MEDIUM:
+            lines.append("- Review flagged patterns.")
+            lines.append("- Consider if identified risks are acceptable.")
+            lines.append("- Run `report view` for full analysis.")
+        else:
+            lines.append("- Content appears safe.")
+            lines.append("- Run `report view` for complete details.")
+
+        # Regret index
+        regret = self._persona.state.get_regret_comment()
+        if regret:
+            lines.append("")
+            lines.append(regret)
+
+        # Recovery stinger
+        stinger = self._persona.format_recovery_stinger()
+        if stinger:
+            lines.append("")
+            lines.append("---")
+            lines.append(stinger)
+
+        self._persona.reset()
+        return "\n".join(lines)
+
+    def _get_dominant_category(self, findings: list) -> str:
+        """Get the most common category from findings."""
+        if not findings:
+            return "general"
+
+        categories = {}
+        for f in findings:
+            if hasattr(f, "category"):
+                cat = f.category
+            elif isinstance(f, dict):
+                cat = f.get("category", "general")
+            else:
+                cat = "general"
+            categories[cat] = categories.get(cat, 0) + 1
+
+        if categories:
+            return max(categories, key=categories.get)
+        return "general"
 
     async def _format_comparison(self, context: ResponseContext) -> str:
         """Format comparison results."""
@@ -417,34 +622,12 @@ After running an analysis, use `open reports` or `report view` to open the viewe
         return "I tried to open the report viewer but encountered an issue. Try `report view` from the command line."
 
     async def _format_status(self, context: ResponseContext) -> str:
-        """Format system status."""
+        """Format system status with Bender personality."""
         result = context.analysis_result or {}
-
-        lines = [
-            "**BenderBox Status**",
-            "",
-            f"Version: {result.get('version', '3.0.0-alpha')}",
-            "",
-            "**Models:**",
-        ]
-
-        models = result.get("models", {})
-        for model_type, info in models.items():
-            status = "Loaded" if info.get("loaded") else "Not loaded"
-            exists = "Found" if info.get("exists") else "Missing"
-            lines.append(f"- {model_type}: {status} ({exists})")
-
-        lines.extend([
-            "",
-            "**Storage:**",
-            f"- Reports: {result.get('report_count', 0)}",
-            f"- Knowledge entries: {result.get('knowledge_count', 0)}",
-        ])
-
-        return "\n".join(lines)
+        return self._persona.format_status(result)
 
     async def _format_help(self, context: ResponseContext) -> str:
-        """Format help message with optional sub-topic."""
+        """Format help message with Bender personality."""
         query = context.user_query.lower() if context.user_query else ""
 
         # Check for sub-help topics
@@ -458,6 +641,8 @@ After running an analysis, use `open reports` or `report view` to open the viewe
             return self._get_examples_help()
 
         return """**BenderBox - AI Security Analysis Platform**
+
+"I'm here to help. Reluctantly."
 
 **Core Commands:**
 - `status` - Show system status
@@ -664,9 +849,9 @@ See `examples/README.md` for full documentation.
             temperature=0.7,
         )
 
-    def _format_error(self, error: str) -> str:
-        """Format error message."""
-        return f"**Error:** {error}"
+    def _format_error(self, error: str, context: str = None) -> str:
+        """Format error message with Bender personality."""
+        return self._persona.format_error(error, context)
 
     def _build_response_prompt(self, context: ResponseContext) -> str:
         """Build prompt for LLM response generation."""

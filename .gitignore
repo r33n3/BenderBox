@@ -74,3 +74,6 @@ nul
 # Test artifacts (sprint/phase development tests)
 tests/sprint*_test.py
 tests/phase*_test.py
+
+# Archive folder (development artifacts, old scripts, tests)
+archive/

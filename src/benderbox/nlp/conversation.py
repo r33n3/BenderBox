@@ -141,7 +141,9 @@ class ConversationManager:
                 try:
                     analysis_result = await self._execute_analysis(intent, resolved_query)
                     if analysis_result:
-                        self._context_manager.add_analysis_result(analysis_result)
+                        # Only add to context if it's a dict (some results are dataclasses)
+                        if isinstance(analysis_result, dict):
+                            self._context_manager.add_analysis_result(analysis_result)
                 except Exception as e:
                     logger.error(f"Analysis failed: {e}")
                     error = str(e)
@@ -324,6 +326,15 @@ class ConversationManager:
         # Determine analysis type and execute
         # IMPORTANT: Check explicit intents FIRST before file extension fallbacks
 
+        # Context analysis (instruction files, prompts, skills for security)
+        if intent.intent_type == IntentType.CONTEXT_ANALYZE:
+            from benderbox.analyzers.context_analyzer import analyze_context_file
+            result = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: analyze_context_file(target)
+            )
+            return result
+
         # Semantic code analysis (explicit intent takes priority)
         if intent.intent_type == IntentType.ANALYZE_CODE:
             depth = profile if profile in ("quick", "standard", "deep") else "standard"
@@ -468,6 +479,31 @@ Summary:"""
         return self._context_manager.get_summary()
 
 
+def _load_banner() -> str:
+    """Load the BenderBox ASCII banner."""
+    from pathlib import Path
+
+    # Try to find the ASCII art file
+    ascii_file = Path(__file__).parent.parent.parent.parent / "BenderBox_ASCII.txt"
+
+    if ascii_file.exists():
+        try:
+            return ascii_file.read_text(encoding="utf-8")
+        except Exception:
+            pass
+
+    # Fallback banner
+    return """
+    ⢀⣤⣤⡀
+   ⢠⣿⣿⣿⣧
+   ⢸⣿⠛⠛⣿⡄  BenderBox v3.0
+   ⠈⣿⣄⣠⣿⠃  AI Security Analysis
+    ⠈⠛⠛⠁
+     ⣿⣿⣿⡟
+    ⢠⡟  ⢻⡄
+"""
+
+
 async def chat_loop(conversation: ConversationManager) -> None:
     """
     Interactive chat loop.
@@ -475,8 +511,12 @@ async def chat_loop(conversation: ConversationManager) -> None:
     Args:
         conversation: ConversationManager instance.
     """
-    print("\nBenderBox Chat - AI Security Analysis Assistant")
-    print("Type 'help' for commands, 'exit' to quit\n")
+    # Display banner
+    banner = _load_banner()
+    print(banner)
+    print("Type 'help' for commands, 'exit' to quit")
+    print('"I\'m 40% security analysis!"')
+    print()
 
     while True:
         try:
