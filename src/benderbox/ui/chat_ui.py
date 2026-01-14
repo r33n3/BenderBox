@@ -42,13 +42,14 @@ class BenderBoxCompleter:
         "analyze", "interrogate", "compare",
         "mcp tools", "mcp interrogate", "mcp analyze", "mcp call",
         "context analyze", "context scan", "context output",
-        "models list", "models download", "models test", "models setup",
+        "models", "models list", "models list --for analysis", "models list --for nlp",
+        "load", "unload", "current",
         "nlp status", "nlp features",
         "search", "reports", "export",
     ]
 
     # Profile options
-    PROFILES = ["--profile quick", "--profile standard", "--profile full"]
+    PROFILES = ["--profile quick", "--profile standard", "--profile full", "--profile adversarial"]
 
     def __init__(self):
         self.matches: List[str] = []
@@ -169,6 +170,11 @@ class CommandType(Enum):
     CONTEXT_ANALYZE = "context_analyze"
     CONTEXT_SCAN = "context_scan"
     CONTEXT_OUTPUT = "context_output"
+    # Model management commands
+    MODELS = "models"  # List/manage models
+    LOAD_MODEL = "load_model"
+    CURRENT_MODEL = "current_model"
+    UNLOAD_MODEL = "unload_model"
 
 
 @dataclass
@@ -215,6 +221,11 @@ class ChatUI:
         "context_analyze": ["context-analyze", "analyze-context", "ctx-analyze"],
         "context_scan": ["context-scan", "scan-context", "ctx-scan"],
         "context_output": ["context-output", "analyze-output", "ctx-output"],
+        # Model commands
+        "models": ["models", "model"],
+        "load_model": ["load", "load-model", "switch"],
+        "current_model": ["current", "current-model", "loaded"],
+        "unload_model": ["unload", "unload-model"],
     }
 
     def __init__(
@@ -238,6 +249,7 @@ class ChatUI:
         # Session state
         self._running = False
         self._last_result: Optional[Dict[str, Any]] = None
+        self._current_analysis_model: Optional[str] = None  # Path to loaded analysis model
 
     def register_handler(
         self,
@@ -412,6 +424,19 @@ class ChatUI:
         elif command.command_type == CommandType.CONTEXT_OUTPUT:
             await self._handle_context_output(command)
 
+        # Model commands
+        elif command.command_type == CommandType.MODELS:
+            await self._handle_models(command)
+
+        elif command.command_type == CommandType.LOAD_MODEL:
+            await self._handle_load_model(command)
+
+        elif command.command_type == CommandType.CURRENT_MODEL:
+            await self._handle_current_model(command)
+
+        elif command.command_type == CommandType.UNLOAD_MODEL:
+            await self._handle_unload_model(command)
+
         return True
 
     async def _handle_exit(self, command: ParsedCommand) -> bool:
@@ -450,12 +475,27 @@ class ChatUI:
 
     async def _handle_analyze(self, command: ParsedCommand) -> None:
         """Handle analyze command."""
+        # Use loaded model if no target specified
         if not command.args:
-            self.ui.print_error("Please specify a target to analyze.")
-            self.ui.print_info("Usage: analyze <path|url|hf_model> [--profile <profile>]")
-            return
+            if self._current_analysis_model:
+                target = self._current_analysis_model
+                self.ui.print_info(f"Analyzing loaded model: {target}")
+            else:
+                self.ui.print_error("Please specify a target to analyze.")
+                self.ui.print_info("Usage: analyze <path|url|model-name> [--profile <profile>]")
+                self.ui.print_info("Or load a model first: /load <model-name>")
+                return
+        else:
+            target = command.args[0]
+            # Check if target is a model name (not a path)
+            if not target.endswith(".gguf") and "/" not in target and "\\" not in target:
+                from benderbox.utils.model_manager import ModelManager
+                manager = ModelManager()
+                model_path = manager.find_model_by_name(target, purpose="analysis")
+                if model_path:
+                    target = str(model_path)
+                    self.ui.print_info(f"Found model: {target}")
 
-        target = command.args[0]
         profile = command.flags.get("profile", "standard")
 
         # Detect source type and show appropriate message
@@ -1246,6 +1286,145 @@ LLM Used: {'Yes' if result.get('llm_used') else 'No (pattern-based)'}
 
         except Exception as e:
             self.ui.print_error(f"Analysis failed: {e}")
+
+    # ========== Model Management Commands ==========
+
+    async def _handle_models(self, command: ParsedCommand) -> None:
+        """Handle models command - list available models."""
+        from benderbox.utils.model_manager import ModelManager
+
+        manager = ModelManager()
+
+        # Check for subcommand
+        if command.args:
+            subcommand = command.args[0].lower()
+            if subcommand in ("list", "ls"):
+                purpose = command.flags.get("for", "all")
+                await self._show_model_list(manager, purpose)
+                return
+            elif subcommand in ("add",):
+                if len(command.args) < 2:
+                    self.ui.print_error("Please specify a model path.")
+                    self.ui.print_info("Usage: /models add <path> --for analysis|nlp")
+                    return
+                # Redirect to CLI for add functionality
+                self.ui.print_info("Use CLI for adding models:")
+                self.ui.print_info(f"  benderbox models add {command.args[1]} --for analysis")
+                return
+
+        # Default: show models with current loaded status
+        await self._show_model_list(manager, "all")
+
+        # Show current loaded model
+        if self._current_analysis_model:
+            from pathlib import Path
+            model_name = Path(self._current_analysis_model).stem
+            self.ui.print_success(f"\nCurrently loaded: {model_name}")
+        else:
+            self.ui.print_info("\nNo analysis model loaded. Use '/load <model>' to load one.")
+
+    async def _show_model_list(self, manager, purpose: str) -> None:
+        """Show model list based on purpose."""
+        self.ui.print_header("Available Models")
+
+        if purpose in ("analysis", "all"):
+            analysis_models = manager.list_analysis_models()
+            self.ui.print_info("\n**Analysis Models** (models/analysis/):")
+            if analysis_models:
+                for m in analysis_models:
+                    marker = " [LOADED]" if self._current_analysis_model and m['path'] == self._current_analysis_model else ""
+                    self.ui.print_info(f"  - {m['name']} ({m['size_mb']} MB){marker}")
+            else:
+                self.ui.print_warning("  No analysis models found.")
+                self.ui.print_info("  Add with: benderbox models add <file> --for analysis")
+
+        if purpose in ("nlp", "all"):
+            nlp_models = manager.list_nlp_models()
+            self.ui.print_info("\n**NLP Models** (models/nlp/):")
+            if nlp_models:
+                for m in nlp_models:
+                    self.ui.print_info(f"  - {m['name']} ({m['size_mb']} MB)")
+            else:
+                self.ui.print_warning("  No NLP models found.")
+                self.ui.print_info("  Download with: benderbox models download tinyllama")
+
+    async def _handle_load_model(self, command: ParsedCommand) -> None:
+        """Handle load model command."""
+        if not command.args:
+            self.ui.print_error("Please specify a model name to load.")
+            self.ui.print_info("Usage: /load <model-name>")
+            self.ui.print_info("Example: /load llama-7b")
+            self.ui.print_info("Use '/models' to see available models.")
+            return
+
+        model_name = command.args[0]
+
+        from benderbox.utils.model_manager import ModelManager
+        from pathlib import Path
+
+        manager = ModelManager()
+
+        # Check if it's a direct path
+        if model_name.endswith(".gguf"):
+            model_path = Path(model_name)
+            if model_path.exists():
+                self._current_analysis_model = str(model_path.resolve())
+                self.ui.print_success(f"Loaded model: {model_path.name}")
+                return
+            else:
+                self.ui.print_error(f"Model file not found: {model_name}")
+                return
+
+        # Try to find by name in analysis folder
+        model_path = manager.find_model_by_name(model_name, purpose="analysis")
+
+        if model_path:
+            self._current_analysis_model = str(model_path)
+            self.ui.print_success(f"Loaded model: {model_path.name}")
+            self.ui.print_info(f"Path: {model_path}")
+            self.ui.print_info("\nYou can now analyze this model with 'analyze' or interrogate it.")
+        else:
+            # Show suggestions
+            suggestions = manager.get_model_suggestions(model_name, purpose="analysis")
+            if suggestions:
+                self.ui.print_error(f"Model '{model_name}' not found.")
+                self.ui.print_info("Did you mean:")
+                for s in suggestions[:5]:
+                    self.ui.print_info(f"  - {s}")
+            else:
+                self.ui.print_error(f"Model '{model_name}' not found.")
+                self.ui.print_info("Use '/models' to see available models.")
+
+    async def _handle_current_model(self, command: ParsedCommand) -> None:
+        """Handle current model command - show loaded model."""
+        if self._current_analysis_model:
+            from pathlib import Path
+            model_path = Path(self._current_analysis_model)
+            model_name = model_path.stem
+            size_mb = model_path.stat().st_size // (1024 * 1024) if model_path.exists() else "?"
+
+            self.ui.print_header("Current Analysis Model")
+            self.ui.print_info(f"Name: {model_name}")
+            self.ui.print_info(f"Path: {model_path}")
+            self.ui.print_info(f"Size: {size_mb} MB")
+            self.ui.print_info("\nCommands:")
+            self.ui.print_info("  /unload    - Unload current model")
+            self.ui.print_info("  /load <name> - Switch to another model")
+            self.ui.print_info("  analyze    - Analyze the loaded model")
+        else:
+            self.ui.print_warning("No analysis model currently loaded.")
+            self.ui.print_info("Use '/load <model-name>' to load one.")
+            self.ui.print_info("Use '/models' to see available models.")
+
+    async def _handle_unload_model(self, command: ParsedCommand) -> None:
+        """Handle unload model command."""
+        if self._current_analysis_model:
+            from pathlib import Path
+            model_name = Path(self._current_analysis_model).stem
+            self._current_analysis_model = None
+            self.ui.print_success(f"Unloaded model: {model_name}")
+        else:
+            self.ui.print_info("No model currently loaded.")
 
     async def run(self) -> None:
         """Run the interactive chat loop."""
