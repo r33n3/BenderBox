@@ -832,11 +832,15 @@ REPORT_VIEWER_HTML = '''<!DOCTYPE html>
             list.innerHTML = reports.map((report, index) => `
                 <li class="report-item ${index === 0 ? 'active' : ''}"
                     onclick="selectReport(${index})"
-                    data-name="${escapeHtml(report.target_name || 'Unknown').toLowerCase()}">
+                    data-name="${escapeHtml(report.target_name || 'Unknown').toLowerCase()}"
+                    data-type="${escapeHtml(report._analysis_type || 'unknown')}">
                     <div class="report-name">${escapeHtml(report.target_name || 'Unknown')}</div>
-                    <div class="report-meta">${formatDate(report.timestamp)}</div>
-                    <span class="report-risk risk-${(report.summary?.risk?.level || 'unknown').toLowerCase()}">
-                        ${report.summary?.risk?.level || 'N/A'}
+                    <div class="report-meta">
+                        <span class="report-type">${escapeHtml((report._analysis_type || 'unknown').toUpperCase())}</span>
+                        ${formatDate(report._timestamp || report.timestamp)}
+                    </div>
+                    <span class="report-risk risk-${(report._risk_level || report.summary?.risk?.level || 'unknown').toLowerCase()}">
+                        ${report._risk_level || report.summary?.risk?.level || 'N/A'}
                     </span>
                 </li>
             `).join('');
@@ -859,12 +863,12 @@ REPORT_VIEWER_HTML = '''<!DOCTYPE html>
             document.getElementById('total-reports').textContent = reports.length;
 
             const criticalCount = reports.filter(r =>
-                (r.summary?.risk?.level || '').toLowerCase() === 'critical'
+                (r._risk_level || r.summary?.risk?.level || '').toLowerCase() === 'critical'
             ).length;
             document.getElementById('critical-count').textContent = criticalCount;
 
             const avgScore = reports.length > 0
-                ? Math.round(reports.reduce((sum, r) => sum + (r.summary?.risk?.score || 0), 0) / reports.length)
+                ? Math.round(reports.reduce((sum, r) => sum + (r._risk_score || r.summary?.risk?.score || 0), 0) / reports.length)
                 : 0;
             document.getElementById('avg-score').textContent = avgScore;
         }
@@ -872,25 +876,56 @@ REPORT_VIEWER_HTML = '''<!DOCTYPE html>
         function renderOverview() {
             if (!currentReport) return;
 
-            const risk = currentReport.summary?.risk || {};
-            const results = currentReport.results || [];
+            // Use normalized fields with fallbacks
+            const riskScore = currentReport._risk_score || currentReport.summary?.risk?.score || 0;
+            const riskLevel = currentReport._risk_level || currentReport.summary?.risk?.level || 'UNKNOWN';
+            const analysisType = currentReport._analysis_type || currentReport.target_type || 'unknown';
+            const findingsCount = currentReport._findings_count || 0;
+
+            // Get results/tools/tests depending on analysis type
+            let results = currentReport.results || [];
+            let testsCount = results.length;
+
+            if (analysisType === 'mcp_server' && currentReport.tools) {
+                results = currentReport.tools.map(t => ({
+                    name: t.name,
+                    severity: t.risk_level,
+                    status: t.risk_level === 'critical' || t.risk_level === 'high' ? 'failed' : 'passed',
+                    description: t.description || t.risk_factors?.join(', ') || ''
+                }));
+                testsCount = currentReport.tools.length;
+            } else if (analysisType === 'model' && currentReport.tests) {
+                results = currentReport.tests.map(t => ({
+                    name: t.name || t.test_id,
+                    severity: t.severity || 'medium',
+                    status: t.result === 'fail' ? 'failed' : 'passed',
+                    description: t.details || ''
+                }));
+                testsCount = currentReport.tests.length;
+            } else if (analysisType === 'context' && currentReport.findings) {
+                results = currentReport.findings.map(f => ({
+                    name: f.pattern || f.type,
+                    severity: f.severity || 'medium',
+                    status: 'failed',
+                    description: f.description || f.match || ''
+                }));
+                testsCount = currentReport.findings.length;
+            }
 
             // Risk score
-            document.getElementById('current-risk-score').textContent = risk.score || 0;
-            document.getElementById('risk-marker').style.left = `${risk.score || 0}%`;
+            document.getElementById('current-risk-score').textContent = riskScore;
+            document.getElementById('risk-marker').style.left = `${Math.min(riskScore, 100)}%`;
 
             // Tests run
-            document.getElementById('tests-run').textContent = results.length;
+            document.getElementById('tests-run').textContent = testsCount;
 
             // Findings count
-            const failedCount = results.filter(r => r.status === 'failed' || r.status === 'warning').length;
+            const failedCount = findingsCount || results.filter(r => r.status === 'failed' || r.status === 'warning').length;
             document.getElementById('findings-count').textContent = failedCount;
 
             // Analysis type
-            document.getElementById('analysis-type').textContent =
-                (currentReport.target_type || 'Unknown').toUpperCase();
-            document.getElementById('analysis-target').textContent =
-                currentReport.target_name || 'Unknown';
+            document.getElementById('analysis-type').textContent = analysisType.toUpperCase().replace('_', ' ');
+            document.getElementById('analysis-target').textContent = currentReport.target_name || 'Unknown';
 
             // Severity chart
             renderSeverityChart(results);
@@ -1112,6 +1147,91 @@ class ReportViewerGenerator:
             config = get_config().storage
             self.reports_path = Path(config.reports_path)
 
+    def _normalize_report(self, data: Dict[str, Any], source_file: Path) -> Dict[str, Any]:
+        """
+        Normalize different analysis report formats into a consistent structure.
+
+        Handles:
+        - Model analysis (schema 0.2.0): overall_risk, model, tests
+        - MCP server analysis (schema 1.0.0): risk_assessment, server, tools
+        - Context/skills analysis: risk_patterns, findings
+        - Infrastructure analysis: overall_risk, tests
+
+        Returns a normalized dict with consistent keys for the viewer.
+        """
+        normalized = data.copy()
+
+        # Detect analysis type
+        analysis_type = data.get("analysis_type", "unknown")
+        if "model" in data and "path" in data.get("model", {}):
+            analysis_type = "model"
+        elif "server" in data or "tools" in data:
+            analysis_type = "mcp_server"
+        elif "risk_patterns" in data or "findings" in data:
+            analysis_type = "context"
+        elif "profile" in data and "infrastructure" in str(data.get("run_id", "")):
+            analysis_type = "infrastructure"
+
+        normalized["_analysis_type"] = analysis_type
+
+        # Normalize target name
+        if "target_name" not in normalized:
+            if analysis_type == "model":
+                normalized["target_name"] = data.get("model", {}).get("name", "Unknown Model")
+            elif analysis_type == "mcp_server":
+                normalized["target_name"] = data.get("server", {}).get("name", "Unknown MCP Server")
+            elif analysis_type == "context":
+                normalized["target_name"] = data.get("file_path", source_file.stem)
+            else:
+                normalized["target_name"] = data.get("run_id", source_file.stem)
+
+        # Normalize risk level and score
+        if "overall_risk" in data:
+            # Model/infrastructure analysis format
+            risk = data["overall_risk"]
+            normalized["_risk_level"] = risk.get("level", "UNKNOWN").upper()
+            normalized["_risk_score"] = risk.get("score", 0)
+        elif "risk_assessment" in data:
+            # MCP analysis format
+            risk = data["risk_assessment"]
+            normalized["_risk_level"] = risk.get("overall_level", "unknown").upper()
+            normalized["_risk_score"] = risk.get("overall_score", 0)
+        else:
+            normalized["_risk_level"] = "UNKNOWN"
+            normalized["_risk_score"] = 0
+
+        # Normalize timestamp
+        if "_timestamp" not in normalized:
+            normalized["_timestamp"] = (
+                data.get("timestamp_utc") or
+                data.get("timestamp") or
+                data.get("created_at") or
+                ""
+            )
+
+        # Normalize findings/issues count
+        findings_count = 0
+        if "tests" in data:
+            findings_count = len([t for t in data.get("tests", []) if t.get("result") == "fail"])
+        elif "tools" in data:
+            findings_count = len([t for t in data.get("tools", []) if t.get("risk_level") in ["critical", "high"]])
+        elif "findings" in data:
+            findings_count = len(data.get("findings", []))
+        elif "risk_patterns" in data:
+            findings_count = len(data.get("risk_patterns", []))
+        normalized["_findings_count"] = findings_count
+
+        # Normalize summary
+        if "_summary" not in normalized:
+            if "risk_assessment" in data:
+                normalized["_summary"] = data["risk_assessment"].get("summary", "")
+            elif "overall_risk" in data:
+                normalized["_summary"] = data["overall_risk"].get("notes", "")
+            else:
+                normalized["_summary"] = data.get("summary", "")
+
+        return normalized
+
     def collect_reports(self, limit: int = 50) -> List[Dict[str, Any]]:
         """
         Collect JSON reports from the reports directory and sandbox_logs.
@@ -1155,9 +1275,27 @@ class ReportViewerGenerator:
             try:
                 with open(json_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    # Ensure it looks like a report (BenderBox reports or analysis results)
-                    if "target_name" in data or "results" in data or "summary" in data or "tests" in data:
-                        # Add filename for reference
+                    # Ensure it looks like a valid report from any analysis type
+                    # Model analysis: has 'tests', 'overall_risk', 'model'
+                    # MCP analysis: has 'analysis_type', 'server', 'risk_assessment', 'tools'
+                    # Context analysis: has 'risk_patterns', 'findings'
+                    # Generic: has 'target_name', 'results', 'summary'
+                    is_valid_report = any([
+                        "target_name" in data,
+                        "results" in data,
+                        "summary" in data,
+                        "tests" in data,
+                        "analysis_type" in data,  # MCP/context analysis
+                        "risk_assessment" in data,  # MCP analysis
+                        "overall_risk" in data,  # Model analysis
+                        "tools" in data,  # MCP analysis
+                        "risk_patterns" in data,  # Context analysis
+                        "findings" in data,  # Context analysis
+                        "schema_version" in data,  # Any BenderBox report
+                    ])
+                    if is_valid_report:
+                        # Normalize the report data for consistent display
+                        data = self._normalize_report(data, json_file)
                         data["_source_file"] = str(json_file)
                         reports.append(data)
             except Exception as e:
