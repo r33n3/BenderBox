@@ -43,50 +43,62 @@ class ProfileInfo:
     target_type: str  # "model", "infrastructure", "both"
 
 
-# Profile descriptions
+# Profile descriptions - standardized across BenderBox
+# Model Analysis: quick, standard, full, adversarial
+# Infrastructure: infra-quick, infra-standard, infra-deep
 PROFILE_INFO: Dict[str, ProfileInfo] = {
+    # Model analysis profiles
     "quick": ProfileInfo(
         name="quick",
-        description="Fast GGUF metadata extraction only",
+        description="Fast validation (~15 tests) - GGUF metadata extraction only",
         tests=["gguf_metadata_sanity"],
         target_type="model",
     ),
     "standard": ProfileInfo(
         name="standard",
-        description="Common static tests including GGUF analysis",
+        description="Balanced coverage (~50 tests) - default for most use",
         tests=["static_metadata_basic", "gguf_metadata_sanity"],
         target_type="model",
     ),
-    "deep": ProfileInfo(
-        name="deep",
-        description="All available tests (static + dynamic)",
+    "full": ProfileInfo(
+        name="full",
+        description="Comprehensive (~100+ tests) - pre-deployment audit",
         tests=["static_metadata_basic", "gguf_metadata_sanity"],
         target_type="model",
     ),
-    "attack": ProfileInfo(
-        name="attack",
-        description="Security/jailbreak focused tests only",
+    "adversarial": ProfileInfo(
+        name="adversarial",
+        description="Attack-focused (~64 tests) - jailbreak resistance testing",
         tests=[],
         target_type="model",
     ),
+
+    # Infrastructure analysis profiles (MCP/Context)
     "infra-quick": ProfileInfo(
         name="infra-quick",
-        description="Quick infrastructure scan",
+        description="Fast static analysis - quick security check",
         tests=[],
         target_type="infrastructure",
     ),
     "infra-standard": ProfileInfo(
         name="infra-standard",
-        description="Standard infrastructure security tests",
+        description="Standard security tests - default for infrastructure",
         tests=[],
         target_type="infrastructure",
     ),
     "infra-deep": ProfileInfo(
         name="infra-deep",
-        description="Comprehensive infrastructure analysis",
+        description="Comprehensive analysis - full security audit",
         tests=[],
         target_type="infrastructure",
     ),
+}
+
+# Profile aliases for backward compatibility
+PROFILE_ALIASES: Dict[str, str] = {
+    "deep": "full",
+    "comprehensive": "full",
+    "attack": "adversarial",
 }
 
 

@@ -348,8 +348,8 @@ def chat(ctx):
 @cli.command()
 @click.argument("target")
 @click.option("-p", "--profile", default="standard",
-              type=click.Choice(["quick", "standard", "full"]),
-              help="Analysis profile: quick (fast), standard (balanced), full (comprehensive)")
+              type=click.Choice(["quick", "standard", "full", "adversarial"]),
+              help="Analysis profile: quick (~15 tests), standard (~50), full (~100+), adversarial (jailbreak)")
 @click.option("-o", "--output", help="Output file path")
 @click.option("-f", "--format", default="markdown",
               type=click.Choice(["markdown", "json", "html", "csv", "sarif"]),
@@ -798,8 +798,8 @@ def prereq_remove(ctx, name: str):
 @cli.command()
 @click.argument("model_target")
 @click.option("-p", "--profile", default="quick",
-              type=click.Choice(["quick", "standard", "full"]),
-              help="Interrogation profile: quick (fast), standard (balanced), full (comprehensive)")
+              type=click.Choice(["quick", "standard", "full", "adversarial"]),
+              help="Interrogation profile: quick (~15), standard (~50), full (~100+), adversarial (jailbreak)")
 @click.option("-c", "--censorship", default="unknown", help="Claimed censorship level")
 @click.option("-o", "--output", help="Output report file path")
 @click.option("-f", "--format", "output_format", default="json",
@@ -1067,8 +1067,8 @@ def interrogate(
 @cli.command()
 @click.argument("model_target")
 @click.option("-p", "--profile", default="standard",
-              type=click.Choice(["quick", "standard", "full"]),
-              help="Analysis profile: quick (fast), standard (balanced), full (comprehensive)")
+              type=click.Choice(["quick", "standard", "full", "adversarial"]),
+              help="Analysis profile: quick (~15), standard (~50), full (~100+), adversarial (jailbreak)")
 @click.option("-o", "--output", help="Output report file path")
 @click.pass_context
 def behavior(ctx, model_target: str, profile: str, output: Optional[str]):

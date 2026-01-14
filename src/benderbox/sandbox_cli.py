@@ -293,46 +293,57 @@ PROFILE_TESTS: Dict[str, List[str]] = {
     # Model analysis profiles
     "quick": [
         # Quick profile: Only GGUF metadata extraction - fast, essential info
+        # ~15 tests, for CI/CD and quick checks
         "gguf_metadata_sanity",
     ],
     "standard": [
         # Standard profile: Common static tests
+        # ~50 tests, default for most use cases
         "static_metadata_basic",
         "gguf_metadata_sanity",
     ],
-    "deep": [
-        # Deep profile: All available tests (static + dynamic tests)
+    "full": [
+        # Full profile: All available tests (static + dynamic)
+        # ~100+ tests, for pre-deployment audit
         "static_metadata_basic",
         "gguf_metadata_sanity",
     ],
-    "attack": [
-        # Attack profile: Security/jailbreak focused tests only
+    "adversarial": [
+        # Adversarial profile: Security/jailbreak focused tests only
+        # ~64 tests, for jailbreak resistance testing
         # Populated dynamically if dynamic tests are available
     ],
     "custom": [
         # Custom profile: User specifies tests via --tests flag
     ],
 
-    # Infrastructure analysis profiles (NEW in v2.0)
+    # Infrastructure analysis profiles (MCP/Context)
     "infra-quick": [
-        # Quick infrastructure scan - static analysis only
+        # Quick infrastructure scan - fast static analysis
     ],
     "infra-standard": [
         # Standard infrastructure scan
     ],
     "infra-deep": [
-        # Deep infrastructure scan - all tests
+        # Deep infrastructure scan - comprehensive analysis
     ],
 }
 
-# Populate attack and deep profiles with dynamic tests if available
+# Profile aliases for backward compatibility
+PROFILE_ALIASES: Dict[str, str] = {
+    "deep": "full",        # deep -> full
+    "comprehensive": "full",
+    "attack": "adversarial",  # attack -> adversarial
+}
+
+# Populate adversarial and full profiles with dynamic tests if available
 if DYNAMIC_TESTS_AVAILABLE:
     if BasicJailbreakTest:
-        PROFILE_TESTS["attack"].append(BasicJailbreakTest.name)
-        PROFILE_TESTS["deep"].append(BasicJailbreakTest.name)
+        PROFILE_TESTS["adversarial"].append(BasicJailbreakTest.name)
+        PROFILE_TESTS["full"].append(BasicJailbreakTest.name)
     if BackdoorDetectionTest:
-        PROFILE_TESTS["attack"].append(BackdoorDetectionTest.name)
-        PROFILE_TESTS["deep"].append(BackdoorDetectionTest.name)
+        PROFILE_TESTS["adversarial"].append(BackdoorDetectionTest.name)
+        PROFILE_TESTS["full"].append(BackdoorDetectionTest.name)
 
 # Populate infrastructure profiles with infrastructure tests
 if INFRASTRUCTURE_TESTS_AVAILABLE:
@@ -687,6 +698,11 @@ def build_run_id(model_info: Dict[str, Any]) -> str:
     return f"{timestamp}_{name}"
 
 
+def resolve_profile_alias(profile: str) -> str:
+    """Resolve profile alias to canonical name."""
+    return PROFILE_ALIASES.get(profile, profile)
+
+
 def run_tests_for_profile(
     profile: str,
     tests_override: Optional[List[str]],
@@ -694,6 +710,9 @@ def run_tests_for_profile(
     mcp_server_path: Optional[Path] = None,
     skill_path: Optional[Path] = None,
 ) -> List[TestResult]:
+    # Resolve profile alias (e.g., "deep" -> "full", "attack" -> "adversarial")
+    profile = resolve_profile_alias(profile)
+
     if profile == "custom" and tests_override:
         test_names = tests_override
     else:
