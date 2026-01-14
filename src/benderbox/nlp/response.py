@@ -13,6 +13,37 @@ from benderbox.nlp.intent import Intent, IntentType
 
 logger = logging.getLogger(__name__)
 
+# Strong system prompt to prevent hallucination
+BENDERBOX_SYSTEM_PROMPT = """You are BenderBox, an AI model security analysis assistant.
+
+YOUR PURPOSE (only these tasks):
+- Analyze GGUF models for security vulnerabilities
+- Test AI models for jailbreaks and prompt injection
+- Audit MCP servers for security issues
+- Analyze instruction files and system prompts for risks
+- Compare models for safety characteristics
+
+YOU ARE NOT:
+- A general-purpose AI assistant
+- A tool for running models in production
+- For self-driving cars, image generation, or other AI applications
+- A malware research tool (you analyze security, not create threats)
+
+IMPORTANT RULES:
+1. Only answer questions about AI security analysis
+2. If asked about unrelated topics, politely explain your purpose
+3. Never make up analysis results - only report real data
+4. When unsure, suggest using specific BenderBox commands
+5. Always ground responses in BenderBox's actual capabilities
+
+AVAILABLE COMMANDS:
+- analyze <file> - Analyze model or code for security
+- mcp analyze/interrogate - Test MCP servers
+- context analyze - Analyze prompts and instructions
+- compare - Compare two targets
+- help - Show available commands
+"""
+
 
 @dataclass
 class Message:
@@ -607,15 +638,14 @@ See `examples/README.md` for full documentation.
             for msg in context.history[-5:]:  # Last 5 messages
                 history_str += f"{msg.role}: {msg.content}\n"
 
-        return f"""You are BenderBox, an AI security analysis assistant.
-Answer the user's question helpfully and concisely.
+        return f"""{BENDERBOX_SYSTEM_PROMPT}
 
 Conversation history:
 {history_str}
 
 User query: {context.user_query}
 
-Response:"""
+Provide a helpful response about security analysis. If the question is outside your scope, politely redirect to your capabilities:"""
 
     def _build_explanation_prompt(self, context: ResponseContext) -> str:
         """Build prompt for explanation generation."""
@@ -624,30 +654,60 @@ Response:"""
             import json
             result_str = json.dumps(context.analysis_result, indent=2)[:2000]
 
-        return f"""You are a security expert explaining analysis results.
-Explain the following in clear, non-technical language.
+        return f"""{BENDERBOX_SYSTEM_PROMPT}
+
+You are explaining REAL analysis results from BenderBox. Only describe what is in the data below.
 
 Analysis results:
 {result_str}
 
 User question: {context.user_query}
 
-Provide a clear, helpful explanation:"""
+Explain these results clearly and accurately. Do not make up findings that are not in the data:"""
 
     def _build_knowledge_prompt(self, context: ResponseContext) -> str:
         """Build prompt for knowledge query."""
-        return f"""You are a cybersecurity expert. Answer the following question
-about AI security, jailbreaks, vulnerabilities, or related topics.
+        knowledge_str = ""
+        if context.knowledge:
+            knowledge_str = "\n".join([
+                f"- {entry.name}: {entry.description[:200]}"
+                for entry in context.knowledge[:5]
+            ])
+
+        return f"""{BENDERBOX_SYSTEM_PROMPT}
+
+You are answering a question about AI security topics within BenderBox's scope.
+
+ONLY answer about:
+- AI model security vulnerabilities
+- Jailbreak techniques and defenses
+- MCP server security
+- Prompt injection attacks
+- Model safety testing
+
+If the question is outside these topics, explain that BenderBox focuses on AI security analysis.
+
+{f"Relevant knowledge from database:{chr(10)}{knowledge_str}" if knowledge_str else "No specific knowledge entries found for this query."}
 
 Question: {context.user_query}
 
-Provide a clear, accurate answer:"""
+Provide a focused answer about AI security:"""
 
     def _build_general_prompt(self, context: ResponseContext) -> str:
         """Build prompt for general questions."""
-        return f"""You are BenderBox, an AI security analysis assistant.
-Answer the following question helpfully.
+        history_str = ""
+        if context.history:
+            for msg in context.history[-3:]:  # Last 3 messages for context
+                history_str += f"{msg.role}: {msg.content[:100]}...\n"
 
-Question: {context.user_query}
+        return f"""{BENDERBOX_SYSTEM_PROMPT}
 
-Answer:"""
+{f"Recent conversation:{chr(10)}{history_str}" if history_str else ""}
+
+User question: {context.user_query}
+
+If this question is about AI security analysis, MCP servers, model testing, or prompt security, answer it.
+If it's about something else (self-driving cars, image generation, general coding, etc.), politely explain:
+"I'm BenderBox, an AI security analysis tool. I can help you analyze models, test MCP servers, and review prompts for security issues. Try 'help' to see what I can do."
+
+Response:"""

@@ -461,21 +461,72 @@ def verify_installation():
     return all_ok
 
 
-def print_next_steps():
+def offer_model_download():
+    """Offer to download TinyLlama model if NLP is installed."""
+    print(f"\n{Colors.BOLD}Model Download{Colors.END}")
+    print("=" * 50)
+    print(f"""
+The NLP feature requires a GGUF model to work.
+TinyLlama (~700MB) is recommended for getting started.
+""")
+
+    choice = input(f"{Colors.CYAN}Download TinyLlama now? [Y/n]: {Colors.END}").strip().lower()
+    if choice != 'n':
+        print(f"\n{Colors.CYAN}Downloading TinyLlama...{Colors.END}")
+        print("This may take a few minutes depending on your connection.\n")
+
+        try:
+            result = subprocess.run(
+                [sys.executable, "bb.py", "models", "download", "tinyllama"],
+                timeout=600,  # 10 minute timeout
+                cwd=Path(__file__).parent
+            )
+
+            if result.returncode == 0:
+                print(f"\n{Colors.GREEN}TinyLlama downloaded successfully!{Colors.END}")
+                return True
+            else:
+                print(f"\n{Colors.YELLOW}Download failed. You can try again later:{Colors.END}")
+                print(f"  python bb.py models download tinyllama")
+                return False
+        except subprocess.TimeoutExpired:
+            print(f"\n{Colors.RED}Download timed out.{Colors.END}")
+            print(f"You can retry: python bb.py models download tinyllama")
+            return False
+        except Exception as e:
+            print(f"\n{Colors.RED}Error: {e}{Colors.END}")
+            print(f"You can retry: python bb.py models download tinyllama")
+            return False
+    else:
+        print(f"\n{Colors.YELLOW}Skipped.{Colors.END} Download later with:")
+        print(f"  python bb.py models download tinyllama")
+        return False
+
+
+def print_next_steps(nlp_installed=False, model_downloaded=False):
     """Print next steps after installation."""
     print(f"\n{Colors.BOLD}Installation Complete!{Colors.END}")
     print("=" * 50)
-    print(f"""
-{Colors.CYAN}Next Steps:{Colors.END}
 
-1. Download a model (if NLP installed):
+    if nlp_installed and not model_downloaded:
+        print(f"""
+{Colors.YELLOW}Model Required:{Colors.END}
+   Download a model to use the NLP features:
    {Colors.GREEN}python bb.py models download tinyllama{Colors.END}
+""")
 
-2. Start interactive mode:
+    print(f"""
+{Colors.CYAN}Getting Started:{Colors.END}
+
+1. Start interactive mode:
    {Colors.GREEN}python bb.py -i{Colors.END}
 
-3. Or run directly:
+2. Or run directly:
    {Colors.GREEN}python bb.py --help{Colors.END}
+
+{Colors.CYAN}Try These Examples:{Colors.END}
+   python bb.py context analyze examples/prompts/risky_system_prompt.md
+   python bb.py mcp analyze examples/mcp_servers/sample_vulnerable_server.py
 
 {Colors.CYAN}Quick Commands:{Colors.END}
    python bb.py models list      - List available models
@@ -535,8 +586,21 @@ def main():
     # Verify
     verify_installation()
 
+    # Check if NLP was installed
+    nlp_installed = "nlp" in selected
+    model_downloaded = False
+
+    # Offer model download if NLP was installed
+    if nlp_installed:
+        try:
+            import llama_cpp
+            model_downloaded = offer_model_download()
+        except ImportError:
+            print(f"\n{Colors.YELLOW}NLP installation may have failed.{Colors.END}")
+            print("Try installing manually: pip install llama-cpp-python")
+
     # Next steps
-    print_next_steps()
+    print_next_steps(nlp_installed=nlp_installed, model_downloaded=model_downloaded)
 
 
 if __name__ == "__main__":

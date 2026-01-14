@@ -94,6 +94,25 @@ class VectorStore:
         self._client = None
         self._collections: Dict[str, Any] = {}
 
+    async def initialize(self) -> None:
+        """
+        Explicitly initialize the vector store.
+
+        Creates ChromaDB client and default collections.
+        Safe to call multiple times (idempotent).
+
+        This method can be called upfront to validate dependencies
+        and create collections. If not called, initialization happens
+        automatically on first use.
+
+        Raises:
+            VectorStoreError: If ChromaDB is not installed or initialization fails.
+        """
+        await asyncio.get_event_loop().run_in_executor(
+            None, self._ensure_initialized
+        )
+        logger.debug("VectorStore initialized")
+
     def _ensure_initialized(self) -> None:
         """Ensure ChromaDB client is initialized."""
         if self._client is not None:

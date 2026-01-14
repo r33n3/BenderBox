@@ -275,7 +275,13 @@ class ConversationManager:
         # Handle comparison
         if intent.intent_type == IntentType.COMPARE and targets:
             result = await self._analysis_bridge.compare_targets(targets)
-            return result.results
+            # Return as dict to match other analysis methods
+            return {
+                "targets": result.targets,
+                "comparison_type": result.comparison_type,
+                "results": result.results,
+                "summary": result.summary,
+            }
 
         # Determine target from context if not specified
         if not target:

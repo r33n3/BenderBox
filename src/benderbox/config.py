@@ -5,6 +5,73 @@ Provides centralized configuration management with support for:
 - YAML configuration files
 - Environment variable overrides
 - Sensible defaults for offline operation
+
+DEFAULT PATHS
+=============
+
+BenderBox stores all data in a single home directory:
+
+    Windows:  C:\\Users\\<username>\\.benderbox\\
+    Linux:    ~/.benderbox/
+    macOS:    ~/.benderbox/
+
+This can be customized with the BENDERBOX_HOME environment variable.
+
+DIRECTORY STRUCTURE
+===================
+
+    ~/.benderbox/
+    ├── config/
+    │   └── benderbox.yaml     # Main configuration file
+    ├── data/
+    │   ├── benderbox.db       # SQLite database (reports, sessions)
+    │   ├── chromadb/          # Vector store for semantic search
+    │   ├── knowledge/         # Knowledge base entries
+    │   ├── models/            # Downloaded model cache
+    │   └── reports/           # Generated analysis reports
+    ├── models/
+    │   ├── analysis/          # Models for analyzing other models
+    │   ├── code/              # Code analysis models
+    │   ├── embeddings/        # Embedding model cache
+    │   └── nlp/               # Chat/NLP models (e.g., TinyLlama)
+    └── tools/                 # External tools (llama-cli, etc.)
+
+ENVIRONMENT VARIABLES
+=====================
+
+Set BENDERBOX_HOME to change the base directory:
+    export BENDERBOX_HOME=/path/to/custom/location
+
+Override specific settings with BENDERBOX_* variables:
+    BENDERBOX_LLM_ANALYSIS_MODEL  - Path to analysis model
+    BENDERBOX_LLM_NLP_MODEL       - Path to NLP/chat model
+    BENDERBOX_LLM_THREADS         - Number of CPU threads
+    BENDERBOX_LLM_GPU_LAYERS      - GPU layers for acceleration
+    OPENAI_API_KEY                - OpenAI API key
+    ANTHROPIC_API_KEY             - Anthropic API key
+
+CONFIGURATION FILE
+==================
+
+Create ~/.benderbox/config/benderbox.yaml to customize settings:
+
+    llm:
+      context_length: 8192
+      threads: 8
+      gpu_layers: 32
+
+    storage:
+      reports_path: "/custom/reports/path"
+
+    ui:
+      color_output: true
+      progress_indicators: true
+
+API ACCESS
+==========
+
+Use get_config_info() to see all paths and settings.
+Use get_benderbox_home() to get the base directory.
 """
 
 from dataclasses import dataclass, field
@@ -430,3 +497,88 @@ def reload_config(config_path: Optional[str] = None) -> Config:
     global _global_config
     _global_config = load_config(config_path)
     return _global_config
+
+
+def get_config_info() -> Dict[str, Any]:
+    """
+    Get a dictionary with all configuration paths and settings.
+
+    Useful for debugging and displaying configuration to users.
+
+    Returns:
+        Dictionary with keys:
+        - home: BenderBox home directory
+        - config_file: Path to config file (may not exist)
+        - paths: Dictionary of all configured paths
+        - settings: Dictionary of key settings
+        - env_vars: List of environment variables that can override settings
+    """
+    config = get_config()
+    home = get_benderbox_home()
+
+    return {
+        "home": str(home),
+        "config_file": str(home / "config" / "benderbox.yaml"),
+        "paths": {
+            "models": {
+                "analysis": config.llm.analysis_model_path,
+                "nlp": config.llm.nlp_model_path,
+                "code": config.llm.code_model_path,
+                "embeddings": config.embedding.cache_dir,
+            },
+            "data": {
+                "database": config.storage.db_path,
+                "vector_store": config.storage.vector_store_path,
+                "knowledge": config.storage.knowledge_path,
+                "reports": config.storage.reports_path,
+                "model_cache": config.storage.model_cache_path,
+            },
+        },
+        "settings": {
+            "llm_context_length": config.llm.context_length,
+            "llm_threads": config.llm.threads,
+            "llm_gpu_layers": config.llm.gpu_layers,
+            "default_profile": config.analysis.default_profile,
+            "semantic_analysis": config.analysis.enable_semantic_analysis,
+        },
+        "env_vars": [
+            "BENDERBOX_HOME",
+            "BENDERBOX_LLM_ANALYSIS_MODEL",
+            "BENDERBOX_LLM_NLP_MODEL",
+            "BENDERBOX_LLM_THREADS",
+            "BENDERBOX_LLM_GPU_LAYERS",
+            "OPENAI_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "GOOGLE_API_KEY",
+        ],
+    }
+
+
+def print_config_paths() -> None:
+    """Print configuration paths to stdout in a user-friendly format."""
+    info = get_config_info()
+
+    print("\nBenderBox Configuration")
+    print("=" * 50)
+    print(f"\nHome Directory: {info['home']}")
+    print(f"Config File:    {info['config_file']}")
+
+    print("\nModel Paths:")
+    for name, path in info["paths"]["models"].items():
+        exists = "OK" if Path(path).exists() else "not found"
+        print(f"  {name:12} {path} [{exists}]")
+
+    print("\nData Paths:")
+    for name, path in info["paths"]["data"].items():
+        exists = "OK" if Path(path).exists() else "not found"
+        print(f"  {name:12} {path} [{exists}]")
+
+    print("\nSettings:")
+    for name, value in info["settings"].items():
+        print(f"  {name}: {value}")
+
+    print("\nEnvironment Variables (set these to override):")
+    for var in info["env_vars"][:5]:  # First 5
+        print(f"  {var}")
+    print("  ...")
+    print()

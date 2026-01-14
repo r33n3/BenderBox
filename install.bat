@@ -7,6 +7,10 @@ echo ================================================
 echo   BenderBox Installation Launcher (Windows)
 echo ================================================
 echo.
+echo This will launch the interactive setup wizard.
+echo For advanced options, use the PowerShell script:
+echo   powershell -ExecutionPolicy Bypass -File scripts\install-prerequisites.ps1
+echo.
 
 REM Check for Python
 where python >nul 2>&1
