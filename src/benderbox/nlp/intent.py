@@ -33,6 +33,7 @@ class IntentType(Enum):
     QUERY_KNOWLEDGE = "query_knowledge"
     GENERATE_REPORT = "generate_report"
     LIST_REPORTS = "list_reports"
+    VIEW_REPORTS = "view_reports"  # Open report viewer
     GET_STATUS = "get_status"
     GENERAL_QUESTION = "general_question"
     HELP = "help"
@@ -124,7 +125,13 @@ KEYWORD_PATTERNS: List[Tuple[re.Pattern, IntentType, bool, bool]] = [
     # Report intents
     (re.compile(r"\b(generate|create|make)\b.*\b(report|card|summary)\b", re.I),
      IntentType.GENERATE_REPORT, False, True),
-    (re.compile(r"\b(list|show|get|view)\b.*\b(report|analysis|scan)\b", re.I),
+    (re.compile(r"\b(open|launch|start)\b.*\b(report|viewer)\b", re.I),
+     IntentType.VIEW_REPORTS, False, False),
+    (re.compile(r"\breport\s+view(er)?\b", re.I),
+     IntentType.VIEW_REPORTS, False, False),
+    (re.compile(r"\bview(er)?\s+report\b", re.I),
+     IntentType.VIEW_REPORTS, False, False),
+    (re.compile(r"\b(list|show|get)\b.*\b(report|analysis|scan)\b", re.I),
      IntentType.LIST_REPORTS, False, False),
     (re.compile(r"\b(recent|latest|last)\b.*\b(report|analysis|scan)\b", re.I),
      IntentType.LIST_REPORTS, False, False),

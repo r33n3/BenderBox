@@ -164,6 +164,26 @@ class ConversationManager:
             if intent.intent_type == IntentType.GET_STATUS:
                 analysis_result = self._get_status()
 
+            if intent.intent_type == IntentType.VIEW_REPORTS:
+                try:
+                    from benderbox.reporting.index_generator import ReportViewerGenerator
+                    generator = ReportViewerGenerator()
+                    reports = generator.collect_reports()
+                    if reports:
+                        output_path = generator.save(open_browser=True)
+                        analysis_result = {
+                            "action": "opened_report_viewer",
+                            "report_count": len(reports),
+                            "output_path": output_path,
+                        }
+                    else:
+                        analysis_result = {
+                            "action": "no_reports",
+                            "message": "No reports found. Run an analysis first.",
+                        }
+                except Exception as e:
+                    error = str(e)
+
             # Build response context
             response_context = ResponseContext(
                 intent=intent,

@@ -3205,6 +3205,220 @@ def context_output(ctx, text: Optional[str], file_path: Optional[str], model: st
         ui.print_error(f"Analysis failed: {e}")
 
 
+# =============================================================================
+# Report Commands
+# =============================================================================
+
+
+@cli.group()
+@click.pass_context
+def report(ctx):
+    """
+    Report management commands.
+
+    Generate, view, and export analysis reports.
+    """
+    pass
+
+
+@report.command("view")
+@click.option("--reports-dir", "-d", type=click.Path(exists=True),
+              help="Reports directory to load from")
+@click.option("--output", "-o", type=click.Path(), help="Output HTML file path")
+@click.option("--open", "-O", "open_browser", is_flag=True, default=True,
+              help="Open in browser (default: true)")
+@click.option("--no-open", is_flag=True, help="Don't open in browser")
+@click.pass_context
+def report_view(ctx, reports_dir: Optional[str], output: Optional[str],
+                open_browser: bool, no_open: bool):
+    """
+    Open the BenderBox Report Viewer.
+
+    Generates an interactive HTML viewer with all reports in a
+    retro-futuristic Futurama-inspired interface.
+
+    Examples:
+        benderbox report view
+        benderbox report view --reports-dir ./my_reports
+        benderbox report view --output ~/Desktop/reports.html
+    """
+    from benderbox.ui.terminal import TerminalUI
+
+    ui = TerminalUI()
+    ui.print_banner()
+
+    try:
+        from benderbox.reporting.index_generator import ReportViewerGenerator
+
+        generator = ReportViewerGenerator(reports_dir)
+
+        # Collect reports
+        reports = generator.collect_reports()
+        ui.print_info(f"Found {len(reports)} reports")
+
+        if len(reports) == 0:
+            ui.print_warning("No reports found. Run an analysis first:")
+            print("  benderbox mcp analyze <server.py>")
+            print("  benderbox context analyze <prompt.md>")
+            print("  benderbox analyze <model.gguf>")
+            return
+
+        # Generate viewer
+        should_open = open_browser and not no_open
+        output_path = generator.save(output, reports, open_browser=should_open)
+
+        ui.print_success(f"Report viewer saved to: {output_path}")
+
+        if should_open:
+            ui.print_info("Opening in browser...")
+
+    except Exception as e:
+        ui.print_error(f"Failed to generate report viewer: {e}")
+
+
+@report.command("list")
+@click.option("--limit", "-n", default=20, help="Maximum reports to show")
+@click.pass_context
+def report_list(ctx, limit: int):
+    """
+    List available reports.
+
+    Shows recent analysis reports with their risk levels.
+    """
+    from benderbox.ui.terminal import TerminalUI
+
+    ui = TerminalUI()
+
+    try:
+        from benderbox.reporting.index_generator import ReportViewerGenerator
+        from rich.console import Console
+        from rich.table import Table
+
+        generator = ReportViewerGenerator()
+        reports = generator.collect_reports(limit)
+
+        if not reports:
+            ui.print_warning("No reports found")
+            return
+
+        console = Console()
+        table = Table(title=f"Recent Reports ({len(reports)})")
+
+        table.add_column("Target", style="cyan")
+        table.add_column("Type", style="blue")
+        table.add_column("Risk", style="bold")
+        table.add_column("Score")
+        table.add_column("Date")
+
+        risk_styles = {
+            "critical": "red bold",
+            "high": "red",
+            "medium": "yellow",
+            "low": "green",
+        }
+
+        for report in reports[:limit]:
+            risk_level = (report.get("summary", {}).get("risk", {}).get("level", "unknown")).lower()
+            risk_score = report.get("summary", {}).get("risk", {}).get("score", 0)
+            style = risk_styles.get(risk_level, "white")
+
+            table.add_row(
+                report.get("target_name", "Unknown")[:30],
+                report.get("target_type", "unknown"),
+                f"[{style}]{risk_level.upper()}[/{style}]",
+                str(risk_score),
+                report.get("timestamp", "")[:10],
+            )
+
+        console.print(table)
+        print()
+        ui.print_info("Run 'benderbox report view' to open interactive viewer")
+
+    except Exception as e:
+        ui.print_error(f"Failed to list reports: {e}")
+
+
+@report.command("export")
+@click.argument("report_id", required=False)
+@click.option("--format", "-f", "output_format", type=click.Choice(["json", "markdown", "html"]),
+              default="html", help="Output format")
+@click.option("--output", "-o", type=click.Path(), help="Output file path")
+@click.option("--open", "-O", "open_browser", is_flag=True, help="Open in browser (HTML only)")
+@click.option("--latest", is_flag=True, help="Export the most recent report")
+@click.pass_context
+def report_export(ctx, report_id: Optional[str], output_format: str,
+                  output: Optional[str], open_browser: bool, latest: bool):
+    """
+    Export a report to a file.
+
+    Examples:
+        benderbox report export --latest --format html --open
+        benderbox report export abc123 --format markdown -o report.md
+    """
+    from benderbox.ui.terminal import TerminalUI
+
+    ui = TerminalUI()
+
+    try:
+        from benderbox.reporting.index_generator import ReportViewerGenerator
+        from benderbox.reporting.html_generator import HTMLReportGenerator
+        from pathlib import Path
+        import json
+
+        generator = ReportViewerGenerator()
+        reports = generator.collect_reports(50)
+
+        if not reports:
+            ui.print_warning("No reports found")
+            return
+
+        # Select report
+        report = None
+        if latest or not report_id:
+            report = reports[0]
+            ui.print_info(f"Exporting latest report: {report.get('target_name', 'Unknown')}")
+        else:
+            # Find by ID (partial match)
+            for r in reports:
+                if report_id in r.get("run_id", "") or report_id in r.get("target_name", ""):
+                    report = r
+                    break
+
+        if not report:
+            ui.print_error(f"Report not found: {report_id}")
+            return
+
+        # Determine output path
+        target_name = report.get("target_name", "report").replace("/", "_").replace("\\", "_")
+        if not output:
+            ext = {"json": "json", "markdown": "md", "html": "html"}[output_format]
+            output = f"{target_name}.{ext}"
+
+        out_path = Path(output)
+
+        # Export based on format
+        if output_format == "json":
+            out_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        elif output_format == "markdown":
+            from benderbox.storage.report_db import ReportDatabase
+            db = ReportDatabase()
+            content = db._report_to_markdown(report)
+            out_path.write_text(content, encoding="utf-8")
+        else:  # html
+            html_gen = HTMLReportGenerator()
+            html = html_gen.generate(report)
+            out_path.write_text(html, encoding="utf-8")
+
+            if open_browser:
+                import webbrowser
+                webbrowser.open(f"file://{out_path.absolute()}")
+
+        ui.print_success(f"Report exported to: {output}")
+
+    except Exception as e:
+        ui.print_error(f"Export failed: {e}")
+
+
 def main():
     """Main entry point."""
     cli(obj={})

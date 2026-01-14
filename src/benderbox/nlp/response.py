@@ -117,6 +117,7 @@ class ResponseGenerator:
             IntentType.QUERY_KNOWLEDGE: self._answer_knowledge_query,
             IntentType.GENERATE_REPORT: self._format_report,
             IntentType.LIST_REPORTS: self._format_report_list,
+            IntentType.VIEW_REPORTS: self._format_view_reports,
             IntentType.GET_STATUS: self._format_status,
             IntentType.HELP: self._format_help,
             IntentType.GENERAL_QUESTION: self._answer_general_question,
@@ -378,6 +379,42 @@ class ResponseGenerator:
             lines.append(f"- [{risk_level.upper()}] {target} ({timestamp})")
 
         return "\n".join(lines)
+
+    async def _format_view_reports(self, context: ResponseContext) -> str:
+        """Format response for opening report viewer."""
+        result = context.analysis_result or {}
+        action = result.get("action", "")
+
+        if action == "opened_report_viewer":
+            report_count = result.get("report_count", 0)
+            output_path = result.get("output_path", "")
+            return f"""**Report Viewer Opened**
+
+Found {report_count} report(s) and opened the BenderBox Report Viewer in your browser.
+
+The viewer includes:
+- Overview dashboard with risk metrics
+- Detailed findings with severity breakdown
+- Search and filter capabilities
+- Comparison tools for multiple reports
+
+Report viewer saved to:
+`{output_path}`
+
+You can reopen it anytime with `report view` or `open reports`."""
+
+        elif action == "no_reports":
+            return """**No Reports Found**
+
+No analysis reports were found. Run an analysis first:
+
+- `analyze <model.gguf>` - Analyze a model file
+- `mcp analyze <server.py>` - Analyze an MCP server
+- `context analyze <prompt.md>` - Analyze a prompt or skill file
+
+After running an analysis, use `open reports` or `report view` to open the viewer."""
+
+        return "I tried to open the report viewer but encountered an issue. Try `report view` from the command line."
 
     async def _format_status(self, context: ResponseContext) -> str:
         """Format system status."""
