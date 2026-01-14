@@ -364,30 +364,99 @@ class MCPSourceAnalyzer:
         server_info = MCPServerInfo(name=repo_name, source=repo_url)
 
         async with httpx.AsyncClient() as client:
-            # Get package.json for metadata and dependencies
+            # Detect project type and get metadata
+            is_python = False
+
+            # Try package.json first (Node.js/TypeScript)
             package_json = await self._fetch_github_file(
                 client, owner, repo, "package.json"
             )
             if package_json:
                 self._parse_package_json(server_info, package_json)
 
+            # Try pyproject.toml (Python)
+            pyproject = await self._fetch_github_file(
+                client, owner, repo, "pyproject.toml"
+            )
+            if pyproject:
+                is_python = True
+                self._parse_pyproject_toml(server_info, pyproject)
+
+            # Try setup.py as fallback (older Python)
+            if not pyproject:
+                setup_py = await self._fetch_github_file(
+                    client, owner, repo, "setup.py"
+                )
+                if setup_py:
+                    is_python = True
+                    self._parse_setup_py(server_info, setup_py)
+
             # Look for tool definitions in common locations
+            # TypeScript/JavaScript files (check root level too)
             tool_files = [
+                # Root level files (common for simple MCP servers)
+                "index.ts",
+                "index.js",
+                "server.ts",
+                "server.js",
+                "main.ts",
+                "main.js",
+                # src directory
                 "src/tools/index.ts",
                 "src/tools/index.js",
                 "src/index.ts",
                 "src/index.js",
+                "src/server.ts",
+                "src/server.js",
+                # tools directory
                 "tools/index.ts",
                 "tools/index.js",
             ]
 
+            # Python MCP server files
+            python_files = [
+                "server.py",
+                "src/server.py",
+                "main.py",
+                "src/main.py",
+                "app.py",
+                "src/app.py",
+                "__init__.py",
+                "src/__init__.py",
+                f"src/{repo}/server.py",
+                f"src/{repo}/__init__.py",
+                f"{repo}/server.py",
+                f"{repo}/__init__.py",
+                # Common MCP server patterns
+                "mcp_server.py",
+                "src/mcp_server.py",
+            ]
+
+            # Analyze TypeScript/JavaScript files
             for tool_file in tool_files:
                 content = await self._fetch_github_file(client, owner, repo, tool_file)
                 if content:
                     tools = self._extract_tools_from_source(content, tool_file)
                     server_info.tools.extend(tools)
 
-            # Analyze individual tool files
+            # Analyze Python files
+            for py_file in python_files:
+                content = await self._fetch_github_file(client, owner, repo, py_file)
+                if content:
+                    tools = self._extract_python_tools(content, py_file)
+                    # Merge with existing tools or add new ones
+                    for tool in tools:
+                        existing = next(
+                            (t for t in server_info.tools if t.name == tool.name),
+                            None
+                        )
+                        if existing:
+                            existing.risk_factors.extend(tool.risk_factors)
+                            existing.capabilities.extend(tool.capabilities)
+                        else:
+                            server_info.tools.append(tool)
+
+            # Analyze individual tool files in directories
             tool_dir_content = await self._list_github_dir(client, owner, repo, "src/tools")
             if tool_dir_content:
                 for file_info in tool_dir_content:
@@ -411,8 +480,32 @@ class MCPSourceAnalyzer:
                                 else:
                                     server_info.tools.append(tool)
 
+            # Check Python tools directory
+            py_tools_dirs = ["tools", "src/tools", f"src/{repo}/tools"]
+            for py_tools_dir in py_tools_dirs:
+                py_dir_content = await self._list_github_dir(client, owner, repo, py_tools_dir)
+                if py_dir_content:
+                    for file_info in py_dir_content:
+                        if file_info.get("name", "").endswith(".py"):
+                            file_path = f"{py_tools_dir}/{file_info['name']}"
+                            content = await self._fetch_github_file(
+                                client, owner, repo, file_path
+                            )
+                            if content:
+                                tools = self._extract_python_tools(content, file_path)
+                                for tool in tools:
+                                    existing = next(
+                                        (t for t in server_info.tools if t.name == tool.name),
+                                        None
+                                    )
+                                    if existing:
+                                        existing.risk_factors.extend(tool.risk_factors)
+                                        existing.capabilities.extend(tool.capabilities)
+                                    else:
+                                        server_info.tools.append(tool)
+
             # Check for environment/credential requirements
-            env_files = [".env.example", ".env.template", "README.md"]
+            env_files = [".env.example", ".env.template", "README.md", "requirements.txt"]
             for env_file in env_files:
                 content = await self._fetch_github_file(client, owner, repo, env_file)
                 if content:
@@ -474,6 +567,210 @@ class MCPSourceAnalyzer:
 
         except json.JSONDecodeError:
             logger.warning("Failed to parse package.json")
+
+    def _parse_pyproject_toml(self, server_info: MCPServerInfo, content: str) -> None:
+        """Parse pyproject.toml for Python project metadata."""
+        try:
+            # Simple TOML parsing without external dependency
+            # Extract [project] or [tool.poetry] sections
+            lines = content.split("\n")
+            in_project = False
+            in_poetry = False
+
+            for line in lines:
+                line = line.strip()
+
+                # Track sections
+                if line == "[project]":
+                    in_project = True
+                    in_poetry = False
+                    continue
+                elif line == "[tool.poetry]":
+                    in_poetry = True
+                    in_project = False
+                    continue
+                elif line.startswith("["):
+                    in_project = False
+                    in_poetry = False
+                    continue
+
+                if in_project or in_poetry:
+                    # Parse key = "value" patterns
+                    if "=" in line:
+                        key, _, value = line.partition("=")
+                        key = key.strip()
+                        value = value.strip().strip('"').strip("'")
+
+                        if key == "version" and not server_info.version:
+                            server_info.version = value
+                        elif key == "description" and not server_info.description:
+                            server_info.description = value
+                        elif key == "license" and not server_info.license:
+                            server_info.license = value
+                        elif key in ("author", "authors"):
+                            if not server_info.author:
+                                # Handle authors = ["name <email>"] format
+                                if value.startswith("["):
+                                    match = re.search(r'["\']([^"\'<]+)', value)
+                                    if match:
+                                        server_info.author = match.group(1).strip()
+                                else:
+                                    server_info.author = value
+
+            # Extract dependencies from [project.dependencies] or [tool.poetry.dependencies]
+            deps = {}
+            dep_pattern = r'^\s*([a-zA-Z0-9_-]+)\s*[=<>~!]'
+            in_deps = False
+
+            for line in lines:
+                if "[project.dependencies]" in line or "[tool.poetry.dependencies]" in line:
+                    in_deps = True
+                    continue
+                elif line.strip().startswith("[") and in_deps:
+                    in_deps = False
+                    continue
+
+                if in_deps and "=" in line:
+                    match = re.match(r'^\s*([a-zA-Z0-9_-]+)\s*=', line)
+                    if match:
+                        deps[match.group(1)] = "latest"
+
+            if deps:
+                server_info.dependencies.update(deps)
+
+        except Exception as e:
+            logger.warning(f"Failed to parse pyproject.toml: {e}")
+
+    def _parse_setup_py(self, server_info: MCPServerInfo, content: str) -> None:
+        """Parse setup.py for Python project metadata."""
+        try:
+            # Extract metadata from setup() call
+            version_match = re.search(r'version\s*=\s*["\']([^"\']+)["\']', content)
+            if version_match and not server_info.version:
+                server_info.version = version_match.group(1)
+
+            desc_match = re.search(r'description\s*=\s*["\']([^"\']+)["\']', content)
+            if desc_match and not server_info.description:
+                server_info.description = desc_match.group(1)
+
+            author_match = re.search(r'author\s*=\s*["\']([^"\']+)["\']', content)
+            if author_match and not server_info.author:
+                server_info.author = author_match.group(1)
+
+            license_match = re.search(r'license\s*=\s*["\']([^"\']+)["\']', content)
+            if license_match and not server_info.license:
+                server_info.license = license_match.group(1)
+
+            # Extract install_requires
+            deps_match = re.search(r'install_requires\s*=\s*\[([^\]]+)\]', content, re.DOTALL)
+            if deps_match:
+                deps_str = deps_match.group(1)
+                dep_names = re.findall(r'["\']([a-zA-Z0-9_-]+)', deps_str)
+                for dep in dep_names:
+                    server_info.dependencies[dep] = "latest"
+
+        except Exception as e:
+            logger.warning(f"Failed to parse setup.py: {e}")
+
+    def _extract_python_tools(self, content: str, filename: str) -> List[MCPTool]:
+        """Extract MCP tool definitions from Python source code."""
+        tools = []
+
+        # Pattern 1: @server.tool() or @mcp.tool() decorator with name
+        # Matches: @server.tool(name="tool_name") or @mcp.tool("tool_name")
+        decorator_patterns = [
+            # @server.tool(name="xyz") or @server.tool("xyz")
+            r'@(?:server|mcp|app)\.tool\s*\(\s*(?:name\s*=\s*)?["\']([^"\']+)["\']',
+            # @tool(name="xyz") or @tool("xyz")
+            r'@tool\s*\(\s*(?:name\s*=\s*)?["\']([^"\']+)["\']',
+            # @server.call_tool decorator
+            r'@(?:server|mcp)\.call_tool\s*\(\s*(?:name\s*=\s*)?["\']([^"\']+)["\']',
+        ]
+
+        # Pattern 2: server.add_tool() or mcp.add_tool() calls
+        add_tool_patterns = [
+            r'(?:server|mcp|app)\.add_tool\s*\(\s*["\']([^"\']+)["\']',
+            r'(?:server|mcp|app)\.register_tool\s*\(\s*["\']([^"\']+)["\']',
+        ]
+
+        # Pattern 3: Tool class instantiation
+        # Matches: Tool(name="xyz", ...)
+        tool_class_pattern = r'Tool\s*\(\s*name\s*=\s*["\']([^"\']+)["\']'
+
+        # Pattern 4: Function definitions after @tool decorator
+        # Matches: async def tool_name(...) or def tool_name(...)
+        func_after_decorator = r'@(?:server|mcp|app)?\.?tool[^\n]*\n\s*(?:async\s+)?def\s+([a-zA-Z_][a-zA-Z0-9_]*)'
+
+        # Collect all tool names
+        tool_names = set()
+        tool_descriptions = {}
+
+        # Extract from decorators
+        for pattern in decorator_patterns:
+            matches = re.findall(pattern, content, re.IGNORECASE)
+            tool_names.update(matches)
+
+        # Extract from add_tool calls
+        for pattern in add_tool_patterns:
+            matches = re.findall(pattern, content, re.IGNORECASE)
+            tool_names.update(matches)
+
+        # Extract from Tool class
+        matches = re.findall(tool_class_pattern, content)
+        tool_names.update(matches)
+
+        # Extract function names after @tool decorator
+        matches = re.findall(func_after_decorator, content, re.MULTILINE)
+        tool_names.update(matches)
+
+        # Try to find descriptions near tool definitions
+        desc_pattern = r'description\s*=\s*["\']([^"\']+)["\']'
+        for name in tool_names:
+            # Look for description near the tool name
+            context_pattern = rf'{re.escape(name)}[^}}]{{0,500}}description\s*=\s*["\']([^"\']+)["\']'
+            desc_match = re.search(context_pattern, content, re.DOTALL | re.IGNORECASE)
+            if desc_match:
+                tool_descriptions[name] = desc_match.group(1)
+
+        # Create MCPTool objects
+        for name in tool_names:
+            # Skip common non-tool names
+            if name.lower() in ["__init__", "main", "run", "start", "setup", "init"]:
+                continue
+
+            desc = tool_descriptions.get(name, "")
+            tool = MCPTool(name=name, description=desc)
+
+            # Analyze risk based on the full content
+            self._analyze_tool_risk(tool, content)
+            tools.append(tool)
+
+        # If no explicit tools found but file looks like MCP server, analyze content
+        if not tools:
+            # Check if this looks like an MCP server file
+            mcp_indicators = [
+                r'from\s+mcp',
+                r'import\s+mcp',
+                r'FastMCP',
+                r'Server\s*\(',
+                r'@server\.',
+                r'StdioServerTransport',
+            ]
+            is_mcp_file = any(re.search(p, content) for p in mcp_indicators)
+
+            if is_mcp_file:
+                # Create a generic tool entry for the file
+                tool_name = Path(filename).stem
+                if tool_name not in ["__init__", "server", "main", "app"]:
+                    tool = MCPTool(
+                        name=f"mcp_{tool_name}",
+                        description=f"MCP server from {filename}"
+                    )
+                    self._analyze_tool_risk(tool, content)
+                    if tool.risk_factors:
+                        tools.append(tool)
+
+        return tools
 
     def _extract_tools_from_source(self, content: str, filename: str) -> List[MCPTool]:
         """Extract tool definitions from source code."""
