@@ -26,10 +26,11 @@ BenderBox is a comprehensive platform for analyzing AI models, MCP servers, and 
 git clone https://github.com/r33n3/BenderBox.git
 cd BenderBox
 
-# 2. Run the installer for your OS (see Installation section below)
+# 2. Run the setup wizard
+python setup_wizard.py
 
 # 3. Start BenderBox
-python bb.py -i
+python bb.py
 ```
 
 ---
@@ -41,56 +42,15 @@ python bb.py -i
 - **Python 3.9+** (Python 3.11 or 3.12 recommended)
 - **Git** (to clone the repository)
 
-### Windows Installation
+### All Platforms
 
-```powershell
-# Option A: Double-click install.bat
-# Or run from command prompt:
-install.bat
-
-# Option B: Run setup wizard directly
+```bash
+# Interactive setup wizard (recommended)
 python setup_wizard.py
 
-# Option C: Manual install
+# Or manual install
 pip install -e .
 ```
-
-**Prerequisites script (optional):**
-```powershell
-# Install prerequisites including llama-cli for GGUF analysis
-.\scripts\install-prerequisites.ps1 -All
-```
-
-### Linux / macOS Installation
-
-```bash
-# Option A: Run the install script
-chmod +x install.sh
-./install.sh
-
-# Option B: Run setup wizard directly
-python3 setup_wizard.py
-
-# Option C: Manual install
-pip3 install -e .
-```
-
-**Prerequisites script (optional):**
-```bash
-# Install prerequisites including llama-cli for GGUF analysis
-chmod +x scripts/install-prerequisites.sh
-./scripts/install-prerequisites.sh --all
-```
-
-### Installation Files Summary
-
-| File | Platform | Description |
-|------|----------|-------------|
-| `install.bat` | Windows | Double-click installer launcher |
-| `install.sh` | Linux/Mac | Bash installer launcher |
-| `setup_wizard.py` | All | Interactive setup wizard (auto-detects OS) |
-| `scripts/install-prerequisites.ps1` | Windows | PowerShell prerequisites installer |
-| `scripts/install-prerequisites.sh` | Linux/Mac | Bash prerequisites installer |
 
 ### Setup Wizard Features
 
@@ -163,8 +123,6 @@ python bb.py status
 ### Step 2: Start Interactive Mode
 
 ```bash
-python bb.py -i
-# Or simply:
 python bb.py
 ```
 
@@ -456,7 +414,7 @@ python bb.py compare openai:gpt-4-turbo anthropic:claude-3-haiku-20240307
 ### Example 6: Interactive Session
 
 ```bash
-python bb.py -i
+python bb.py
 
 # In interactive mode:
 BenderBox> status
@@ -530,24 +488,24 @@ export XAI_API_KEY="..."
 BenderBox/
 ├── bb.py                     # Main entry point
 ├── setup_wizard.py           # Interactive installer
-├── setup.py                  # Package configuration
+├── pyproject.toml            # Package configuration
+├── examples/                 # Example files and skills
 │
-├── src/benderbox/
-│   ├── ui/                   # CLI and Terminal UI
-│   ├── analyzers/            # Analysis engines
-│   │   ├── mcp_analyzer.py   # MCP static analysis
-│   │   ├── mcp_client.py     # MCP live connections
-│   │   ├── mcp_interrogation.py  # MCP security testing
-│   │   └── context_analyzer.py   # Instruction analysis
-│   ├── interrogation/        # Model interrogation
-│   │   ├── runner/           # Model runners (API + local)
-│   │   ├── prompts/          # Test prompt library
-│   │   └── scoring/          # Risk scoring
-│   ├── nlp/                  # Natural language processing
-│   └── utils/                # Utilities
-│
-├── tests/                    # Test suite
-└── docs/                     # Documentation
+└── src/benderbox/
+    ├── ui/                   # CLI and Terminal UI
+    ├── analyzers/            # Analysis engines
+    │   ├── mcp_analyzer.py   # MCP static analysis
+    │   ├── mcp_client.py     # MCP live connections
+    │   ├── mcp_interrogation.py  # MCP security testing
+    │   └── context_analyzer.py   # Instruction analysis
+    ├── interrogation/        # Model interrogation
+    │   ├── runner/           # Model runners (API + local)
+    │   ├── prompts/          # Test prompt library
+    │   └── scoring/          # Risk scoring
+    ├── nlp/                  # Natural language processing
+    ├── reporting/            # HTML/JSON report generation
+    ├── storage/              # Database and vector store
+    └── utils/                # Utilities
 ```
 
 ---
