@@ -92,6 +92,9 @@ KEYWORD_PATTERNS: List[Tuple[re.Pattern, IntentType, bool, bool]] = [
      IntentType.ANALYZE_SKILL, True, False),
     (re.compile(r"\bis\s+.+\s+(safe|secure|risky|dangerous)\b", re.I),
      IntentType.ANALYZE_MODEL, True, True),
+    # Short model name pattern: "analyze llama", "test mistral", etc.
+    (re.compile(r"^(analyze|interrogate|test|scan)\s+([a-zA-Z][a-zA-Z0-9_-]*)(\s|$)", re.I),
+     IntentType.ANALYZE_MODEL, True, False),
 
     # Semantic code analysis intents
     (re.compile(r"\b(analyze|scan|check|review)\b.*\b(code|this code|the code)\b", re.I),
@@ -134,9 +137,11 @@ KEYWORD_PATTERNS: List[Tuple[re.Pattern, IntentType, bool, bool]] = [
      IntentType.VIEW_REPORTS, False, False),
     (re.compile(r"\b(show|see)\s+(my\s+)?reports?\b", re.I),
      IntentType.VIEW_REPORTS, False, False),
+    (re.compile(r"\b(list|show|get)\s*(reports?|analyses|scans)\b", re.I),
+     IntentType.LIST_REPORTS, False, False),
     (re.compile(r"\b(list|show|get)\b.*\b(report|analysis|scan)\b", re.I),
      IntentType.LIST_REPORTS, False, False),
-    (re.compile(r"\b(recent|latest|last)\b.*\b(report|analysis|scan)\b", re.I),
+    (re.compile(r"\b(recent|latest|last)\b.*\b(report|analysis|scan)s?\b", re.I),
      IntentType.LIST_REPORTS, False, False),
 
     # Knowledge queries

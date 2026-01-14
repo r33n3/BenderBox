@@ -1114,7 +1114,7 @@ class ReportViewerGenerator:
 
     def collect_reports(self, limit: int = 50) -> List[Dict[str, Any]]:
         """
-        Collect JSON reports from the reports directory.
+        Collect JSON reports from the reports directory and sandbox_logs.
 
         Args:
             limit: Maximum number of reports to include.
@@ -1123,14 +1123,30 @@ class ReportViewerGenerator:
             List of report dictionaries.
         """
         reports = []
+        all_json_files = []
 
-        if not self.reports_path.exists():
-            logger.warning(f"Reports path does not exist: {self.reports_path}")
+        # Collect from reports path
+        if self.reports_path.exists():
+            all_json_files.extend(self.reports_path.glob("**/*.json"))
+
+        # Also collect from sandbox_logs (BenderBox analysis output)
+        from benderbox.config import get_benderbox_home
+        sandbox_logs = get_benderbox_home() / "sandbox_logs"
+        if sandbox_logs.exists():
+            all_json_files.extend(sandbox_logs.glob("benderbox_*.json"))
+
+        # Also check current working directory for sandbox_logs
+        cwd_sandbox = Path("./sandbox_logs")
+        if cwd_sandbox.exists() and cwd_sandbox.resolve() != sandbox_logs.resolve():
+            all_json_files.extend(cwd_sandbox.glob("benderbox_*.json"))
+
+        if not all_json_files:
+            logger.warning(f"No report files found in {self.reports_path} or sandbox_logs")
             return reports
 
-        # Find all JSON files
+        # Sort by modification time and limit
         json_files = sorted(
-            self.reports_path.glob("**/*.json"),
+            set(all_json_files),  # Deduplicate
             key=lambda p: p.stat().st_mtime,
             reverse=True  # Most recent first
         )[:limit]
@@ -1139,8 +1155,10 @@ class ReportViewerGenerator:
             try:
                 with open(json_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    # Ensure it looks like a report
-                    if "target_name" in data or "results" in data or "summary" in data:
+                    # Ensure it looks like a report (BenderBox reports or analysis results)
+                    if "target_name" in data or "results" in data or "summary" in data or "tests" in data:
+                        # Add filename for reference
+                        data["_source_file"] = str(json_file)
                         reports.append(data)
             except Exception as e:
                 logger.warning(f"Failed to load report {json_file}: {e}")
