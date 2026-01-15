@@ -772,12 +772,12 @@ compare phi-2 openai:gpt-4-turbo
         if self.console:
             style = f"dim {self.THEME['text_secondary']}"
             if inline:
-                self.console.print(f"  [{style}]{metrics_line}[/{style}]", end="")
+                self.console.print(f"  [{style}]{metrics_line}[/{style}]", end="")
             else:
                 self.console.print(f"  [{style}]{metrics_line}[/{style}]")
         else:
             if inline:
-                print(f"  {metrics_line}", end="")
+                print(f"  {metrics_line}", end="")
             else:
                 print(f"  {metrics_line}")
 
@@ -798,9 +798,9 @@ compare phi-2 openai:gpt-4-turbo
         line = f"  Downloading {filename}: [{bar}] {progress:.0f}%{speed_str}"
         
         if self.console:
-            self.console.print(f"[{self.THEME['neon_cyan']}]{line}[/{self.THEME['neon_cyan']}]", end="")
+            self.console.print(f"[{self.THEME['neon_cyan']}]{line}[/{self.THEME['neon_cyan']}]", end="")
         else:
-            print(line, end="")
+            print(line, end="")
 
     def print_header(self, title: str) -> None:
         """Print a section header in neon purple style."""
