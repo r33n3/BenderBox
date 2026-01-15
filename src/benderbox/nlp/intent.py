@@ -29,6 +29,8 @@ class IntentType(Enum):
     CONTEXT_ANALYZE = "context_analyze"  # Analyze instruction file
     CONTEXT_SCAN = "context_scan"  # Scan directory for risky files
     LIST_MODELS = "list_models"  # List available models
+    DOWNLOAD_MODEL = "download_model"  # Download a model
+    LOAD_MODEL = "load_model"  # Load a model for analysis/nlp
     COMPARE = "compare"
     EXPLAIN = "explain"
     QUERY_KNOWLEDGE = "query_knowledge"
@@ -187,6 +189,22 @@ KEYWORD_PATTERNS: List[Tuple[re.Pattern, IntentType, bool, bool]] = [
      IntentType.LIST_MODELS, False, False),
     (re.compile(r"\bmodels?\s+for\s+(analysis|nlp)\b", re.I),
      IntentType.LIST_MODELS, False, False),
+
+    # Model download intents
+    (re.compile(r"\bdownload\b.*\b(model|tinyllama|phi|llama|qwen|mistral)\b", re.I),
+     IntentType.DOWNLOAD_MODEL, False, False),
+    (re.compile(r"\b(get|fetch|install)\b.*\bmodel\b", re.I),
+     IntentType.DOWNLOAD_MODEL, False, False),
+    (re.compile(r"\bmodels?\s+download\b", re.I),
+     IntentType.DOWNLOAD_MODEL, False, False),
+
+    # Model load intents
+    (re.compile(r"\bload\b.*\b(model|for\s+(analysis|nlp))\b", re.I),
+     IntentType.LOAD_MODEL, False, False),
+    (re.compile(r"\b(use|switch\s+to|select)\b.*\bmodel\b.*\b(for|as)\b", re.I),
+     IntentType.LOAD_MODEL, False, False),
+    (re.compile(r"\bset\b.*\b(analysis|nlp)\s+model\b", re.I),
+     IntentType.LOAD_MODEL, False, False),
 
     # Status intents
     (re.compile(r"\b(status|state|info|health)\b", re.I),

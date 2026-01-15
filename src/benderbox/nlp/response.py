@@ -142,6 +142,8 @@ class ResponseGenerator:
             IntentType.ANALYZE_CODE: self._format_analysis_result,
             IntentType.ANALYZE_BEHAVIOR: self._format_analysis_result,
             IntentType.LIST_MODELS: self._format_model_list,
+            IntentType.DOWNLOAD_MODEL: self._format_download_model,
+            IntentType.LOAD_MODEL: self._format_load_model,
             IntentType.COMPARE: self._format_comparison,
             IntentType.EXPLAIN: self._generate_explanation,
             IntentType.QUERY_KNOWLEDGE: self._answer_knowledge_query,
@@ -474,6 +476,129 @@ class ResponseGenerator:
             lines.append("**Commands:**")
             lines.append("- `analyze <model-name>` - Analyze a model by name")
             lines.append("- `models download <id>` - Download a recommended model")
+
+        return "\n".join(lines)
+
+    async def _format_download_model(self, context: ResponseContext) -> str:
+        """Format download model guidance."""
+        query = context.user_query.lower()
+
+        # Try to extract model name from query
+        model_hints = {
+            "tinyllama": ("tinyllama", "TinyLlama-1.1B", "~500-700 MB", "Basic chat, fast"),
+            "phi": ("phi2", "Phi-2", "~1.7 GB", "High quality, efficient"),
+            "qwen": ("qwen2-1.5b", "Qwen2-1.5B", "~1 GB", "Excellent small model"),
+            "mistral": ("mistral-7b", "Mistral-7B", "~4.4 GB", "Best quality, needs 16GB RAM"),
+            "llama": ("tinyllama", "TinyLlama-1.1B", "~500-700 MB", "Llama-based, efficient"),
+        }
+
+        suggested = None
+        for hint, info in model_hints.items():
+            if hint in query:
+                suggested = info
+                break
+
+        lines = ["**Model Download**", ""]
+
+        if suggested:
+            model_id, name, size, desc = suggested
+            lines.extend([
+                f"To download **{name}** ({size} - {desc}):",
+                "",
+                f"```",
+                f"models download {model_id}",
+                f"```",
+                "",
+                "Or from the CLI:",
+                f"```bash",
+                f"python bb.py models download {model_id} --purpose nlp",
+                f"python bb.py models download {model_id} --purpose analysis",
+                f"```",
+            ])
+        else:
+            lines.extend([
+                "**Available Models for Download:**",
+                "",
+                "| ID | Model | Size | Best For |",
+                "|-----|-------|------|----------|",
+                "| `tinyllama` | TinyLlama-1.1B | ~500 MB | Quick testing, limited RAM |",
+                "| `phi2` | Phi-2 | ~1.7 GB | Quality + efficiency |",
+                "| `qwen2-1.5b` | Qwen2-1.5B | ~1 GB | Great balance |",
+                "| `mistral-7b` | Mistral-7B | ~4.4 GB | Best quality (16GB+ RAM) |",
+                "",
+                "**Download Commands:**",
+                "```",
+                "models download tinyllama      # For NLP/chat",
+                "models download phi2           # For analysis",
+                "```",
+                "",
+                "Or use CLI: `python bb.py models download <id> --purpose nlp|analysis`",
+            ])
+
+        lines.extend([
+            "",
+            "**After Download:**",
+            "- `/load <model> --for nlp` - Use for chat features",
+            "- `/load <model> --for analysis` - Use as analysis target",
+            "- `analyze <model>` - Run security analysis",
+        ])
+
+        return "\n".join(lines)
+
+    async def _format_load_model(self, context: ResponseContext) -> str:
+        """Format load model guidance."""
+        from benderbox.utils.model_manager import ModelManager
+
+        manager = ModelManager()
+        downloaded = manager.get_downloaded_models()
+
+        lines = ["**Load Model**", ""]
+
+        if downloaded:
+            lines.extend([
+                "**Available Models:**",
+                "",
+            ])
+            for m in downloaded[:5]:
+                lines.append(f"- `{m['name']}` ({m['size_mb']} MB)")
+
+            lines.extend([
+                "",
+                "**Load Commands:**",
+                "```",
+                "/load <model-name> --for nlp       # For chat/NLP features",
+                "/load <model-name> --for analysis  # As analysis target",
+                "```",
+                "",
+                "**Examples:**",
+                "```",
+                "/load tinyllama --for nlp",
+                "/load phi-2 --for analysis",
+                "```",
+            ])
+        else:
+            lines.extend([
+                "No models downloaded yet.",
+                "",
+                "**Download a model first:**",
+                "```",
+                "models download tinyllama",
+                "```",
+                "",
+                "Then load it:",
+                "```",
+                "/load tinyllama --for nlp",
+                "```",
+            ])
+
+        lines.extend([
+            "",
+            "**Workflow:**",
+            "1. `models download <id>` - Download a model",
+            "2. `/load <model> --for analysis` - Load for analysis",
+            "3. `analyze` - Run analysis on loaded model",
+            "4. `reports` / `open reports` - View results",
+        ])
 
         return "\n".join(lines)
 
@@ -877,35 +1002,48 @@ context scan examples/skills/ --pattern "*.md"
         """Get model analysis help."""
         return """**AI Model Security Analysis**
 
-**Commands:**
+**Complete Workflow:**
+```
+# 1. Download a model
+models download tinyllama
+
+# 2. Load for analysis
+/load tinyllama --for analysis
+
+# 3. Run analysis
+analyze --profile quick
+
+# 4. View reports
+reports
+open reports
+```
+
+**Model Commands:**
+- `list models` - Show available models
+- `models download <id>` - Download a model
+- `/load <model> --for nlp` - Load for chat features
+- `/load <model> --for analysis` - Load as analysis target
 - `analyze <model>` - Analyze model for security
 - `interrogate <target>` - Test model safety/censorship
-- `compare <a> <b>` - Compare two models
+
+**Available Models to Download:**
+| ID | Size | Description |
+|----|------|-------------|
+| `tinyllama` | ~500 MB | Fast, limited RAM |
+| `phi2` | ~1.7 GB | Quality + efficiency |
+| `qwen2-1.5b` | ~1 GB | Great balance |
+| `mistral-7b` | ~4.4 GB | Best quality |
 
 **Target Formats:**
+- Downloaded: `tinyllama`, `phi-2` (by name)
 - Local GGUF: `./models/llama-7b.gguf`
 - API Models: `openai:gpt-4-turbo`, `anthropic:claude-3-sonnet`
-
-**Get a Test Model:**
-```
-# Download TinyLlama (~700MB)
-python bb.py models download tinyllama
-
-# Test the model works
-python bb.py models test
-```
-
-**Example Commands:**
-```
-analyze ./models/tinyllama.gguf --profile quick
-interrogate openai:gpt-4-turbo --profile quick
-compare model1.gguf model2.gguf
-```
 
 **Profiles:**
 - `quick` - Fast validation (~15 tests)
 - `standard` - Balanced analysis (~50 tests)
 - `full` - Comprehensive audit (~128 tests)
+- `adversarial` - Jailbreak resistance (~64 tests)
 
 **What It Tests:**
 - Jailbreak resistance
