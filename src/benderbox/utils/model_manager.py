@@ -662,6 +662,316 @@ class ModelManager:
         return info
 
 
+    def get_gpu_info(self) -> Dict:
+        """
+        Detect GPU information including NVIDIA/CUDA support.
+
+        Returns:
+            Dictionary with GPU details:
+            - has_nvidia: bool
+            - gpu_name: str or None
+            - vram_gb: int or None
+            - cuda_available: bool
+            - recommended_layers: int
+        """
+        info = {
+            "has_nvidia": False,
+            "gpu_name": None,
+            "vram_gb": None,
+            "cuda_available": False,
+            "recommended_layers": 0,
+        }
+
+        # Method 1: Check nvidia-smi (works without Python CUDA bindings)
+        if shutil.which("nvidia-smi"):
+            try:
+                import subprocess
+                result = subprocess.run(
+                    ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    lines = result.stdout.strip().split("\n")
+                    if lines:
+                        parts = lines[0].split(", ")
+                        info["has_nvidia"] = True
+                        info["gpu_name"] = parts[0].strip() if len(parts) > 0 else "Unknown NVIDIA"
+                        if len(parts) > 1:
+                            try:
+                                vram_mb = int(parts[1].strip())
+                                info["vram_gb"] = vram_mb // 1024
+                            except ValueError:
+                                pass
+                        logger.debug(f"nvidia-smi detected: {info['gpu_name']}, {info['vram_gb']}GB VRAM")
+            except Exception as e:
+                logger.debug(f"nvidia-smi detection failed: {e}")
+
+        # Method 2: Check if CUDA is available via llama-cpp-python
+        try:
+            from llama_cpp import llama_supports_gpu_offload
+            info["cuda_available"] = llama_supports_gpu_offload()
+        except ImportError:
+            # llama-cpp-python not installed
+            pass
+        except Exception as e:
+            logger.debug(f"CUDA detection via llama-cpp failed: {e}")
+
+        # Method 3: Try torch (if installed for other features)
+        if not info["has_nvidia"]:
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    info["has_nvidia"] = True
+                    info["cuda_available"] = True
+                    info["gpu_name"] = torch.cuda.get_device_name(0)
+                    vram_bytes = torch.cuda.get_device_properties(0).total_memory
+                    info["vram_gb"] = vram_bytes // (1024 ** 3)
+            except ImportError:
+                pass
+            except Exception as e:
+                logger.debug(f"torch CUDA detection failed: {e}")
+
+        # Calculate recommended GPU layers based on VRAM
+        if info["vram_gb"]:
+            # Rule of thumb: ~1GB VRAM per 4-8 layers for 7B model
+            # Conservative estimate for safety
+            info["recommended_layers"] = min(info["vram_gb"] * 4, 35)
+
+        return info
+
+    def get_cpu_info(self) -> Dict:
+        """
+        Get CPU information.
+
+        Returns:
+            Dictionary with CPU details.
+        """
+        import platform
+
+        info = {
+            "processor": platform.processor() or "Unknown",
+            "cores": 1,
+            "threads": 1,
+        }
+
+        try:
+            import psutil
+            info["cores"] = psutil.cpu_count(logical=False) or 1
+            info["threads"] = psutil.cpu_count(logical=True) or 1
+        except ImportError:
+            try:
+                import os
+                info["threads"] = os.cpu_count() or 1
+            except Exception:
+                pass
+
+        return info
+
+    def get_system_assessment(self) -> Dict:
+        """
+        Comprehensive system assessment for model selection.
+
+        Returns:
+            Dictionary with full system assessment including:
+            - RAM, GPU, CPU info
+            - Model recommendations for NLP vs analysis
+            - Warnings and notes
+        """
+        ram_gb = self.get_system_ram_gb()
+        gpu_info = self.get_gpu_info()
+        cpu_info = self.get_cpu_info()
+
+        assessment = {
+            "ram_gb": ram_gb,
+            "gpu": gpu_info,
+            "cpu": cpu_info,
+            "nlp_recommendations": [],
+            "analysis_recommendations": [],
+            "warnings": [],
+            "notes": [],
+        }
+
+        # NLP model recommendations (stays loaded in memory)
+        # Need to leave room for OS and other processes (~4GB overhead)
+        available_for_nlp = max(ram_gb - 4, 2)
+
+        for model_id, model in RECOMMENDED_MODELS.items():
+            model_info = {
+                "id": model_id,
+                "name": model.name,
+                "size_mb": model.size_mb,
+                "min_ram_gb": model.min_ram_gb,
+                "quality": model.quality,
+                "fits": model.min_ram_gb <= available_for_nlp,
+            }
+
+            # NLP models need RAM headroom since they stay loaded
+            if model.min_ram_gb <= available_for_nlp:
+                assessment["nlp_recommendations"].append(model_info)
+
+            # Analysis models can use more RAM since they're loaded temporarily
+            if model.min_ram_gb <= ram_gb:
+                assessment["analysis_recommendations"].append(model_info)
+
+        # Sort by quality (best first)
+        quality_order = {"best": 0, "good": 1, "basic": 2}
+        assessment["nlp_recommendations"].sort(
+            key=lambda x: (quality_order.get(x["quality"], 99), -x["size_mb"])
+        )
+        assessment["analysis_recommendations"].sort(
+            key=lambda x: (quality_order.get(x["quality"], 99), -x["size_mb"])
+        )
+
+        # Generate warnings
+        if ram_gb < 4:
+            assessment["warnings"].append(
+                f"Low RAM detected ({ram_gb}GB). Only smallest models will work."
+            )
+        elif ram_gb < 8:
+            assessment["warnings"].append(
+                f"Limited RAM ({ram_gb}GB). Larger models may be slow or fail."
+            )
+
+        # GPU notes
+        if gpu_info["has_nvidia"]:
+            assessment["notes"].append(
+                f"NVIDIA GPU detected: {gpu_info['gpu_name']} ({gpu_info['vram_gb']}GB VRAM)"
+            )
+            if gpu_info["cuda_available"]:
+                assessment["notes"].append(
+                    f"GPU acceleration available. Recommended layers: {gpu_info['recommended_layers']}"
+                )
+            else:
+                assessment["notes"].append(
+                    "Install llama-cpp-python with CUDA support for GPU acceleration."
+                )
+        else:
+            assessment["notes"].append(
+                "No NVIDIA GPU detected. Models will run on CPU only."
+            )
+
+        return assessment
+
+    def get_best_model_for_system(self, purpose: str = "nlp") -> Optional[str]:
+        """
+        Get the best model ID for this system based on hardware.
+
+        Args:
+            purpose: "nlp" (stays loaded) or "analysis" (temporary)
+
+        Returns:
+            Model ID string or None if no suitable model.
+        """
+        assessment = self.get_system_assessment()
+
+        if purpose == "nlp":
+            recommendations = assessment["nlp_recommendations"]
+        else:
+            recommendations = assessment["analysis_recommendations"]
+
+        if recommendations:
+            return recommendations[0]["id"]
+        return None
+
+    async def download_huggingface_model(
+        self,
+        repo_id: str,
+        filename: str,
+        purpose: str = "nlp",
+        progress_callback=None,
+    ) -> Tuple[bool, str, Optional[Path]]:
+        """
+        Download a GGUF model from any HuggingFace repository.
+
+        Args:
+            repo_id: HuggingFace repository ID (e.g., "TheBloke/Llama-2-7B-GGUF")
+            filename: GGUF filename (e.g., "llama-2-7b.Q4_K_M.gguf")
+            purpose: "nlp", "analysis", or "code"
+            progress_callback: Optional callback for download progress
+
+        Returns:
+            Tuple of (success, message, path_if_success)
+        """
+        try:
+            from huggingface_hub import hf_hub_download
+
+            # Determine target directory based on purpose
+            if purpose == "nlp":
+                target_dir = self.nlp_model_dir
+            elif purpose == "analysis":
+                target_dir = self.analysis_model_dir
+            elif purpose == "code":
+                target_dir = self.code_model_dir
+            else:
+                target_dir = self.models_dir
+
+            target_dir.mkdir(parents=True, exist_ok=True)
+
+            logger.info(f"Downloading {repo_id}/{filename}...")
+
+            # Download to HuggingFace cache then copy
+            downloaded_path = hf_hub_download(
+                repo_id=repo_id,
+                filename=filename,
+                local_dir=self.data_models_dir / "huggingface",
+                local_dir_use_symlinks=False,
+            )
+
+            # Copy to purpose-specific directory
+            final_path = target_dir / filename
+            if not final_path.exists():
+                shutil.copy2(downloaded_path, final_path)
+
+            return True, f"Downloaded to {final_path}", final_path
+
+        except ImportError:
+            return False, "huggingface_hub not installed. Run: pip install huggingface-hub", None
+        except Exception as e:
+            return False, f"Download failed: {e}", None
+
+    def parse_huggingface_url(self, url: str) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Parse a HuggingFace URL to extract repo_id and filename.
+
+        Args:
+            url: HuggingFace URL like:
+                 - https://huggingface.co/TheBloke/Llama-2-7B-GGUF/blob/main/llama-2-7b.Q4_K_M.gguf
+                 - TheBloke/Llama-2-7B-GGUF/llama-2-7b.Q4_K_M.gguf
+                 - TheBloke/Llama-2-7B-GGUF
+
+        Returns:
+            Tuple of (repo_id, filename) or (None, None) if invalid
+        """
+        import re
+
+        # Remove common URL prefixes
+        url = url.strip()
+        url = re.sub(r'^https?://huggingface\.co/', '', url)
+        url = re.sub(r'^hf://', '', url)
+
+        # Handle blob/main or resolve/main in path
+        url = re.sub(r'/blob/main/', '/', url)
+        url = re.sub(r'/resolve/main/', '/', url)
+
+        parts = url.split('/')
+
+        if len(parts) >= 2:
+            repo_id = f"{parts[0]}/{parts[1]}"
+
+            # Look for .gguf filename
+            filename = None
+            for part in parts[2:]:
+                if part.endswith('.gguf'):
+                    filename = part
+                    break
+
+            return repo_id, filename
+
+        return None, None
+
+
 def get_model_manager(base_path: Optional[Path] = None) -> ModelManager:
     """Get a ModelManager instance."""
     return ModelManager(base_path)

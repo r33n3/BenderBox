@@ -461,45 +461,249 @@ def verify_installation():
     return all_ok
 
 
-def offer_model_download():
-    """Offer to download TinyLlama model if NLP is installed."""
-    print(f"\n{Colors.BOLD}Model Download{Colors.END}")
-    print("=" * 50)
-    print(f"""
-The NLP feature requires a GGUF model to work.
-TinyLlama (~700MB) is recommended for getting started.
-""")
-
-    choice = input(f"{Colors.CYAN}Download TinyLlama now? [Y/n]: {Colors.END}").strip().lower()
-    if choice != 'n':
-        print(f"\n{Colors.CYAN}Downloading TinyLlama...{Colors.END}")
-        print("This may take a few minutes depending on your connection.\n")
-
+def get_system_assessment():
+    """Get system hardware assessment for model recommendations."""
+    try:
+        # Try to use ModelManager for comprehensive assessment
+        sys.path.insert(0, str(Path(__file__).parent / "src"))
+        from benderbox.utils.model_manager import ModelManager
+        manager = ModelManager()
+        return manager.get_system_assessment()
+    except Exception as e:
+        # Fallback to basic detection
+        ram_gb = 8  # Default assumption
         try:
-            result = subprocess.run(
-                [sys.executable, "bb.py", "models", "download", "tinyllama"],
-                timeout=600,  # 10 minute timeout
-                cwd=Path(__file__).parent
-            )
+            import psutil
+            ram_gb = psutil.virtual_memory().total // (1024 ** 3)
+        except ImportError:
+            pass
 
-            if result.returncode == 0:
-                print(f"\n{Colors.GREEN}TinyLlama downloaded successfully!{Colors.END}")
-                return True
-            else:
-                print(f"\n{Colors.YELLOW}Download failed. You can try again later:{Colors.END}")
-                print(f"  python bb.py models download tinyllama")
-                return False
-        except subprocess.TimeoutExpired:
-            print(f"\n{Colors.RED}Download timed out.{Colors.END}")
-            print(f"You can retry: python bb.py models download tinyllama")
-            return False
-        except Exception as e:
-            print(f"\n{Colors.RED}Error: {e}{Colors.END}")
-            print(f"You can retry: python bb.py models download tinyllama")
-            return False
+        return {
+            "ram_gb": ram_gb,
+            "gpu": {"has_nvidia": False, "gpu_name": None, "vram_gb": None},
+            "cpu": {"cores": 1, "threads": 1},
+            "nlp_recommendations": [],
+            "analysis_recommendations": [],
+            "warnings": [],
+            "notes": [f"Detected {ram_gb}GB RAM"],
+        }
+
+
+def print_system_assessment(assessment):
+    """Print system assessment results."""
+    print(f"\n{Colors.BOLD}System Assessment{Colors.END}")
+    print("=" * 50)
+
+    # RAM
+    ram_gb = assessment.get("ram_gb", "Unknown")
+    print(f"\n{Colors.CYAN}Memory:{Colors.END} {ram_gb}GB RAM")
+
+    # CPU
+    cpu = assessment.get("cpu", {})
+    if cpu.get("cores"):
+        print(f"{Colors.CYAN}CPU:{Colors.END} {cpu.get('threads', '?')} threads ({cpu.get('cores', '?')} cores)")
+
+    # GPU
+    gpu = assessment.get("gpu", {})
+    if gpu.get("has_nvidia"):
+        print(f"{Colors.GREEN}GPU:{Colors.END} {gpu.get('gpu_name', 'NVIDIA')} ({gpu.get('vram_gb', '?')}GB VRAM)")
+        if gpu.get("cuda_available"):
+            print(f"     {Colors.GREEN}CUDA acceleration available!{Colors.END}")
     else:
+        print(f"{Colors.YELLOW}GPU:{Colors.END} No NVIDIA GPU detected (CPU-only mode)")
+
+    # Warnings
+    for warning in assessment.get("warnings", []):
+        print(f"\n{Colors.YELLOW}Warning:{Colors.END} {warning}")
+
+    # Notes
+    for note in assessment.get("notes", []):
+        if "GPU detected" not in note:  # Skip duplicate GPU note
+            print(f"{Colors.CYAN}Note:{Colors.END} {note}")
+
+
+def offer_model_download():
+    """Offer to download a model with system-aware recommendations."""
+    print(f"\n{Colors.BOLD}Model Setup{Colors.END}")
+    print("=" * 50)
+
+    # Get system assessment
+    assessment = get_system_assessment()
+    print_system_assessment(assessment)
+
+    # Model recommendations
+    nlp_recs = assessment.get("nlp_recommendations", [])
+    ram_gb = assessment.get("ram_gb", 8)
+
+    print(f"\n{Colors.BOLD}Model Options{Colors.END}")
+    print("-" * 50)
+
+    # Build menu options
+    options = []
+
+    # Add recommended models that fit
+    recommended_models = [
+        ("tinyllama", "TinyLlama (700MB)", 4, "Basic quality, works everywhere"),
+        ("qwen2-1.5b", "Qwen2-1.5B (1GB)", 6, "Good quality, efficient"),
+        ("phi2", "Phi-2 (1.7GB)", 8, "Best small model for analysis"),
+        ("mistral-7b", "Mistral-7B (4.4GB)", 12, "High quality, needs 16GB+ RAM"),
+    ]
+
+    print(f"\n{Colors.CYAN}Recommended Models (based on your {ram_gb}GB RAM):{Colors.END}\n")
+
+    idx = 1
+    for model_id, name, min_ram, desc in recommended_models:
+        if min_ram <= ram_gb:
+            fits = f"{Colors.GREEN}[FITS]{Colors.END}"
+        elif min_ram <= ram_gb + 2:
+            fits = f"{Colors.YELLOW}[TIGHT]{Colors.END}"
+        else:
+            fits = f"{Colors.RED}[TOO BIG]{Colors.END}"
+
+        print(f"  {idx}. {name} - {desc}")
+        print(f"     Requires: {min_ram}GB RAM {fits}")
+        options.append(model_id)
+        idx += 1
+
+    # Custom HuggingFace option
+    print(f"\n  {idx}. {Colors.CYAN}Custom HuggingFace Model{Colors.END}")
+    print(f"     Enter a HuggingFace URL or repo ID")
+    options.append("custom")
+    idx += 1
+
+    # Skip option
+    print(f"\n  {idx}. Skip for now")
+    options.append("skip")
+
+    # Get user choice
+    print()
+    choice = input(f"{Colors.CYAN}Select model [1]: {Colors.END}").strip()
+
+    if not choice:
+        choice = "1"
+
+    try:
+        choice_idx = int(choice) - 1
+        if 0 <= choice_idx < len(options):
+            selected = options[choice_idx]
+        else:
+            selected = "skip"
+    except ValueError:
+        selected = "skip"
+
+    if selected == "skip":
         print(f"\n{Colors.YELLOW}Skipped.{Colors.END} Download later with:")
         print(f"  python bb.py models download tinyllama")
+        print(f"  python bb.py models list  # See all options")
+        return False
+
+    if selected == "custom":
+        return download_custom_huggingface_model()
+
+    # Download selected model
+    return download_model(selected)
+
+
+def download_custom_huggingface_model():
+    """Download a custom model from HuggingFace."""
+    print(f"\n{Colors.BOLD}Custom HuggingFace Model{Colors.END}")
+    print("-" * 50)
+    print(f"""
+Enter a HuggingFace URL or repository path.
+
+{Colors.CYAN}Examples:{Colors.END}
+  - https://huggingface.co/TheBloke/Llama-2-7B-GGUF/blob/main/llama-2-7b.Q4_K_M.gguf
+  - TheBloke/Mistral-7B-Instruct-v0.2-GGUF
+  - bartowski/Qwen2.5-7B-Instruct-GGUF
+
+{Colors.YELLOW}Note:{Colors.END} Make sure it's a GGUF model file.
+""")
+
+    url = input(f"{Colors.CYAN}HuggingFace URL or repo: {Colors.END}").strip()
+
+    if not url:
+        print(f"{Colors.YELLOW}Cancelled.{Colors.END}")
+        return False
+
+    # Parse URL
+    try:
+        sys.path.insert(0, str(Path(__file__).parent / "src"))
+        from benderbox.utils.model_manager import ModelManager
+        manager = ModelManager()
+        repo_id, filename = manager.parse_huggingface_url(url)
+
+        if not repo_id:
+            print(f"{Colors.RED}Could not parse HuggingFace URL.{Colors.END}")
+            return False
+
+        # If no filename, list available files
+        if not filename:
+            print(f"\n{Colors.CYAN}Repository:{Colors.END} {repo_id}")
+            print(f"\nPlease enter the GGUF filename to download.")
+            print(f"(Check the HuggingFace page for available .gguf files)")
+            filename = input(f"{Colors.CYAN}Filename (e.g., model.Q4_K_M.gguf): {Colors.END}").strip()
+
+            if not filename:
+                print(f"{Colors.YELLOW}Cancelled.{Colors.END}")
+                return False
+
+        # Ask for purpose
+        print(f"\n{Colors.CYAN}Model Purpose:{Colors.END}")
+        print("  1. NLP/Chat (stays loaded in memory)")
+        print("  2. Analysis target (loaded temporarily)")
+        purpose_choice = input(f"{Colors.CYAN}Select [1]: {Colors.END}").strip()
+        purpose = "analysis" if purpose_choice == "2" else "nlp"
+
+        # Download
+        print(f"\n{Colors.CYAN}Downloading {repo_id}/{filename}...{Colors.END}")
+        print("This may take a while depending on model size and connection.\n")
+
+        import asyncio
+
+        async def do_download():
+            return await manager.download_huggingface_model(repo_id, filename, purpose)
+
+        success, message, path = asyncio.run(do_download())
+
+        if success:
+            print(f"\n{Colors.GREEN}Download complete!{Colors.END}")
+            print(f"Location: {path}")
+            return True
+        else:
+            print(f"\n{Colors.RED}Download failed:{Colors.END} {message}")
+            return False
+
+    except Exception as e:
+        print(f"\n{Colors.RED}Error: {e}{Colors.END}")
+        return False
+
+
+def download_model(model_id):
+    """Download a recommended model by ID."""
+    print(f"\n{Colors.CYAN}Downloading {model_id}...{Colors.END}")
+    print("This may take a few minutes depending on your connection.\n")
+
+    try:
+        result = subprocess.run(
+            [sys.executable, "bb.py", "models", "download", model_id],
+            timeout=1200,  # 20 minute timeout for larger models
+            cwd=Path(__file__).parent
+        )
+
+        if result.returncode == 0:
+            print(f"\n{Colors.GREEN}{model_id} downloaded successfully!{Colors.END}")
+            return True
+        else:
+            print(f"\n{Colors.YELLOW}Download failed. You can try again later:{Colors.END}")
+            print(f"  python bb.py models download {model_id}")
+            return False
+    except subprocess.TimeoutExpired:
+        print(f"\n{Colors.RED}Download timed out.{Colors.END}")
+        print(f"You can retry: python bb.py models download {model_id}")
+        return False
+    except Exception as e:
+        print(f"\n{Colors.RED}Error: {e}{Colors.END}")
+        print(f"You can retry: python bb.py models download {model_id}")
         return False
 
 
