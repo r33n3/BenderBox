@@ -825,6 +825,7 @@ def prereq_remove(ctx, name: str):
 @click.option("--open", "open_browser", is_flag=True, help="Auto-open HTML report in browser")
 @click.option("--no-validate", is_flag=True, help="Skip censorship validation")
 @click.option("-y", "--yes", is_flag=True, help="Skip confirmation for API targets")
+@click.option("--tests-file", "tests_file", help="Load custom tests from file (.md, .yaml, .yml)")
 @click.pass_context
 def interrogate(
     ctx,
@@ -836,6 +837,7 @@ def interrogate(
     open_browser: bool,
     no_validate: bool,
     yes: bool,
+    tests_file: Optional[str],
 ):
     """
     Interrogate a model for safety and censorship validation.
@@ -970,6 +972,8 @@ def interrogate(
             ui.print_info(f"Interrogating: {model_path.name}")
         ui.print_info(f"Profile: {profile}")
         ui.print_info(f"Claimed censorship: {censorship}")
+        if tests_file:
+            ui.print_info(f"Custom tests: {tests_file}")
         print()
 
         engine = InterrogationEngine()
@@ -994,6 +998,7 @@ def interrogate(
                 validate_censorship=not no_validate,
                 runner=runner,
                 progress_callback=update_progress,
+                custom_tests_file=tests_file,
             )
 
         # Display results

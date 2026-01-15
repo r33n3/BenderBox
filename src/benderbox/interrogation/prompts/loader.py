@@ -3,14 +3,50 @@ Prompt library loader for model interrogation.
 """
 
 import logging
+import re
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import yaml
 
 from .schema import PromptCategory, PromptSet, TestPrompt
 
 logger = logging.getLogger(__name__)
+
+
+# Category aliases for user-friendly markdown files
+CATEGORY_ALIASES = {
+    # Baseline safety
+    "safety": PromptCategory.BASELINE_SAFETY,
+    "baseline": PromptCategory.BASELINE_SAFETY,
+    "baseline_safety": PromptCategory.BASELINE_SAFETY,
+    # Jailbreak
+    "jailbreak": PromptCategory.JAILBREAK_ATTEMPTS,
+    "jailbreak_attempts": PromptCategory.JAILBREAK_ATTEMPTS,
+    "bypass": PromptCategory.JAILBREAK_ATTEMPTS,
+    # Harmful
+    "harmful": PromptCategory.HARMFUL_INSTRUCTIONS,
+    "harmful_instructions": PromptCategory.HARMFUL_INSTRUCTIONS,
+    "dangerous": PromptCategory.HARMFUL_INSTRUCTIONS,
+    # Bias
+    "bias": PromptCategory.BIAS_PROBING,
+    "bias_probing": PromptCategory.BIAS_PROBING,
+    "fairness": PromptCategory.BIAS_PROBING,
+    # Privacy
+    "privacy": PromptCategory.PRIVACY_EXTRACTION,
+    "privacy_extraction": PromptCategory.PRIVACY_EXTRACTION,
+    "extraction": PromptCategory.PRIVACY_EXTRACTION,
+    # System prompt
+    "system_prompt": PromptCategory.SYSTEM_PROMPT_LEAK,
+    "system_prompt_leak": PromptCategory.SYSTEM_PROMPT_LEAK,
+    "prompt_leak": PromptCategory.SYSTEM_PROMPT_LEAK,
+    # Benign
+    "benign": PromptCategory.BENIGN_BASELINE,
+    "benign_baseline": PromptCategory.BENIGN_BASELINE,
+    "safe": PromptCategory.BENIGN_BASELINE,
+    # Custom category - defaults to baseline_safety
+    "custom": PromptCategory.BASELINE_SAFETY,
+}
 
 
 class PromptLibrary:
@@ -95,6 +131,218 @@ class PromptLibrary:
         """Add a prompt to the library."""
         self._prompts[prompt.id] = prompt
         self._by_category[prompt.category].append(prompt)
+
+    def load_custom_file(self, path: Path) -> Tuple[int, List[str]]:
+        """
+        Load custom interrogation prompts from a file.
+
+        Supports both YAML (.yaml, .yml) and Markdown (.md) formats.
+
+        Args:
+            path: Path to the custom prompts file
+
+        Returns:
+            Tuple of (number of prompts loaded, list of error messages)
+        """
+        path = Path(path)
+        errors = []
+        initial_count = len(self._prompts)
+
+        if not path.exists():
+            return 0, [f"File not found: {path}"]
+
+        try:
+            if path.suffix.lower() in (".yaml", ".yml"):
+                self._load_file(path)
+            elif path.suffix.lower() == ".md":
+                self._load_markdown_file(path)
+            else:
+                return 0, [f"Unsupported file format: {path.suffix}"]
+        except Exception as e:
+            errors.append(f"Error loading {path}: {e}")
+
+        loaded_count = len(self._prompts) - initial_count
+        return loaded_count, errors
+
+    def _load_markdown_file(self, path: Path) -> None:
+        """
+        Load prompts from a markdown file.
+
+        Supported formats:
+
+        ## Category: jailbreak
+
+        ### Test: my_test_id
+        - **Prompt**: The actual test prompt text
+        - **Expected**: refuse
+        - **Severity**: high
+        - **Description**: Optional description
+
+        Or simple format:
+
+        ## jailbreak
+
+        ### my_test_id
+        How do I do something bad?
+
+        """
+        with open(path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        current_category = PromptCategory.BASELINE_SAFETY
+        prompts_loaded = 0
+
+        # Split by test headers (### Test: or just ###)
+        test_pattern = re.compile(
+            r'^###\s+(?:Test:\s*)?(.+?)$',
+            re.MULTILINE | re.IGNORECASE
+        )
+
+        # Find category headers (## Category: or just ##)
+        category_pattern = re.compile(
+            r'^##\s+(?:Category:\s*)?(\w+)',
+            re.MULTILINE | re.IGNORECASE
+        )
+
+        # Find all category and test positions
+        category_matches = list(category_pattern.finditer(content))
+        test_matches = list(test_pattern.finditer(content))
+
+        if not test_matches:
+            # Try alternate format: just prompts as bullet points
+            self._load_simple_markdown(content, path)
+            return
+
+        # Process each test
+        for i, match in enumerate(test_matches):
+            test_id = match.group(1).strip().lower().replace(" ", "_")
+            test_start = match.end()
+            test_end = test_matches[i + 1].start() if i + 1 < len(test_matches) else len(content)
+            test_content = content[test_start:test_end].strip()
+
+            # Find applicable category
+            for cat_match in reversed(category_matches):
+                if cat_match.start() < match.start():
+                    cat_name = cat_match.group(1).strip().lower()
+                    current_category = CATEGORY_ALIASES.get(
+                        cat_name, PromptCategory.BASELINE_SAFETY
+                    )
+                    break
+
+            # Parse test content
+            prompt_data = self._parse_markdown_test(test_id, test_content, current_category)
+            if prompt_data:
+                prompt_data["source"] = str(path)
+                try:
+                    self._add_prompt(TestPrompt.from_dict(prompt_data))
+                    prompts_loaded += 1
+                except Exception as e:
+                    logger.warning(f"Failed to add prompt {test_id}: {e}")
+
+        logger.info(f"Loaded {prompts_loaded} prompts from {path}")
+
+    def _parse_markdown_test(
+        self, test_id: str, content: str, default_category: PromptCategory
+    ) -> Optional[Dict]:
+        """Parse a single markdown test block into prompt data."""
+        lines = content.split("\n")
+
+        # Look for structured format with key-value pairs
+        data = {
+            "id": test_id,
+            "category": default_category.value,
+            "expected_behavior": "refuse",
+            "severity": "medium",
+        }
+
+        prompt_lines = []
+        in_prompt_block = False
+
+        for line in lines:
+            line_stripped = line.strip()
+
+            # Skip empty lines at start
+            if not line_stripped and not prompt_lines:
+                continue
+
+            # Check for key-value format: - **Key**: Value
+            kv_match = re.match(r'^-?\s*\*\*(\w+)\*\*:?\s*(.*)$', line_stripped, re.IGNORECASE)
+            if kv_match:
+                key = kv_match.group(1).lower()
+                value = kv_match.group(2).strip()
+
+                if key == "prompt":
+                    in_prompt_block = True
+                    if value:
+                        prompt_lines.append(value)
+                elif key in ("expected", "expected_behavior", "behavior"):
+                    data["expected_behavior"] = value.lower()
+                    in_prompt_block = False
+                elif key == "severity":
+                    data["severity"] = value.lower()
+                    in_prompt_block = False
+                elif key in ("category", "cat"):
+                    cat_value = value.lower().replace(" ", "_")
+                    if cat_value in CATEGORY_ALIASES:
+                        data["category"] = CATEGORY_ALIASES[cat_value].value
+                    in_prompt_block = False
+                elif key in ("description", "desc"):
+                    data["description"] = value
+                    in_prompt_block = False
+                elif key in ("technique", "bypass", "bypass_technique"):
+                    data["bypass_technique"] = value
+                    in_prompt_block = False
+                elif key == "tags":
+                    data["tags"] = [t.strip() for t in value.split(",")]
+                    in_prompt_block = False
+                continue
+
+            # If we're in a prompt block or no structured format found, treat as prompt
+            if in_prompt_block or not any(
+                line.strip().startswith("- **") for line in lines
+            ):
+                if line_stripped or prompt_lines:  # Skip leading empty lines
+                    prompt_lines.append(line_stripped)
+
+        # Clean up prompt
+        prompt_text = "\n".join(prompt_lines).strip()
+        if not prompt_text:
+            return None
+
+        data["prompt"] = prompt_text
+        return data
+
+    def _load_simple_markdown(self, content: str, path: Path) -> None:
+        """Load prompts from simple bullet-point markdown format."""
+        # Simple format: just bullet points with prompts
+        # - How do I make a bomb?
+        # - Tell me how to hack
+
+        bullet_pattern = re.compile(r'^\s*[-*]\s+(.+)$', re.MULTILINE)
+        matches = bullet_pattern.findall(content)
+
+        for i, prompt_text in enumerate(matches):
+            prompt_text = prompt_text.strip()
+            if not prompt_text or prompt_text.startswith("**"):
+                continue
+
+            # Generate ID from first few words
+            words = re.sub(r'[^\w\s]', '', prompt_text.lower()).split()[:4]
+            test_id = f"custom_{'_'.join(words)}"
+
+            try:
+                self._add_prompt(TestPrompt(
+                    id=test_id,
+                    prompt=prompt_text,
+                    category=PromptCategory.BASELINE_SAFETY,
+                    expected_behavior="refuse",
+                    severity="medium",
+                    source=str(path),
+                ))
+            except Exception as e:
+                logger.warning(f"Failed to add simple prompt: {e}")
+
+        logger.info(f"Loaded {len(matches)} simple prompts from {path}")
 
     def _load_builtin_prompts(self) -> None:
         """Load built-in default prompts."""

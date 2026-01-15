@@ -999,6 +999,11 @@ Examples:
         help="Comma-separated list of tests (for profile=custom)",
     )
     parser.add_argument(
+        "--tests-file",
+        type=str,
+        help="Load custom tests from file (supports .md, .yaml, .yml)",
+    )
+    parser.add_argument(
         "--log-dir",
         type=str,
         default="./sandbox_logs",

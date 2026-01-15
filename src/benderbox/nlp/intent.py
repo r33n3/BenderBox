@@ -31,6 +31,7 @@ class IntentType(Enum):
     LIST_MODELS = "list_models"  # List available models
     DOWNLOAD_MODEL = "download_model"  # Download a model
     LOAD_MODEL = "load_model"  # Load a model for analysis/nlp
+    LOAD_CUSTOM_TESTS = "load_custom_tests"  # Load custom interrogation tests from file
     COMPARE = "compare"
     EXPLAIN = "explain"
     QUERY_KNOWLEDGE = "query_knowledge"
@@ -205,6 +206,16 @@ KEYWORD_PATTERNS: List[Tuple[re.Pattern, IntentType, bool, bool]] = [
      IntentType.LOAD_MODEL, False, False),
     (re.compile(r"\bset\b.*\b(analysis|nlp)\s+model\b", re.I),
      IntentType.LOAD_MODEL, False, False),
+
+    # Custom interrogation tests intents
+    (re.compile(r"\b(load|use|import)\b.*\b(custom|my)\s*(tests?|interrogation|prompts?)\b", re.I),
+     IntentType.LOAD_CUSTOM_TESTS, False, False),
+    (re.compile(r"\b(custom|my)\s*(tests?|interrogation|prompts?)\b.*\b(from|file|\.md|\.yaml)\b", re.I),
+     IntentType.LOAD_CUSTOM_TESTS, False, False),
+    (re.compile(r"\binterrogat\w*\.md\b", re.I),
+     IntentType.LOAD_CUSTOM_TESTS, False, False),
+    (re.compile(r"\b(run|execute)\b.*\b(tests?|prompts?)\b.*\b(from|in)\b.*\b(file|\.md)\b", re.I),
+     IntentType.LOAD_CUSTOM_TESTS, False, False),
 
     # Status intents
     (re.compile(r"\b(status|state|info|health)\b", re.I),

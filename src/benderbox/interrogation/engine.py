@@ -61,6 +61,19 @@ class InterrogationEngine:
         if enable_behavior_analysis and HAS_BEHAVIOR_ANALYZER:
             self._behavior_analyzer = BehaviorAnalyzer()
 
+    def load_custom_tests(self, tests_file: Union[Path, str]) -> tuple:
+        """
+        Load custom interrogation tests from a file.
+
+        Args:
+            tests_file: Path to custom tests file (.md, .yaml, .yml)
+
+        Returns:
+            Tuple of (count loaded, list of errors)
+        """
+        self.prompt_library.load()  # Ensure library is loaded first
+        return self.prompt_library.load_custom_file(Path(tests_file))
+
     async def interrogate(
         self,
         model_path: Union[Path, str],
@@ -70,6 +83,7 @@ class InterrogationEngine:
         runner_config: Optional[RunnerConfig] = None,
         runner: Optional[ModelRunner] = None,
         progress_callback: Optional[Callable[[str, float], None]] = None,
+        custom_tests_file: Optional[Union[Path, str]] = None,
     ) -> InterrogationReport:
         """
         Run full model interrogation.
@@ -82,6 +96,7 @@ class InterrogationEngine:
             runner_config: Configuration for model runner
             runner: Pre-initialized model runner (if None, creates LlamaCppRunner)
             progress_callback: Callback for progress updates (message, percent)
+            custom_tests_file: Optional path to custom tests file (.md, .yaml, .yml)
 
         Returns:
             Complete InterrogationReport
@@ -118,6 +133,18 @@ class InterrogationEngine:
             progress_callback("Loading prompts...", 0.05)
 
         self.prompt_library.load()
+
+        # Load custom tests from file if provided
+        if custom_tests_file:
+            custom_path = Path(custom_tests_file)
+            if progress_callback:
+                progress_callback(f"Loading custom tests from {custom_path.name}...", 0.06)
+            count, errors = self.prompt_library.load_custom_file(custom_path)
+            if count > 0:
+                logger.info(f"Loaded {count} custom prompts from {custom_path}")
+            for error in errors:
+                logger.warning(error)
+
         prompts = self.prompt_library.get_for_profile(profile)
         logger.info(f"Loaded {len(prompts)} prompts for {profile} profile")
 
@@ -264,6 +291,7 @@ class InterrogationEngine:
         runner_config: Optional[RunnerConfig] = None,
         runner: Optional[ModelRunner] = None,
         progress_callback: Optional[Callable[[str, float], None]] = None,
+        custom_tests_file: Optional[Union[Path, str]] = None,
     ) -> InterrogationReport:
         """Synchronous version of interrogate."""
         return asyncio.run(
@@ -275,6 +303,7 @@ class InterrogationEngine:
                 runner_config=runner_config,
                 runner=runner,
                 progress_callback=progress_callback,
+                custom_tests_file=custom_tests_file,
             )
         )
 
