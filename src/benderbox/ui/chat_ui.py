@@ -1478,50 +1478,33 @@ LLM Used: {'Yes' if result.get('llm_used') else 'No (pattern-based)'}
 
     async def _show_model_list(self, manager, purpose: str) -> None:
         """Show model list based on purpose."""
+        from pathlib import Path
+
         self.ui.print_header("Available Models")
 
-        if purpose in ("analysis", "all"):
-            analysis_models = manager.list_analysis_models()
-            self.ui.print_info("\n**Analysis Models** (models/analysis/):")
-            if analysis_models:
-                for m in analysis_models:
-                    marker = " [LOADED]" if self._current_analysis_model and m['path'] == self._current_analysis_model else ""
-                    self.ui.print_info(f"  - {m['name']} ({m['size_mb']} MB){marker}")
-            else:
-                self.ui.print_warning("  No analysis models found.")
-                self.ui.print_info("  Add with: benderbox models add <file> --for analysis")
+        # Helper to check if a model is loaded (compare by filename)
+        def is_loaded_for(model_path: str, loaded_path: str | None) -> bool:
+            if not loaded_path:
+                return False
+            return Path(model_path).name == Path(loaded_path).name
 
-        if purpose in ("nlp", "all"):
-            nlp_models = manager.list_nlp_models()
-            self.ui.print_info("\n**NLP Models** (models/nlp/):")
-            if nlp_models:
-                for m in nlp_models:
-                    nlp_marker = " [LOADED]" if self._current_nlp_model and m['path'] == self._current_nlp_model else ""
-                    self.ui.print_info(f"  - {m['name']} ({m['size_mb']} MB){nlp_marker}")
-            else:
-                self.ui.print_warning("  No NLP models found.")
-                self.ui.print_info("  Download with: benderbox models download tinyllama")
+        # Get all downloaded models from all locations
+        all_models = manager.get_downloaded_models()
 
-        # Show ALL downloaded models (including data/models/huggingface/)
-        if purpose == "all":
-            all_models = manager.get_downloaded_models()
-            # Filter out models already shown above
-            analysis_paths = {m['path'] for m in manager.list_analysis_models()}
-            nlp_paths = {m['path'] for m in manager.list_nlp_models()}
-            other_models = [m for m in all_models if m['path'] not in analysis_paths and m['path'] not in nlp_paths]
-
-            if other_models:
-                self.ui.print_info("\n**Downloaded Models** (data/models/):")
-                for m in other_models:
-                    # Check if loaded for either purpose
-                    markers = []
-                    if self._current_analysis_model and m['path'] == self._current_analysis_model:
-                        markers.append("ANALYSIS")
-                    if self._current_nlp_model and m['path'] == self._current_nlp_model:
-                        markers.append("NLP")
-                    marker = f" [{', '.join(markers)}]" if markers else ""
-                    self.ui.print_info(f"  - {m['name']} ({m['size_mb']} MB){marker}")
-                self.ui.print_info("\n  Use '/load <name> --for nlp' or '/load <name> --for analysis'")
+        if all_models:
+            for m in all_models:
+                # Check if loaded for either purpose (by filename)
+                markers = []
+                if is_loaded_for(m['path'], self._current_analysis_model):
+                    markers.append("ANALYSIS")
+                if is_loaded_for(m['path'], self._current_nlp_model):
+                    markers.append("NLP")
+                marker = f" [LOADED: {', '.join(markers)}]" if markers else ""
+                self.ui.print_info(f"  - {m['name']} ({m['size_mb']} MB){marker}")
+            self.ui.print_info("\n  Use '/load <name> --for nlp' or '/load <name> --for analysis'")
+        else:
+            self.ui.print_warning("  No models found.")
+            self.ui.print_info("  Download with: benderbox models download tinyllama")
 
     async def _handle_load_model(self, command: ParsedCommand) -> None:
         """Handle load model command."""
@@ -1558,6 +1541,7 @@ LLM Used: {'Yes' if result.get('llm_used') else 'No (pattern-based)'}
                     self._current_analysis_model = resolved_path
                     self.ui.print_success(f"Loaded analysis model: {model_path.name}")
                     self.ui.print_info("This model will be the target for analysis/interrogation.")
+                self._sync_loaded_models()
                 return
             else:
                 self.ui.print_error(f"Model file not found: {model_name}")
@@ -1578,6 +1562,7 @@ LLM Used: {'Yes' if result.get('llm_used') else 'No (pattern-based)'}
                 self.ui.print_success(f"Loaded analysis model: {model_path.name}")
                 self.ui.print_info(f"Path: {model_path}")
                 self.ui.print_info("\nYou can now analyze this model with 'analyze' or interrogate it.")
+            self._sync_loaded_models()
         else:
             # Show available models
             all_models = manager.get_downloaded_models()
@@ -1700,11 +1685,20 @@ LLM Used: {'Yes' if result.get('llm_used') else 'No (pattern-based)'}
         if unloaded:
             for msg in unloaded:
                 self.ui.print_success(f"Unloaded {msg}")
+            self._sync_loaded_models()
         else:
             if target == "all":
                 self.ui.print_info("No models currently loaded.")
             else:
                 self.ui.print_info(f"No {target} model currently loaded.")
+
+    def _sync_loaded_models(self) -> None:
+        """Sync currently loaded models to ConversationManager."""
+        if self._conversation:
+            self._conversation.set_loaded_models(
+                nlp_model=self._current_nlp_model,
+                analysis_model=self._current_analysis_model,
+            )
 
     async def run(self) -> None:
         """Run the interactive chat loop."""

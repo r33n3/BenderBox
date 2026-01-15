@@ -762,7 +762,7 @@ class AnalysisBridge:
             profile=profile,
             log_dir=self.log_dir,
             tests_override=None,
-            format_mode="json",  # Only JSON output
+            format_mode="none",  # Suppress terminal output (JSON saved to file)
             no_fail_on_test_errors=True,
             mcp_server_path=mcp_server_path,
             skill_path=skill_path,

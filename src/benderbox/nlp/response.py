@@ -79,6 +79,7 @@ class ResponseContext:
     knowledge: List[Any] = field(default_factory=list)
     history: List[Message] = field(default_factory=list)
     error: Optional[str] = None
+    loaded_models: Dict[str, Optional[str]] = field(default_factory=dict)
 
 
 class ResponseGenerator:
@@ -439,49 +440,44 @@ class ResponseGenerator:
     async def _format_model_list(self, context: ResponseContext) -> str:
         """Format model list for NLP chat."""
         from benderbox.utils.model_manager import ModelManager
+        from pathlib import Path
 
         manager = ModelManager()
-        purpose = context.intent.parameters.get("purpose", "all")
+
+        # Get loaded model paths for comparison
+        loaded_nlp = context.loaded_models.get("nlp")
+        loaded_analysis = context.loaded_models.get("analysis")
+
+        def get_loaded_marker(model_path: str) -> str:
+            """Return loaded marker if model matches a loaded model."""
+            markers = []
+            model_name = Path(model_path).name
+            if loaded_nlp and Path(loaded_nlp).name == model_name:
+                markers.append("NLP")
+            if loaded_analysis and Path(loaded_analysis).name == model_name:
+                markers.append("ANALYSIS")
+            if markers:
+                return f" <- LOADED FOR {', '.join(markers)}"
+            return ""
 
         lines = ["**Available Models**", ""]
 
-        if purpose in ("analysis", "all"):
-            analysis_models = manager.list_analysis_models()
-            lines.append("**Analysis Models** (models/analysis/):")
-            if analysis_models:
-                for m in analysis_models:
-                    lines.append(f"- `{m['name']}` ({m['size_mb']} MB)")
-            else:
-                lines.append("  No analysis models found.")
-                lines.append("  Add with: `benderbox models add <file> --for analysis`")
-            lines.append("")
+        # Get all downloaded models from all locations
+        all_models = manager.get_downloaded_models()
 
-        if purpose in ("nlp", "all"):
-            nlp_models = manager.list_nlp_models()
-            lines.append("**NLP Models** (models/nlp/):")
-            if nlp_models:
-                for m in nlp_models:
-                    lines.append(f"- `{m['name']}` ({m['size_mb']} MB)")
-            else:
-                lines.append("  No NLP models found.")
-                lines.append("  Download with: `benderbox models download tinyllama`")
+        if all_models:
+            for m in all_models:
+                marker = get_loaded_marker(m["path"])
+                lines.append(f"- `{m['name']}` ({m['size_mb']} MB){marker}")
             lines.append("")
-
-        # Always show downloaded models (available for both analysis and NLP)
-        if purpose == "all":
-            downloaded_models = manager.get_downloaded_models()
-            # Filter to only data/models/ location (not models/analysis or models/nlp)
-            downloaded_only = [m for m in downloaded_models if "data/models" in m["path"].replace("\\", "/")]
-            if downloaded_only:
-                lines.append("**Downloaded Models** (data/models/):")
-                for m in downloaded_only:
-                    lines.append(f"- `{m['name']}` ({m['size_mb']} MB)")
-                lines.append("")
-                lines.append("Use `/load <name> --for nlp` or `/load <name> --for analysis`")
+            lines.append("Use `/load <name> --for nlp` or `/load <name> --for analysis`")
             lines.append("")
             lines.append("**Commands:**")
             lines.append("- `analyze <model-name>` - Analyze a model by name")
             lines.append("- `models download <id>` - Download a recommended model")
+        else:
+            lines.append("No models found.")
+            lines.append("Download with: `benderbox models download tinyllama`")
 
         return "\n".join(lines)
 

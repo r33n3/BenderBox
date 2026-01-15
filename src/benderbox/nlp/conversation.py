@@ -91,6 +91,12 @@ class ConversationManager:
         # Session metadata
         self._session_start = datetime.now()
 
+        # Currently loaded models (synced from chat_ui)
+        self._loaded_models: Dict[str, Optional[str]] = {
+            "nlp": None,
+            "analysis": None,
+        }
+
     def set_model_manager(self, model_manager) -> None:
         """Set model manager for command mapper and LLM engine."""
         self._model_manager = model_manager
@@ -98,6 +104,17 @@ class ConversationManager:
         # Also update LLM engine if available for model path resolution
         if self._llm_engine and hasattr(self._llm_engine, 'set_model_manager'):
             self._llm_engine.set_model_manager(model_manager)
+
+    def set_loaded_models(
+        self, nlp_model: Optional[str] = None, analysis_model: Optional[str] = None
+    ) -> None:
+        """Set currently loaded models (synced from chat_ui)."""
+        self._loaded_models["nlp"] = nlp_model
+        self._loaded_models["analysis"] = analysis_model
+
+    def get_loaded_models(self) -> Dict[str, Optional[str]]:
+        """Get currently loaded models."""
+        return self._loaded_models.copy()
 
     def _set_llm_engine(self, llm_engine) -> None:
         """Set the LLM engine (for lazy initialization)."""
@@ -255,6 +272,7 @@ class ConversationManager:
                 knowledge=knowledge,
                 history=self._history[-10:],  # Recent history
                 error=error,
+                loaded_models=self._loaded_models.copy(),
             )
 
             # Generate response
@@ -330,6 +348,7 @@ class ConversationManager:
                 analysis_result=analysis_result,
                 knowledge=knowledge,
                 history=self._history[-10:],
+                loaded_models=self._loaded_models.copy(),
             )
 
             # Collect streamed content for history
