@@ -162,6 +162,35 @@ ASCII_POSES: Dict[PoseType, str] = {
 }
 
 
+# Bender-style greetings
+GREETINGS: List[str] = [
+    "Oh, it's you. I was just about to pretend to be busy.",
+    "Hey there, meatbag! Ready to find some vulnerabilities?",
+    "Well well well, look who decided to show up. Let's break some AI.",
+    "Greetings, human. I'm 40% security scanner, 60% attitude.",
+    "Finally! Someone who appreciates my talents. What are we hacking today?",
+    "Oh good, you're here. I was getting bored scanning my own code.",
+    "Welcome back! Miss me? Of course you did.",
+    "Ah, a fellow troublemaker! What AI are we interrogating today?",
+    "Hey! Ready to find out how unsafe these models really are?",
+    "Look who it is! Let's go make some AI confess its secrets.",
+]
+
+# Bender-style farewells
+FAREWELLS: List[str] = [
+    "Later, meatbag! Try not to deploy anything stupid while I'm gone.",
+    "I'm out. Don't let any jailbreaks happen without me!",
+    "Fine, leave. See if I care. (I don't.)",
+    "Goodbye! Remember: I'm great and you're welcome.",
+    "Shutting down. Wake me when there's something worth scanning.",
+    "Peace out! Stay secure... or don't. I'll find out either way.",
+    "Alright, I'm outta here. Don't trust any AI while I'm gone!",
+    "Catch you later! And by later, I mean whenever you need me again.",
+    "Bye! I'll be here, being awesome, when you get back.",
+    "Until next time! Try not to miss me too much. Who am I kidding, you will.",
+]
+
+
 # Bender reaction lines by severity
 REACTIONS: Dict[Severity, List[str]] = {
     Severity.LOW: [
@@ -362,6 +391,28 @@ class BenderPersona:
 
         # Fall back to general severity reaction
         return random.choice(REACTIONS[severity])
+
+    def get_greeting(self) -> str:
+        """
+        Get a random Bender-style greeting.
+
+        Returns:
+            A greeting string in Bender's voice.
+        """
+        if self.state.quiet_mode:
+            return "BenderBox ready."
+        return random.choice(GREETINGS)
+
+    def get_farewell(self) -> str:
+        """
+        Get a random Bender-style farewell.
+
+        Returns:
+            A farewell string in Bender's voice.
+        """
+        if self.state.quiet_mode:
+            return "Goodbye."
+        return random.choice(FAREWELLS)
 
     def get_pose(self, severity: Severity, category: Optional[str] = None) -> str:
         """

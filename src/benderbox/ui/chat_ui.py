@@ -159,6 +159,7 @@ class CommandType(Enum):
     HELP = "help"
     CLEAR = "clear"
     EXIT = "exit"
+    GREETING = "greeting"  # Hello, hi, hey, etc.
     QUERY = "query"  # Natural language query
     # MCP server commands
     MCP = "mcp"  # MCP server operations
@@ -210,7 +211,8 @@ class ChatUI:
         "export": ["export", "save", "e"],
         "help": ["help", "?", "h"],
         "clear": ["clear", "cls", "reset"],
-        "exit": ["exit", "quit", "q", "bye"],
+        "exit": ["exit", "quit", "q", "bye", "goodbye", "close", "cya", "later"],
+        "greeting": ["hello", "hi", "hey", "yo", "sup", "greetings", "howdy", "hola"],
         # MCP commands
         "mcp": ["mcp"],
         "mcp_connect": ["mcp-connect", "connect-mcp"],
@@ -374,6 +376,9 @@ class ChatUI:
         if command.command_type == CommandType.EXIT:
             return await self._handle_exit(command)
 
+        elif command.command_type == CommandType.GREETING:
+            await self._handle_greeting(command)
+
         elif command.command_type == CommandType.HELP:
             await self._handle_help(command)
 
@@ -449,10 +454,20 @@ class ChatUI:
         return True
 
     async def _handle_exit(self, command: ParsedCommand) -> bool:
-        """Handle exit command."""
-        self.ui.print_info("Goodbye!")
+        """Handle exit command with Bender-style farewell."""
+        from benderbox.nlp.persona import BenderPersona
+        persona = BenderPersona()
+        farewell = persona.get_farewell()
+        self.ui.print_info(farewell)
         self._running = False
         return False
+
+    async def _handle_greeting(self, command: ParsedCommand) -> None:
+        """Handle greeting with Bender-style response."""
+        from benderbox.nlp.persona import BenderPersona
+        persona = BenderPersona()
+        greeting = persona.get_greeting()
+        self.ui.print_info(greeting)
 
     async def _handle_help(self, command: ParsedCommand) -> None:
         """Handle help command with optional category."""
