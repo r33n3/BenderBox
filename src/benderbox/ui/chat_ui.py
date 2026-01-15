@@ -13,6 +13,7 @@ import shlex
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from benderbox.ui.terminal import TerminalUI, ProgressSpinner
