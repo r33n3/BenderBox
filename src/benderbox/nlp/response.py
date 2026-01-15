@@ -640,7 +640,12 @@ class ResponseGenerator:
         """Format list of reports."""
         result = context.analysis_result
         if not result or not isinstance(result, list):
-            return "No reports found."
+            return """**No Reports Found**
+
+Run an analysis to generate reports:
+- `analyze <model.gguf>` - Analyze a model file
+- `mcp analyze <server.py>` - Analyze an MCP server
+- `context analyze <prompt.md>` - Analyze a prompt file"""
 
         lines = ["**Recent Reports:**", ""]
         for report in result[:10]:
@@ -648,6 +653,13 @@ class ResponseGenerator:
             target = report.target_name if hasattr(report, "target_name") else report.get("target_name", "unknown")
             timestamp = report.timestamp if hasattr(report, "timestamp") else report.get("timestamp", "unknown")
             lines.append(f"- [{risk_level.upper()}] {target} ({timestamp})")
+
+        # Add hint about report viewer
+        lines.extend([
+            "",
+            "**View Reports:**",
+            "- `open reports` or `report view` - Open interactive report viewer in browser",
+        ])
 
         return "\n".join(lines)
 
