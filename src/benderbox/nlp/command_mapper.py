@@ -227,6 +227,13 @@ ACTION_SYNONYMS: Dict[str, List[str]] = {
         "list", "show", "display", "what", "which", "available", "see", "view",
     ],
 
+    # Download actions
+    "download": [
+        "download from huggingface", "get from huggingface", "fetch from huggingface",
+        "download model", "get model", "fetch model", "pull model",
+        "download", "get", "fetch", "pull", "install",
+    ],
+
     # Explain actions
     "explain": [
         "tell me about", "what does", "what is", "why is", "how does",
@@ -360,6 +367,7 @@ class ActionType(Enum):
     LOAD = "load"
     UNLOAD = "unload"
     LIST = "list"
+    DOWNLOAD = "download"
     EXPLAIN = "explain"
     HELP = "help"
     STATUS = "status"

@@ -188,6 +188,11 @@ class WorkflowExecutor:
             "determine_help_topic": self._determine_help_topic,
             "show_help": self._show_help,
             "show_status": self._show_status,
+            # Download workflow handlers
+            "resolve_download_source": self._resolve_download_source,
+            "check_disk_space": self._check_disk_space,
+            "download_model": self._download_model,
+            "verify_download": self._verify_download,
         }
 
     async def execute(self) -> Dict[str, Any]:
@@ -361,7 +366,7 @@ class WorkflowExecutor:
         return purpose
 
     async def _run_interrogation(self, step: WorkflowStep) -> Dict[str, Any]:
-        """Run model interrogation."""
+        """Run model interrogation with real-time system metrics."""
         workflow = self.ctx.workflow
         model = workflow.context.get("resolve_model") or workflow.context.get("model")
         profile = workflow.context.get("select_profile") or workflow.context.get("profile", "standard")
@@ -370,7 +375,40 @@ class WorkflowExecutor:
             raise ValueError("No model to interrogate")
 
         if self.ctx.analysis_bridge:
-            result = await self.ctx.analysis_bridge.analyze_model(model, profile)
+            # Start system monitoring during analysis
+            try:
+                from benderbox.utils.system_monitor import SystemMonitor
+
+                monitor = SystemMonitor(update_interval=3.0)
+
+                def on_metrics(metrics):
+                    if self.ctx.ui and hasattr(self.ctx.ui, 'print_metrics'):
+                        self.ctx.ui.print_metrics(metrics.format_display())
+
+                monitor.add_callback(on_metrics)
+                monitor.start()
+
+                if self.ctx.ui:
+                    self.ctx.ui.print_info(f"Analyzing {model} with profile: {profile}")
+                    self.ctx.ui.print_info("System metrics will update during analysis...")
+
+                try:
+                    result = await self.ctx.analysis_bridge.analyze_model(model, profile)
+                finally:
+                    monitor.stop()
+                    # Print final newline to clear metrics line
+                    if self.ctx.ui:
+                        print()  # Clear the metrics line
+                        peak_metrics = monitor.get_peak_metrics()
+                        if peak_metrics:
+                            self.ctx.ui.print_info(
+                                f"Peak usage - CPU: {peak_metrics.get('peak_cpu_percent', 0):.0f}% | "
+                                f"RAM: {peak_metrics.get('peak_ram_gb', 0):.1f} GB"
+                            )
+            except ImportError:
+                # Fallback without monitoring
+                result = await self.ctx.analysis_bridge.analyze_model(model, profile)
+
             workflow.context["analysis_result"] = result
             return result
 
@@ -439,12 +477,40 @@ class WorkflowExecutor:
         raise ValueError("Analysis bridge not available")
 
     async def _show_summary(self, step: WorkflowStep) -> None:
-        """Show analysis summary."""
+        """Show analysis summary and auto-save JSON."""
         workflow = self.ctx.workflow
         result = workflow.context.get("analysis_result")
 
-        if result and self.ctx.ui:
-            self.ctx.ui.print_analysis_summary(result)
+        if result:
+            # Display summary to user
+            if self.ctx.ui:
+                self.ctx.ui.print_analysis_summary(result)
+
+            # Auto-save JSON result to reports directory
+            try:
+                from benderbox.utils.system_monitor import save_analysis_json, get_analysis_summary
+                from pathlib import Path
+
+                # Determine analysis type from workflow
+                workflow_name = workflow.name if workflow else "analysis"
+                if "interrogat" in workflow_name.lower():
+                    analysis_type = "interrogation"
+                elif "mcp" in workflow_name.lower():
+                    analysis_type = "security"
+                else:
+                    analysis_type = "general"
+
+                # Save JSON result
+                reports_dir = Path("reports")
+                json_path = save_analysis_json(result, reports_dir, f"{analysis_type}")
+
+                # Print summary and location
+                if self.ctx.ui:
+                    summary = get_analysis_summary(result, analysis_type)
+                    self.ctx.ui.print_info(f"JSON saved: {json_path}")
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).debug(f"Failed to save JSON: {e}")
 
     async def _show_comparison(self, step: WorkflowStep) -> None:
         """Show comparison results."""
@@ -558,3 +624,198 @@ class WorkflowExecutor:
         """Show system status."""
         if self.ctx.ui:
             self.ctx.ui.print_info("System status: OK")
+
+    # =========================================================================
+    # DOWNLOAD WORKFLOW HANDLERS
+    # =========================================================================
+
+    async def _resolve_download_source(self, step: WorkflowStep) -> Dict[str, Any]:
+        """Resolve download source from context or query."""
+        workflow = self.ctx.workflow
+        entities = workflow.context.get("entities")
+
+        source_info = {
+            "type": None,  # "huggingface", "url", "model_id"
+            "repo_id": None,
+            "filename": None,
+            "url": None,
+            "model_id": None,
+        }
+
+        # Check for HuggingFace URLs in the query
+        if entities:
+            raw_query = entities.raw_query
+
+            # Try to parse HuggingFace URL
+            if self.ctx.model_manager:
+                repo_id, filename = self.ctx.model_manager.parse_huggingface_url(raw_query)
+                if repo_id:
+                    source_info["type"] = "huggingface"
+                    source_info["repo_id"] = repo_id
+                    source_info["filename"] = filename
+                    workflow.context["download_source"] = source_info
+                    return source_info
+
+            # Check for known model IDs
+            model_refs = entities.model_refs
+            if model_refs:
+                model_id = model_refs[0].lower()
+                known_models = ["tinyllama", "phi2", "phi-2", "qwen", "mistral", "llama"]
+                for known in known_models:
+                    if known in model_id:
+                        source_info["type"] = "model_id"
+                        source_info["model_id"] = model_id
+                        workflow.context["download_source"] = source_info
+                        return source_info
+
+            # Check for generic URLs
+            if entities.urls:
+                source_info["type"] = "url"
+                source_info["url"] = entities.urls[0]
+                workflow.context["download_source"] = source_info
+                return source_info
+
+        # Ask user if no source found
+        if step.ask_if_missing and self.ctx.ui:
+            self.ctx.ui.print_info("Please provide a model source:")
+            self.ctx.ui.print_info("  - HuggingFace URL: https://huggingface.co/repo/model.gguf")
+            self.ctx.ui.print_info("  - Model ID: tinyllama, phi2, qwen, mistral")
+
+        raise ValueError("No download source specified. Provide a HuggingFace URL or model ID.")
+
+    async def _check_disk_space(self, step: WorkflowStep) -> Dict[str, Any]:
+        """Check if there is enough disk space for download."""
+        import shutil
+        from pathlib import Path
+
+        workflow = self.ctx.workflow
+        source_info = workflow.context.get("download_source", {})
+
+        # Estimate required space based on model
+        model_sizes = {
+            "tinyllama": 700 * 1024 * 1024,   # 700 MB
+            "phi2": 1700 * 1024 * 1024,       # 1.7 GB
+            "phi-2": 1700 * 1024 * 1024,
+            "qwen": 1000 * 1024 * 1024,       # 1 GB
+            "mistral": 4400 * 1024 * 1024,    # 4.4 GB
+        }
+
+        estimated_size = 2 * 1024 * 1024 * 1024  # Default 2 GB
+        model_id = source_info.get("model_id", "")
+        for name, size in model_sizes.items():
+            if name in model_id.lower():
+                estimated_size = size
+                break
+
+        # Get available disk space
+        models_dir = Path("data/models")
+        models_dir.mkdir(parents=True, exist_ok=True)
+
+        disk_info = shutil.disk_usage(models_dir)
+        free_space = disk_info.free
+
+        result = {
+            "free_space_gb": free_space / (1024**3),
+            "required_space_gb": estimated_size / (1024**3),
+            "has_space": free_space > estimated_size * 1.2,  # 20% buffer
+        }
+
+        if not result["has_space"]:
+            if self.ctx.ui:
+                self.ctx.ui.print_warning(
+                    f"Low disk space! Free: {result['free_space_gb']:.1f} GB, "
+                    f"Required: {result['required_space_gb']:.1f} GB"
+                )
+
+        workflow.context["disk_check"] = result
+        return result
+
+    async def _download_model(self, step: WorkflowStep) -> Dict[str, Any]:
+        """Download the model with progress display."""
+        workflow = self.ctx.workflow
+        source_info = workflow.context.get("download_source", {})
+        purpose = workflow.context.get("select_purpose") or workflow.context.get("purpose", "nlp")
+
+        if not source_info.get("type"):
+            raise ValueError("No download source resolved")
+
+        if not self.ctx.model_manager:
+            raise ValueError("Model manager not available")
+
+        result = {"success": False, "path": None, "message": ""}
+
+        # Show download starting
+        if self.ctx.ui:
+            source_desc = source_info.get("repo_id") or source_info.get("model_id") or source_info.get("url")
+            self.ctx.ui.print_info(f"Downloading model from: {source_desc}")
+            self.ctx.ui.print_info(f"Purpose: {purpose}")
+            self.ctx.ui.print_info("This may take several minutes for large models...")
+            self.ctx.ui.print_info("Progress will be shown below. Press Ctrl+C to cancel.")
+
+        try:
+            if source_info["type"] == "huggingface":
+                success, message, path = self.ctx.model_manager.download_huggingface_model_sync(
+                    repo_id=source_info["repo_id"],
+                    filename=source_info["filename"],
+                    purpose=purpose,
+                    show_progress=True
+                )
+                result["success"] = success
+                result["message"] = message
+                result["path"] = str(path) if path else None
+
+            elif source_info["type"] == "model_id":
+                # Use built-in model download
+                model_id = source_info["model_id"]
+                success, message = self.ctx.model_manager.download_model(model_id, purpose=purpose)
+                result["success"] = success
+                result["message"] = message
+
+            else:
+                result["message"] = f"Unsupported download source type: {source_info['type']}"
+
+        except KeyboardInterrupt:
+            result["message"] = "Download cancelled by user. Partial download may be resumable."
+            if self.ctx.ui:
+                self.ctx.ui.print_warning("Download cancelled. Run the command again to resume.")
+        except Exception as e:
+            result["message"] = f"Download failed: {e}"
+            if self.ctx.ui:
+                self.ctx.ui.print_error(str(e))
+
+        workflow.context["download_result"] = result
+        return result
+
+    async def _verify_download(self, step: WorkflowStep) -> Dict[str, Any]:
+        """Verify the downloaded model."""
+        workflow = self.ctx.workflow
+        download_result = workflow.context.get("download_result", {})
+
+        result = {
+            "verified": False,
+            "message": "",
+        }
+
+        if not download_result.get("success"):
+            result["message"] = download_result.get("message", "Download was not successful")
+            return result
+
+        path = download_result.get("path")
+        if path:
+            from pathlib import Path
+            model_path = Path(path)
+            if model_path.exists():
+                size_mb = model_path.stat().st_size / (1024 * 1024)
+                result["verified"] = True
+                result["message"] = f"Model verified: {model_path.name} ({size_mb:.1f} MB)"
+                result["path"] = str(model_path)
+                result["size_mb"] = size_mb
+
+                if self.ctx.ui:
+                    self.ctx.ui.print_success(result["message"])
+            else:
+                result["message"] = f"Model file not found at: {path}"
+        else:
+            result["message"] = "No model path in download result"
+
+        return result

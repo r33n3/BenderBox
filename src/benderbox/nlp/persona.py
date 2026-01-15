@@ -559,6 +559,9 @@ class BenderPersona:
         Returns:
             Formatted status block.
         """
+        import shutil
+        from pathlib import Path
+
         lines = []
 
         lines.append("**BenderBox Status**")
@@ -584,6 +587,69 @@ class BenderPersona:
                 lines.append(f"Models: {models['note']}")
             elif models:
                 lines.append(f"Models: {len(models)} loaded")
+
+        # System Resources section
+        lines.append("")
+        lines.append("**System Resources:**")
+
+        # RAM info
+        try:
+            import psutil
+            mem = psutil.virtual_memory()
+            lines.append(f"RAM: {mem.used / (1024**3):.1f} GB / {mem.total / (1024**3):.1f} GB ({mem.percent}% used)")
+        except ImportError:
+            pass
+
+        # CPU info
+        try:
+            import psutil
+            cpu_percent = psutil.cpu_percent(interval=0.1)
+            cpu_count = psutil.cpu_count()
+            lines.append(f"CPU: {cpu_percent}% ({cpu_count} cores)")
+        except ImportError:
+            pass
+
+        # GPU info (try nvidia-smi)
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["nvidia-smi", "--query-gpu=name,memory.used,memory.total,utilization.gpu",
+                 "--format=csv,noheader,nounits"],
+                capture_output=True, text=True, timeout=5
+            )
+            if result.returncode == 0:
+                gpu_info = result.stdout.strip().split(",")
+                if len(gpu_info) >= 4:
+                    name = gpu_info[0].strip()
+                    mem_used = float(gpu_info[1].strip())
+                    mem_total = float(gpu_info[2].strip())
+                    util = gpu_info[3].strip()
+                    lines.append(f"GPU: {name}")
+                    lines.append(f"  VRAM: {mem_used/1024:.1f} GB / {mem_total/1024:.1f} GB ({util}% util)")
+        except (subprocess.SubprocessError, FileNotFoundError, ValueError):
+            pass
+
+        # Disk space (models directory)
+        lines.append("")
+        lines.append("**Storage:**")
+        try:
+            models_dir = Path("data/models")
+            models_dir.mkdir(parents=True, exist_ok=True)
+            disk = shutil.disk_usage(models_dir)
+            free_gb = disk.free / (1024**3)
+            total_gb = disk.total / (1024**3)
+            used_percent = (disk.used / disk.total) * 100
+            lines.append(f"Disk: {free_gb:.1f} GB free / {total_gb:.1f} GB total ({used_percent:.0f}% used)")
+
+            # Count model files
+            model_files = list(models_dir.glob("*.gguf"))
+            if model_files:
+                total_model_size = sum(f.stat().st_size for f in model_files) / (1024**3)
+                lines.append(f"Models: {len(model_files)} files ({total_model_size:.1f} GB)")
+            else:
+                lines.append("Models: No GGUF files in data/models/")
+        except Exception:
+            lines.append("Disk: Unable to check")
 
         return "\n".join(lines)
 

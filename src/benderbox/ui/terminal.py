@@ -761,6 +761,47 @@ compare phi-2 openai:gpt-4-turbo
         else:
             print(f"ℹ {message}")
 
+    def print_metrics(self, metrics_line: str, inline: bool = True) -> None:
+        """
+        Print system metrics line (for real-time monitoring).
+        
+        Args:
+            metrics_line: Formatted metrics string.
+            inline: If True, overwrites current line.
+        """
+        if self.console:
+            style = f"dim {self.THEME['text_secondary']}"
+            if inline:
+                self.console.print(f"  [{style}]{metrics_line}[/{style}]", end="")
+            else:
+                self.console.print(f"  [{style}]{metrics_line}[/{style}]")
+        else:
+            if inline:
+                print(f"  {metrics_line}", end="")
+            else:
+                print(f"  {metrics_line}")
+
+    def print_download_progress(self, filename: str, progress: float, speed: str = "") -> None:
+        """
+        Print download progress bar.
+        
+        Args:
+            filename: Name of file being downloaded.
+            progress: Progress percentage (0-100).
+            speed: Download speed string.
+        """
+        bar_width = 30
+        filled = int(bar_width * progress / 100)
+        bar = "█" * filled + "░" * (bar_width - filled)
+        
+        speed_str = f" ({speed})" if speed else ""
+        line = f"  Downloading {filename}: [{bar}] {progress:.0f}%{speed_str}"
+        
+        if self.console:
+            self.console.print(f"[{self.THEME['neon_cyan']}]{line}[/{self.THEME['neon_cyan']}]", end="")
+        else:
+            print(line, end="")
+
     def print_header(self, title: str) -> None:
         """Print a section header in neon purple style."""
         if self.console:

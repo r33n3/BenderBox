@@ -159,6 +159,21 @@ WORKFLOW_TEMPLATES: Dict[str, Dict] = {
         ],
     },
 
+    "download_model": {
+        "name": "download_model",
+        "description": "Download a model from HuggingFace or other sources",
+        "triggers": [
+            (ActionType.DOWNLOAD, TargetType.MODEL),
+        ],
+        "steps": [
+            {"action": "resolve_download_source", "required": True, "ask_if_missing": True},
+            {"action": "check_disk_space", "required": True},
+            {"action": "select_purpose", "required": True, "ask_if_missing": True, "default_value": "nlp"},
+            {"action": "download_model", "required": True},
+            {"action": "verify_download", "required": True},
+        ],
+    },
+
     "mcp_security_test": {
         "name": "mcp_security_test",
         "description": "Security test an MCP server",
