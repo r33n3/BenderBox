@@ -20,7 +20,10 @@ python bb.py
 # 3. Try a quick analysis
 BenderBox> list models
 BenderBox> analyze phi-2 --profile quick
-BenderBox> help
+
+# 4. View reports
+BenderBox> reports
+BenderBox> open reports
 ```
 
 ---
