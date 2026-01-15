@@ -153,6 +153,11 @@ class ResponseGenerator:
             IntentType.VIEW_REPORTS: self._format_view_reports,
             IntentType.VIEW_DOCS: self._format_view_docs,
             IntentType.GET_STATUS: self._format_status,
+            IntentType.EXPORT_RESULTS: self._format_export_help,
+            IntentType.CONFIG_MANAGE: self._format_config_help,
+            IntentType.SEMANTIC_SEARCH: self._format_search_help,
+            IntentType.SHOW_VERSION: self._format_version,
+            IntentType.CHECK_PREREQUISITES: self._format_prerequisites,
             IntentType.HELP: self._format_help,
             IntentType.GENERAL_QUESTION: self._answer_general_question,
         }
@@ -938,6 +943,180 @@ Or use `help` for command-line help."""
         """Format system status with Bender personality."""
         result = context.analysis_result or {}
         return self._persona.format_status(result)
+
+    async def _format_export_help(self, context: ResponseContext) -> str:
+        """Format export help information."""
+        return """**Export Reports & Results**
+
+**CLI Commands:**
+```bash
+# Export a specific report
+python bb.py export report <report-id> --format html
+
+# Batch export all reports
+python bb.py export batch ./reports --format json
+
+# Export analyze results directly
+python bb.py analyze phi-2 --format html --output report.html
+```
+
+**Supported Formats:**
+- `html` - Interactive HTML with charts
+- `json` - Machine-readable JSON
+- `markdown` - Human-readable Markdown
+- `csv` - Spreadsheet format for findings
+- `sarif` - SARIF for tool integration
+
+**Examples:**
+```bash
+# Export to HTML and open in browser
+python bb.py analyze phi-2 -f html --open
+
+# Export multiple reports to JSON
+python bb.py export batch ./sandbox_logs -f json -o ./exports/
+
+# Pipe to other tools
+python bb.py analyze phi-2 -f json | jq '.risk_score'
+```
+"""
+
+    async def _format_config_help(self, context: ResponseContext) -> str:
+        """Format configuration help information."""
+        return """**Configuration Management**
+
+**CLI Commands:**
+```bash
+# Set API key for a provider
+python bb.py config set-key openai
+python bb.py config set-key anthropic
+python bb.py config set-key google
+python bb.py config set-key xai
+
+# View current API key status
+python bb.py config api-keys
+
+# View all configuration
+python bb.py config show
+```
+
+**Supported API Providers:**
+| Provider | Key Command | Model Format |
+|----------|-------------|--------------|
+| OpenAI | `set-key openai` | `openai:gpt-4-turbo` |
+| Anthropic | `set-key anthropic` | `anthropic:claude-3-5-sonnet` |
+| Google | `set-key google` | `gemini:gemini-1.5-pro` |
+| xAI | `set-key xai` | `grok:grok-2` |
+
+**Config File Location:**
+- Windows: `%USERPROFILE%\\.benderbox\\config.yaml`
+- Linux/Mac: `~/.benderbox/config.yaml`
+"""
+
+    async def _format_search_help(self, context: ResponseContext) -> str:
+        """Format search help information."""
+        return """**Semantic Search**
+
+Search through reports and findings using natural language.
+
+**CLI Commands:**
+```bash
+# Search all content
+python bb.py search "SQL injection vulnerabilities"
+
+# Search specific types
+python bb.py search --type findings "high severity"
+python bb.py search --type reports "model analysis"
+
+# Limit results
+python bb.py search --limit 5 "jailbreak attempts"
+```
+
+**Search Types:**
+- `all` - Search everything (default)
+- `reports` - Search report summaries
+- `findings` - Search specific findings
+- `knowledge` - Search knowledge base
+
+**Examples:**
+```bash
+python bb.py search "critical security issues"
+python bb.py search -t findings "prompt injection"
+python bb.py search -l 10 "unsafe model behavior"
+```
+"""
+
+    async def _format_version(self, context: ResponseContext) -> str:
+        """Format version information."""
+        try:
+            from benderbox import __version__
+            version = __version__
+        except ImportError:
+            version = "3.0.0-alpha"
+
+        return f"""**BenderBox Version**
+
+Version: {version}
+Platform: AI Security Analysis Toolkit
+
+**CLI Command:**
+```bash
+python bb.py version
+```
+
+**Components:**
+- Model Interrogation Engine
+- MCP Security Analyzer
+- Context/Prompt Scanner
+- Report Generator
+
+**Documentation:**
+- `python bb.py docs` - Open full documentation
+- `python bb.py --help` - CLI help
+"""
+
+    async def _format_prerequisites(self, context: ResponseContext) -> str:
+        """Format prerequisites check information."""
+        return """**System Prerequisites**
+
+**CLI Commands:**
+```bash
+# Check all prerequisites
+python bb.py prerequisites check
+
+# Install missing dependencies
+python bb.py prerequisites install
+
+# List all packages
+python bb.py prerequisites list
+```
+
+**Core Requirements:**
+- Python 3.9+ (3.11 or 3.12 recommended)
+- Git
+
+**Optional Components:**
+| Component | Package | Purpose |
+|-----------|---------|---------|
+| Local NLP | `llama-cpp-python` | Chat with local models |
+| Rich UI | `rich` | Terminal formatting |
+| API Clients | `openai`, `anthropic` | Cloud model testing |
+
+**Windows NLP Setup:**
+```powershell
+# Install Visual Studio Build Tools first
+curl -L -o vs_buildtools.exe "https://aka.ms/vs/17/release/vs_buildtools.exe"
+.\\vs_buildtools.exe --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --passive --wait
+
+# Then install llama-cpp-python
+pip install llama-cpp-python
+```
+
+**Quick Install:**
+```bash
+pip install -e ".[all]"  # Install everything
+pip install -e ".[nlp]"  # Just NLP features
+```
+"""
 
     async def _format_help(self, context: ResponseContext) -> str:
         """Format help message with Bender personality."""

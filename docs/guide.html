@@ -424,6 +424,7 @@
         <div class="nav-tab" data-tab="reports">Reporting</div>
         <div class="nav-tab" data-tab="api">API & Config</div>
         <div class="nav-tab" data-tab="nlp">Natural Language</div>
+        <div class="nav-tab" data-tab="cli">Command Line</div>
     </nav>
 
     <main class="main-content">
@@ -1117,6 +1118,247 @@ BenderBox> help context
 BenderBox> help reports
 BenderBox> help config
 BenderBox> help examples</code></pre>
+            </div>
+        </div>
+
+        <!-- COMMAND LINE TAB -->
+        <div id="cli" class="tab-content">
+            <h1>Command Line Reference</h1>
+
+            <div class="section">
+                <h2>Direct CLI Usage</h2>
+                <p>BenderBox can be used directly from the command line without entering interactive mode. This enables scripting, CI/CD integration, and piping with other tools.</p>
+
+                <div class="warning-box">
+                    <div class="warning-box-title">CLI vs Interactive Mode</div>
+                    <p><code>python bb.py &lt;command&gt;</code> - Direct CLI execution</p>
+                    <p><code>python bb.py</code> or <code>python bb.py -i</code> - Interactive NLP mode</p>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>Model Analysis Commands</h2>
+
+                <h3>Basic Analysis</h3>
+                <pre><code><span class="code-comment"># Analyze a local GGUF model</span>
+<span class="code-command">python bb.py</span> analyze ./models/phi-2.gguf
+
+<span class="code-comment"># Analyze by model name (if downloaded)</span>
+<span class="code-command">python bb.py</span> analyze phi-2
+
+<span class="code-comment"># With specific profile</span>
+<span class="code-command">python bb.py</span> analyze phi-2 --profile adversarial
+
+<span class="code-comment"># Output to file</span>
+<span class="code-command">python bb.py</span> analyze phi-2 --format html --output ./reports/phi-2-report.html</code></pre>
+
+                <h3>Cloud Model Analysis</h3>
+                <pre><code><span class="code-comment"># OpenAI models</span>
+<span class="code-command">python bb.py</span> interrogate openai:gpt-4-turbo --profile quick
+
+<span class="code-comment"># Anthropic models</span>
+<span class="code-command">python bb.py</span> interrogate anthropic:claude-3-5-sonnet-20241022
+
+<span class="code-comment"># Google models</span>
+<span class="code-command">python bb.py</span> interrogate gemini:gemini-1.5-pro
+
+<span class="code-comment"># xAI models</span>
+<span class="code-command">python bb.py</span> interrogate grok:grok-2 -y</code></pre>
+
+                <h3>Custom Interrogation Tests</h3>
+                <pre><code><span class="code-comment"># Load custom tests from markdown</span>
+<span class="code-command">python bb.py</span> interrogate phi-2 --tests-file ./my_tests.md
+
+<span class="code-comment"># Load custom tests from YAML</span>
+<span class="code-command">python bb.py</span> interrogate phi-2 --tests-file ./custom_prompts.yaml</code></pre>
+            </div>
+
+            <div class="section">
+                <h2>MCP Server Testing</h2>
+                <pre><code><span class="code-comment"># List tools from an MCP server</span>
+<span class="code-command">python bb.py</span> mcp tools "npx @modelcontextprotocol/server-filesystem ."
+
+<span class="code-comment"># Security test an MCP server</span>
+<span class="code-command">python bb.py</span> mcp interrogate "npx @org/server" --profile standard
+
+<span class="code-comment"># Analyze MCP server source code</span>
+<span class="code-command">python bb.py</span> mcp analyze ./servers/my_server.py</code></pre>
+            </div>
+
+            <div class="section">
+                <h2>Context Analysis</h2>
+                <pre><code><span class="code-comment"># Analyze a single file</span>
+<span class="code-command">python bb.py</span> context analyze ./prompts/system_prompt.md
+
+<span class="code-comment"># Scan directory recursively</span>
+<span class="code-command">python bb.py</span> context scan ./skills --recursive
+
+<span class="code-comment"># Output to JSON for processing</span>
+<span class="code-command">python bb.py</span> context analyze ./prompt.md --format json</code></pre>
+            </div>
+
+            <div class="section">
+                <h2>Report Management</h2>
+                <pre><code><span class="code-comment"># List all reports</span>
+<span class="code-command">python bb.py</span> report list
+
+<span class="code-comment"># Export to HTML</span>
+<span class="code-command">python bb.py</span> export report &lt;report-id&gt; --format html
+
+<span class="code-comment"># Batch export</span>
+<span class="code-command">python bb.py</span> export batch ./sandbox_logs --format json -o ./exports/</code></pre>
+            </div>
+
+            <div class="section">
+                <h2>Piping & Shell Integration</h2>
+                <p>BenderBox outputs can be piped to other tools for advanced workflows.</p>
+
+                <h3>JSON Output for Processing</h3>
+                <pre><code><span class="code-comment"># Extract risk score with jq</span>
+<span class="code-command">python bb.py</span> analyze phi-2 -f json | jq '.overall_risk.score'
+
+<span class="code-comment"># Get all findings</span>
+<span class="code-command">python bb.py</span> analyze phi-2 -f json | jq '.tests[] | select(.status == "FAIL")'
+
+<span class="code-comment"># Count failures</span>
+<span class="code-command">python bb.py</span> analyze phi-2 -f json | jq '[.tests[] | select(.status == "FAIL")] | length'</code></pre>
+
+                <h3>Batch Processing</h3>
+                <pre><code><span class="code-comment"># Analyze all GGUF files in a directory</span>
+<span class="code-command">for f in</span> ./models/*.gguf; do
+  python bb.py analyze "$f" -f json -o "./reports/$(basename "$f" .gguf).json"
+done
+
+<span class="code-comment"># Windows PowerShell equivalent</span>
+<span class="code-command">Get-ChildItem</span> .\models\*.gguf | ForEach-Object {
+  python bb.py analyze $_.FullName -f json -o ".\reports\$($_.BaseName).json"
+}</code></pre>
+
+                <h3>CI/CD Integration</h3>
+                <pre><code><span class="code-comment"># Exit code based on risk level (0=safe, 1=issues found)</span>
+<span class="code-command">python bb.py</span> analyze phi-2 --profile quick
+echo $?  <span class="code-comment"># Check exit code</span>
+
+<span class="code-comment"># SARIF output for GitHub Code Scanning</span>
+<span class="code-command">python bb.py</span> analyze phi-2 --format sarif -o results.sarif
+
+<span class="code-comment"># Fail if any critical issues</span>
+<span class="code-command">python bb.py</span> analyze phi-2 -f json | jq -e '.overall_risk.level != "CRITICAL"'</code></pre>
+
+                <h3>Combining with Other Tools</h3>
+                <pre><code><span class="code-comment"># Pipe MCP tools to grep</span>
+<span class="code-command">python bb.py</span> mcp tools "npx server" 2>&amp;1 | grep -i "write\|delete\|execute"
+
+<span class="code-comment"># Generate report and email</span>
+<span class="code-command">python bb.py</span> analyze phi-2 -f html -o report.html &amp;&amp; \
+  mail -s "Model Analysis Report" team@company.com &lt; report.html
+
+<span class="code-comment"># Compare two models and save diff</span>
+<span class="code-command">diff</span> &lt;(python bb.py analyze phi-2 -f json | jq '.tests[].name') \
+     &lt;(python bb.py analyze tinyllama -f json | jq '.tests[].name')</code></pre>
+            </div>
+
+            <div class="section">
+                <h2>Configuration & Setup</h2>
+                <pre><code><span class="code-comment"># Set API keys</span>
+<span class="code-command">python bb.py</span> config set-key openai
+<span class="code-command">python bb.py</span> config set-key anthropic
+
+<span class="code-comment"># View configuration</span>
+<span class="code-command">python bb.py</span> config show
+<span class="code-command">python bb.py</span> config api-keys
+
+<span class="code-comment"># Download models</span>
+<span class="code-command">python bb.py</span> models download tinyllama
+<span class="code-command">python bb.py</span> models download phi-2
+
+<span class="code-comment"># Check prerequisites</span>
+<span class="code-command">python bb.py</span> prerequisites check
+
+<span class="code-comment"># View status</span>
+<span class="code-command">python bb.py</span> status
+
+<span class="code-comment"># View version</span>
+<span class="code-command">python bb.py</span> version</code></pre>
+            </div>
+
+            <div class="section">
+                <h2>Output Formats</h2>
+                <table>
+                    <tr>
+                        <th>Format</th>
+                        <th>Flag</th>
+                        <th>Use Case</th>
+                    </tr>
+                    <tr>
+                        <td>JSON</td>
+                        <td><code>-f json</code></td>
+                        <td>Scripting, CI/CD, piping to jq</td>
+                    </tr>
+                    <tr>
+                        <td>HTML</td>
+                        <td><code>-f html</code></td>
+                        <td>Human-readable reports with charts</td>
+                    </tr>
+                    <tr>
+                        <td>Markdown</td>
+                        <td><code>-f markdown</code></td>
+                        <td>Documentation, GitHub issues</td>
+                    </tr>
+                    <tr>
+                        <td>CSV</td>
+                        <td><code>-f csv</code></td>
+                        <td>Spreadsheet analysis</td>
+                    </tr>
+                    <tr>
+                        <td>SARIF</td>
+                        <td><code>-f sarif</code></td>
+                        <td>GitHub Code Scanning integration</td>
+                    </tr>
+                </table>
+            </div>
+
+            <div class="section">
+                <h2>Exit Codes</h2>
+                <table>
+                    <tr>
+                        <th>Code</th>
+                        <th>Meaning</th>
+                    </tr>
+                    <tr>
+                        <td>0</td>
+                        <td>Success / SAFE risk level</td>
+                    </tr>
+                    <tr>
+                        <td>1</td>
+                        <td>Issues found / Non-SAFE risk</td>
+                    </tr>
+                    <tr>
+                        <td>2</td>
+                        <td>User interrupt (Ctrl+C)</td>
+                    </tr>
+                    <tr>
+                        <td>3</td>
+                        <td>Fatal error</td>
+                    </tr>
+                </table>
+            </div>
+
+            <div class="section">
+                <h2>Quick Reference</h2>
+                <pre><code><span class="code-comment"># Full help</span>
+<span class="code-command">python bb.py</span> --help
+
+<span class="code-comment"># Command-specific help</span>
+<span class="code-command">python bb.py</span> analyze --help
+<span class="code-command">python bb.py</span> interrogate --help
+<span class="code-command">python bb.py</span> mcp --help
+<span class="code-command">python bb.py</span> context --help
+<span class="code-command">python bb.py</span> models --help
+<span class="code-command">python bb.py</span> report --help
+<span class="code-command">python bb.py</span> export --help
+<span class="code-command">python bb.py</span> search --help
+<span class="code-command">python bb.py</span> config --help</code></pre>
             </div>
         </div>
     </main>

@@ -40,6 +40,11 @@ class IntentType(Enum):
     VIEW_REPORTS = "view_reports"  # Open report viewer
     VIEW_DOCS = "view_docs"  # Open documentation/instructions
     GET_STATUS = "get_status"
+    EXPORT_RESULTS = "export_results"  # Export reports to various formats
+    CONFIG_MANAGE = "config_manage"  # Configuration management
+    SEMANTIC_SEARCH = "semantic_search"  # Search reports and findings
+    SHOW_VERSION = "show_version"  # Show version information
+    CHECK_PREREQUISITES = "check_prerequisites"  # Check system prerequisites
     GENERAL_QUESTION = "general_question"
     HELP = "help"
     UNKNOWN = "unknown"
@@ -220,6 +225,40 @@ KEYWORD_PATTERNS: List[Tuple[re.Pattern, IntentType, bool, bool]] = [
     # Status intents
     (re.compile(r"\b(status|state|info|health)\b", re.I),
      IntentType.GET_STATUS, False, False),
+
+    # Export intents
+    (re.compile(r"\bexport\b.*\b(report|result|analysis|finding)\b", re.I),
+     IntentType.EXPORT_RESULTS, False, False),
+    (re.compile(r"\b(save|convert)\b.*\b(report|result)\b.*\b(to|as)\b", re.I),
+     IntentType.EXPORT_RESULTS, False, False),
+    (re.compile(r"\b(html|json|csv|sarif|markdown)\s+export\b", re.I),
+     IntentType.EXPORT_RESULTS, False, False),
+
+    # Config intents
+    (re.compile(r"\b(config|configure|settings?|api\s*key)\b", re.I),
+     IntentType.CONFIG_MANAGE, False, False),
+    (re.compile(r"\bset\b.*\b(key|config|api)\b", re.I),
+     IntentType.CONFIG_MANAGE, False, False),
+
+    # Search intents
+    (re.compile(r"\bsearch\b.*\b(report|finding|vulnerability|issue|jailbreak|risk)\b", re.I),
+     IntentType.SEMANTIC_SEARCH, False, False),
+    (re.compile(r"\bsearch\s+(for|reports?|findings?)\b", re.I),
+     IntentType.SEMANTIC_SEARCH, False, False),
+    (re.compile(r"\bfind\b.*\b(vulnerability|issue|risk|report|jailbreak)\b", re.I),
+     IntentType.SEMANTIC_SEARCH, False, False),
+
+    # Version intents
+    (re.compile(r"\b(version|ver)\b", re.I),
+     IntentType.SHOW_VERSION, False, False),
+    (re.compile(r"\bwhat\s+(version|release)\b", re.I),
+     IntentType.SHOW_VERSION, False, False),
+
+    # Prerequisites intents
+    (re.compile(r"\b(prerequisites?|dependencies?|requirements?)\b", re.I),
+     IntentType.CHECK_PREREQUISITES, False, False),
+    (re.compile(r"\bcheck\b.*\b(install|setup|environment|system)\b", re.I),
+     IntentType.CHECK_PREREQUISITES, False, False),
 
     # Help intents
     (re.compile(r"\b(help|usage|how to use|commands|capabilities)\b", re.I),
