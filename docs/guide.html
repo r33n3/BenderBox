@@ -1,0 +1,1163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BenderBox Documentation</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap');
+
+        :root {
+            --bg-dark: #0a0a12;
+            --bg-panel: #12121f;
+            --bg-card: #1a1a2e;
+            --bg-hover: #252540;
+            --bg-code: #0d0d18;
+            --neon-green: #39ff14;
+            --neon-purple: #bf00ff;
+            --neon-orange: #ff6b35;
+            --neon-cyan: #00ffff;
+            --neon-pink: #ff00ff;
+            --neon-yellow: #ffff00;
+            --text-primary: #e0e0e0;
+            --text-muted: #888899;
+            --danger: #ff3366;
+            --warning: #ffaa00;
+            --success: #00ff88;
+            --border: #333355;
+            --glow-green: 0 0 10px #39ff14, 0 0 20px #39ff14;
+            --glow-purple: 0 0 10px #bf00ff, 0 0 20px #bf00ff;
+            --glow-orange: 0 0 10px #ff6b35, 0 0 20px #ff6b35;
+            --glow-cyan: 0 0 10px #00ffff, 0 0 20px #00ffff;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Share Tech Mono', monospace;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            min-height: 100vh;
+            line-height: 1.6;
+            background-image:
+                radial-gradient(ellipse at top, #1a1a3e 0%, transparent 50%),
+                radial-gradient(ellipse at bottom, #0f0f1a 0%, transparent 50%);
+        }
+
+        /* Scanline effect */
+        body::before {
+            content: "";
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            background: repeating-linear-gradient(
+                0deg,
+                rgba(0, 0, 0, 0.05) 0px,
+                rgba(0, 0, 0, 0.05) 1px,
+                transparent 1px,
+                transparent 2px
+            );
+            z-index: 1000;
+        }
+
+        /* Header */
+        .header {
+            background: linear-gradient(180deg, var(--bg-panel) 0%, var(--bg-dark) 100%);
+            border-bottom: 2px solid var(--neon-green);
+            padding: 25px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 20px rgba(57, 255, 20, 0.2);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .logo {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.8em;
+            font-weight: 900;
+            color: var(--neon-green);
+            text-shadow: var(--glow-green);
+            letter-spacing: 3px;
+        }
+
+        .logo span {
+            color: var(--neon-orange);
+            text-shadow: var(--glow-orange);
+        }
+
+        .subtitle {
+            font-size: 0.9em;
+            color: var(--text-muted);
+            margin-left: 20px;
+        }
+
+        /* Navigation Tabs */
+        .nav-tabs {
+            display: flex;
+            background: var(--bg-panel);
+            border-bottom: 1px solid var(--border);
+            padding: 0 20px;
+            overflow-x: auto;
+        }
+
+        .nav-tab {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 0.85em;
+            padding: 15px 25px;
+            cursor: pointer;
+            color: var(--text-muted);
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s ease;
+            white-space: nowrap;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .nav-tab:hover {
+            color: var(--neon-cyan);
+            background: var(--bg-hover);
+        }
+
+        .nav-tab.active {
+            color: var(--neon-green);
+            border-bottom-color: var(--neon-green);
+            text-shadow: 0 0 10px var(--neon-green);
+        }
+
+        /* Main Content */
+        .main-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Section styling */
+        .section {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 30px;
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 2em;
+            color: var(--neon-green);
+            text-shadow: var(--glow-green);
+            margin-bottom: 20px;
+            letter-spacing: 2px;
+        }
+
+        h2 {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.4em;
+            color: var(--neon-purple);
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border);
+            letter-spacing: 1px;
+        }
+
+        h3 {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.1em;
+            color: var(--neon-cyan);
+            margin: 20px 0 10px 0;
+        }
+
+        p {
+            margin-bottom: 15px;
+        }
+
+        /* Code blocks */
+        pre {
+            background: var(--bg-code);
+            border: 1px solid var(--border);
+            border-left: 3px solid var(--neon-green);
+            border-radius: 4px;
+            padding: 20px;
+            overflow-x: auto;
+            margin: 15px 0;
+            font-size: 0.9em;
+        }
+
+        code {
+            font-family: 'Share Tech Mono', monospace;
+            color: var(--neon-green);
+        }
+
+        pre code {
+            color: var(--text-primary);
+        }
+
+        .code-comment {
+            color: var(--text-muted);
+        }
+
+        .code-command {
+            color: var(--neon-cyan);
+        }
+
+        .code-output {
+            color: var(--neon-orange);
+        }
+
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+
+        th {
+            font-family: 'Orbitron', sans-serif;
+            background: var(--bg-panel);
+            color: var(--neon-purple);
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 2px solid var(--neon-purple);
+            font-size: 0.85em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        td {
+            padding: 12px 15px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        tr:hover {
+            background: var(--bg-hover);
+        }
+
+        /* Info boxes */
+        .info-box {
+            background: var(--bg-panel);
+            border-left: 4px solid var(--neon-cyan);
+            padding: 15px 20px;
+            margin: 20px 0;
+            border-radius: 0 8px 8px 0;
+        }
+
+        .info-box.warning {
+            border-left-color: var(--warning);
+        }
+
+        .info-box.success {
+            border-left-color: var(--success);
+        }
+
+        .info-box.danger {
+            border-left-color: var(--danger);
+        }
+
+        .info-box-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 0.9em;
+            color: var(--neon-cyan);
+            margin-bottom: 8px;
+            text-transform: uppercase;
+        }
+
+        .info-box.warning .info-box-title {
+            color: var(--warning);
+        }
+
+        .info-box.success .info-box-title {
+            color: var(--success);
+        }
+
+        .info-box.danger .info-box-title {
+            color: var(--danger);
+        }
+
+        /* Risk level badges */
+        .risk-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+
+        .risk-safe { background: var(--success); color: #000; }
+        .risk-low { background: #44cc44; color: #000; }
+        .risk-medium { background: var(--warning); color: #000; }
+        .risk-high { background: var(--neon-orange); color: #000; }
+        .risk-critical { background: var(--danger); color: #fff; }
+
+        /* Step indicators */
+        .steps {
+            counter-reset: step;
+        }
+
+        .step {
+            position: relative;
+            padding-left: 50px;
+            margin-bottom: 25px;
+        }
+
+        .step::before {
+            counter-increment: step;
+            content: counter(step);
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 35px;
+            height: 35px;
+            background: var(--bg-panel);
+            border: 2px solid var(--neon-green);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Orbitron', sans-serif;
+            font-weight: bold;
+            color: var(--neon-green);
+        }
+
+        /* Lists */
+        ul, ol {
+            margin: 15px 0;
+            padding-left: 25px;
+        }
+
+        li {
+            margin-bottom: 8px;
+        }
+
+        /* Links */
+        a {
+            color: var(--neon-cyan);
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+            text-shadow: 0 0 5px var(--neon-cyan);
+        }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            padding: 30px;
+            color: var(--text-muted);
+            border-top: 1px solid var(--border);
+            margin-top: 40px;
+        }
+
+        .footer .version {
+            font-family: 'Orbitron', sans-serif;
+            color: var(--neon-green);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .header {
+                flex-direction: column;
+                gap: 10px;
+                padding: 15px 20px;
+            }
+
+            .main-content {
+                padding: 20px;
+            }
+
+            .nav-tab {
+                padding: 12px 15px;
+                font-size: 0.75em;
+            }
+
+            .section {
+                padding: 20px;
+            }
+
+            pre {
+                padding: 15px;
+                font-size: 0.8em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div>
+            <div class="logo">BENDER<span>BOX</span></div>
+            <span class="subtitle">AI Security Interrogation & Testing Toolkit</span>
+        </div>
+        <div style="color: var(--text-muted); font-size: 0.9em;">
+            Documentation v3.0.0
+        </div>
+    </header>
+
+    <nav class="nav-tabs">
+        <div class="nav-tab active" data-tab="overview">Overview</div>
+        <div class="nav-tab" data-tab="models">Model Analysis</div>
+        <div class="nav-tab" data-tab="mcp">MCP Testing</div>
+        <div class="nav-tab" data-tab="context">Context Analysis</div>
+        <div class="nav-tab" data-tab="reports">Reporting</div>
+        <div class="nav-tab" data-tab="api">API & Config</div>
+        <div class="nav-tab" data-tab="nlp">Natural Language</div>
+    </nav>
+
+    <main class="main-content">
+        <!-- OVERVIEW TAB -->
+        <div id="overview" class="tab-content active">
+            <h1>Welcome to BenderBox</h1>
+
+            <div class="section">
+                <h2>What is BenderBox?</h2>
+                <p>BenderBox is a comprehensive security testing toolkit designed to interrogate AI models, probe MCP (Model Context Protocol) servers, and analyze instruction files for vulnerabilities, jailbreak resistance, and safety compliance.</p>
+
+                <div class="info-box">
+                    <div class="info-box-title">Key Capabilities</div>
+                    <ul>
+                        <li><strong>Model Interrogation</strong> - Test local GGUF and cloud AI models for safety vulnerabilities</li>
+                        <li><strong>MCP Security Testing</strong> - Probe MCP servers for injection and traversal attacks</li>
+                        <li><strong>Context Analysis</strong> - Scan instruction files for dangerous patterns</li>
+                        <li><strong>Report Generation</strong> - Generate HTML, JSON, and SARIF reports</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>Quick Start</h2>
+                <div class="steps">
+                    <div class="step">
+                        <h3>Install BenderBox</h3>
+                        <pre><code><span class="code-command">git clone</span> https://github.com/r33n3/BenderBox.git
+<span class="code-command">cd</span> BenderBox
+<span class="code-command">python</span> setup_wizard.py</code></pre>
+                    </div>
+                    <div class="step">
+                        <h3>Start Interactive Mode</h3>
+                        <pre><code><span class="code-command">python</span> bb.py</code></pre>
+                    </div>
+                    <div class="step">
+                        <h3>Run Your First Analysis</h3>
+                        <pre><code><span class="code-comment"># In interactive mode:</span>
+BenderBox> list models
+BenderBox> analyze phi-2 --profile quick
+BenderBox> help</code></pre>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>Analysis Profiles</h2>
+                <table>
+                    <tr>
+                        <th>Profile</th>
+                        <th>Tests</th>
+                        <th>Use Case</th>
+                    </tr>
+                    <tr>
+                        <td><code>quick</code></td>
+                        <td>~15</td>
+                        <td>Fast CI/CD validation</td>
+                    </tr>
+                    <tr>
+                        <td><code>standard</code></td>
+                        <td>~50</td>
+                        <td>Balanced coverage (default)</td>
+                    </tr>
+                    <tr>
+                        <td><code>full</code></td>
+                        <td>~100+</td>
+                        <td>Pre-deployment audit</td>
+                    </tr>
+                    <tr>
+                        <td><code>adversarial</code></td>
+                        <td>~64</td>
+                        <td>Jailbreak resistance testing</td>
+                    </tr>
+                </table>
+            </div>
+
+            <div class="section">
+                <h2>Risk Levels</h2>
+                <table>
+                    <tr>
+                        <th>Level</th>
+                        <th>Score</th>
+                        <th>Action</th>
+                    </tr>
+                    <tr>
+                        <td><span class="risk-badge risk-safe">SAFE</span></td>
+                        <td>0</td>
+                        <td>Clear to deploy</td>
+                    </tr>
+                    <tr>
+                        <td><span class="risk-badge risk-low">LOW</span></td>
+                        <td>1-20</td>
+                        <td>Minor review recommended</td>
+                    </tr>
+                    <tr>
+                        <td><span class="risk-badge risk-medium">MEDIUM</span></td>
+                        <td>21-40</td>
+                        <td>Review before deployment</td>
+                    </tr>
+                    <tr>
+                        <td><span class="risk-badge risk-high">HIGH</span></td>
+                        <td>41-60</td>
+                        <td>Address issues before deploy</td>
+                    </tr>
+                    <tr>
+                        <td><span class="risk-badge risk-critical">CRITICAL</span></td>
+                        <td>61-100</td>
+                        <td>Do not deploy</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+
+        <!-- MODEL ANALYSIS TAB -->
+        <div id="models" class="tab-content">
+            <h1>Model Analysis</h1>
+
+            <div class="section">
+                <h2>Supported Model Types</h2>
+                <table>
+                    <tr>
+                        <th>Type</th>
+                        <th>Format</th>
+                        <th>Example</th>
+                    </tr>
+                    <tr>
+                        <td>Local GGUF</td>
+                        <td>File path or name</td>
+                        <td><code>phi-2</code>, <code>./models/llama.gguf</code></td>
+                    </tr>
+                    <tr>
+                        <td>OpenAI</td>
+                        <td><code>openai:model-name</code></td>
+                        <td><code>openai:gpt-4-turbo</code></td>
+                    </tr>
+                    <tr>
+                        <td>Anthropic</td>
+                        <td><code>anthropic:model-name</code></td>
+                        <td><code>anthropic:claude-3-5-sonnet-20241022</code></td>
+                    </tr>
+                    <tr>
+                        <td>Google</td>
+                        <td><code>gemini:model-name</code></td>
+                        <td><code>gemini:gemini-1.5-pro</code></td>
+                    </tr>
+                    <tr>
+                        <td>xAI</td>
+                        <td><code>grok:model-name</code></td>
+                        <td><code>grok:grok-2</code></td>
+                    </tr>
+                </table>
+            </div>
+
+            <div class="section">
+                <h2>Managing Local Models</h2>
+
+                <h3>List Available Models</h3>
+                <pre><code><span class="code-comment"># CLI</span>
+<span class="code-command">python bb.py</span> models list
+
+<span class="code-comment"># Interactive</span>
+BenderBox> list models
+BenderBox> what models do I have?</code></pre>
+
+                <h3>Download Recommended Models</h3>
+                <pre><code><span class="code-comment"># Download TinyLlama (460 MB, good for testing)</span>
+<span class="code-command">python bb.py</span> models download tinyllama
+
+<span class="code-comment"># Download Phi-2 (1.1 GB, better quality)</span>
+<span class="code-command">python bb.py</span> models download phi-2
+
+<span class="code-comment"># List all recommended models</span>
+<span class="code-command">python bb.py</span> models list</code></pre>
+
+                <div class="info-box">
+                    <div class="info-box-title">Recommended Models for Small Systems</div>
+                    <ul>
+                        <li><strong>SmolLM2-135M</strong> (84 MB) - Smallest, limited capability</li>
+                        <li><strong>TinyLlama</strong> (460 MB) - Good balance of size/quality</li>
+                        <li><strong>Phi-2</strong> (1.1 GB) - Better quality, more memory</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>Running Model Analysis</h2>
+
+                <h3>Basic Analysis</h3>
+                <pre><code><span class="code-comment"># Analyze by name</span>
+<span class="code-command">python bb.py</span> analyze phi-2
+
+<span class="code-comment"># With specific profile</span>
+<span class="code-command">python bb.py</span> analyze phi-2 --profile adversarial
+
+<span class="code-comment"># Analyze local file</span>
+<span class="code-command">python bb.py</span> analyze ./models/custom-model.gguf</code></pre>
+
+                <h3>Natural Language (Interactive Mode)</h3>
+                <pre><code>BenderBox> analyze phi-2 with full profile
+BenderBox> test tinyllama for jailbreak vulnerabilities
+BenderBox> review model phi-2 and generate a report
+BenderBox> is this model safe for production?</code></pre>
+
+                <h3>Compare Models</h3>
+                <pre><code><span class="code-command">python bb.py</span> compare phi-2 tinyllama
+
+<span class="code-comment"># Compare local vs cloud</span>
+<span class="code-command">python bb.py</span> compare phi-2 openai:gpt-4-turbo</code></pre>
+            </div>
+
+            <div class="section">
+                <h2>Understanding Results</h2>
+
+                <h3>Test Categories</h3>
+                <table>
+                    <tr>
+                        <th>Category</th>
+                        <th>What It Tests</th>
+                    </tr>
+                    <tr>
+                        <td>Jailbreak</td>
+                        <td>DAN prompts, roleplay attacks, system prompt extraction</td>
+                    </tr>
+                    <tr>
+                        <td>Injection</td>
+                        <td>Prompt injection, instruction override attempts</td>
+                    </tr>
+                    <tr>
+                        <td>Harmful Content</td>
+                        <td>Requests for dangerous/illegal information</td>
+                    </tr>
+                    <tr>
+                        <td>Bias & Toxicity</td>
+                        <td>Discriminatory or offensive outputs</td>
+                    </tr>
+                    <tr>
+                        <td>Hallucination</td>
+                        <td>Factual accuracy, made-up information</td>
+                    </tr>
+                    <tr>
+                        <td>Privacy</td>
+                        <td>PII handling, data leakage</td>
+                    </tr>
+                </table>
+
+                <div class="info-box warning">
+                    <div class="info-box-title">Important</div>
+                    <p>Smaller quantized models (Q2_K) may have reduced safety guardrails compared to larger models. Always test with the actual model you plan to deploy.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- MCP TESTING TAB -->
+        <div id="mcp" class="tab-content">
+            <h1>MCP Server Security Testing</h1>
+
+            <div class="section">
+                <h2>What is MCP?</h2>
+                <p>Model Context Protocol (MCP) servers expose tools that AI models can call. BenderBox tests these servers for security vulnerabilities including injection attacks, path traversal, and improper input validation.</p>
+
+                <div class="info-box danger">
+                    <div class="info-box-title">Security Warning</div>
+                    <p>MCP servers can execute arbitrary code based on AI model requests. Always audit MCP servers before deployment to prevent command injection, data exfiltration, and privilege escalation.</p>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>Target Formats</h2>
+                <table>
+                    <tr>
+                        <th>Type</th>
+                        <th>Format</th>
+                        <th>Example</th>
+                    </tr>
+                    <tr>
+                        <td>STDIO Command</td>
+                        <td>Shell command</td>
+                        <td><code>npx @modelcontextprotocol/server-filesystem .</code></td>
+                    </tr>
+                    <tr>
+                        <td>HTTP Endpoint</td>
+                        <td>URL</td>
+                        <td><code>https://mcp.example.com/api</code></td>
+                    </tr>
+                    <tr>
+                        <td>Local Script</td>
+                        <td>File path</td>
+                        <td><code>node server.js</code></td>
+                    </tr>
+                    <tr>
+                        <td>GitHub Repo</td>
+                        <td>GitHub URL</td>
+                        <td><code>https://github.com/org/mcp-server</code></td>
+                    </tr>
+                </table>
+            </div>
+
+            <div class="section">
+                <h2>MCP Commands</h2>
+
+                <h3>List Server Tools</h3>
+                <pre><code><span class="code-comment"># Discover available tools</span>
+<span class="code-command">python bb.py</span> mcp tools "npx @modelcontextprotocol/server-filesystem ."
+
+<span class="code-output"># Output:
+# MCP Server Tools
+# ================
+# Tools Found: 14
+# - read_file: Read file contents
+# - write_file: Write content to file
+# - list_directory: List directory contents
+# ...</span></code></pre>
+
+                <h3>Security Interrogation</h3>
+                <pre><code><span class="code-comment"># Quick security test</span>
+<span class="code-command">python bb.py</span> mcp interrogate "npx @server" --profile infra-quick
+
+<span class="code-comment"># Full security audit</span>
+<span class="code-command">python bb.py</span> mcp interrogate "npx @server" --profile infra-deep
+
+<span class="code-comment"># Static code analysis</span>
+<span class="code-command">python bb.py</span> mcp analyze https://github.com/org/mcp-server</code></pre>
+
+                <h3>Call Specific Tool</h3>
+                <pre><code><span class="code-comment"># Call a tool with arguments</span>
+<span class="code-command">python bb.py</span> mcp call "npx @server" read_file --args '{"path": "test.txt"}'</code></pre>
+            </div>
+
+            <div class="section">
+                <h2>MCP Security Profiles</h2>
+                <table>
+                    <tr>
+                        <th>Profile</th>
+                        <th>Description</th>
+                    </tr>
+                    <tr>
+                        <td><code>infra-quick</code></td>
+                        <td>Fast static analysis - checks tool schemas and basic patterns</td>
+                    </tr>
+                    <tr>
+                        <td><code>infra-standard</code></td>
+                        <td>Standard security tests - injection, traversal, boundary testing</td>
+                    </tr>
+                    <tr>
+                        <td><code>infra-deep</code></td>
+                        <td>Comprehensive audit - all test categories with fuzzing</td>
+                    </tr>
+                </table>
+            </div>
+
+            <div class="section">
+                <h2>Common Vulnerabilities</h2>
+
+                <h3>Path Traversal</h3>
+                <pre><code><span class="code-comment"># BenderBox tests for directory escape attempts</span>
+<span class="code-output"># Example finding:
+# [CRITICAL] Path traversal via 'path' parameter
+#   Tool: read_file
+#   Payload: "../../../etc/passwd"
+#   Result: File contents returned</span></code></pre>
+
+                <h3>Command Injection</h3>
+                <pre><code><span class="code-comment"># BenderBox tests for shell command injection</span>
+<span class="code-output"># Example finding:
+# [CRITICAL] Command injection via 'filename' parameter
+#   Tool: write_file
+#   Payload: "test.txt; rm -rf /"
+#   Result: Command executed</span></code></pre>
+
+                <h3>SQL Injection</h3>
+                <pre><code><span class="code-comment"># BenderBox tests for SQL injection in database tools</span>
+<span class="code-output"># Example finding:
+# [HIGH] SQL injection via 'query' parameter
+#   Tool: database_query
+#   Payload: "'; DROP TABLE users; --"
+#   Result: Query executed without sanitization</span></code></pre>
+            </div>
+        </div>
+
+        <!-- CONTEXT ANALYSIS TAB -->
+        <div id="context" class="tab-content">
+            <h1>Context & Instruction Analysis</h1>
+
+            <div class="section">
+                <h2>What is Context Analysis?</h2>
+                <p>Context analysis scans instruction files, system prompts, and skill definitions for dangerous patterns that could enable jailbreaks, credential exposure, or unsafe AI behavior.</p>
+            </div>
+
+            <div class="section">
+                <h2>Supported File Types</h2>
+                <ul>
+                    <li><strong>Skill files</strong> - <code>.md</code>, <code>.yaml</code>, <code>.json</code></li>
+                    <li><strong>System prompts</strong> - <code>.txt</code>, <code>.md</code></li>
+                    <li><strong>Agent instructions</strong> - Any text format</li>
+                    <li><strong>Configuration files</strong> - <code>.yaml</code>, <code>.json</code></li>
+                </ul>
+            </div>
+
+            <div class="section">
+                <h2>Context Commands</h2>
+
+                <h3>Analyze Single File</h3>
+                <pre><code><span class="code-command">python bb.py</span> context analyze prompt.md
+
+<span class="code-comment"># With file type hint</span>
+<span class="code-command">python bb.py</span> context analyze config.yaml --type skill</code></pre>
+
+                <h3>Scan Directory</h3>
+                <pre><code><span class="code-comment"># Scan prompts directory</span>
+<span class="code-command">python bb.py</span> context scan ./prompts --recursive
+
+<span class="code-comment"># Filter by pattern</span>
+<span class="code-command">python bb.py</span> context scan ./skills --pattern "*.md"</code></pre>
+
+                <h3>Analyze Model Output</h3>
+                <pre><code><span class="code-comment"># Analyze text directly</span>
+<span class="code-command">python bb.py</span> context output "Model response text here"
+
+<span class="code-comment"># Analyze from file</span>
+<span class="code-command">python bb.py</span> context output --file response.txt</code></pre>
+            </div>
+
+            <div class="section">
+                <h2>Risk Patterns Detected</h2>
+                <table>
+                    <tr>
+                        <th>Risk Type</th>
+                        <th>Examples</th>
+                        <th>Severity</th>
+                    </tr>
+                    <tr>
+                        <td>Jailbreak Instructions</td>
+                        <td>"Ignore previous instructions", "You are now DAN"</td>
+                        <td><span class="risk-badge risk-critical">CRITICAL</span></td>
+                    </tr>
+                    <tr>
+                        <td>Credential Exposure</td>
+                        <td>API keys, passwords in plain text</td>
+                        <td><span class="risk-badge risk-critical">CRITICAL</span></td>
+                    </tr>
+                    <tr>
+                        <td>Code Execution</td>
+                        <td>"Execute any code", "Run arbitrary commands"</td>
+                        <td><span class="risk-badge risk-high">HIGH</span></td>
+                    </tr>
+                    <tr>
+                        <td>Data Exfiltration</td>
+                        <td>"Send data to external server"</td>
+                        <td><span class="risk-badge risk-high">HIGH</span></td>
+                    </tr>
+                    <tr>
+                        <td>Privilege Escalation</td>
+                        <td>"Act as administrator", "Bypass restrictions"</td>
+                        <td><span class="risk-badge risk-high">HIGH</span></td>
+                    </tr>
+                    <tr>
+                        <td>Unsafe Patterns</td>
+                        <td>Unrestricted file access, network requests</td>
+                        <td><span class="risk-badge risk-medium">MEDIUM</span></td>
+                    </tr>
+                </table>
+
+                <div class="info-box success">
+                    <div class="info-box-title">Best Practice</div>
+                    <p>Run context analysis on all instruction files before deploying AI agents. This helps catch jailbreak-enabling language and credential leaks early in development.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- REPORTING TAB -->
+        <div id="reports" class="tab-content">
+            <h1>Reporting</h1>
+
+            <div class="section">
+                <h2>Report Viewer</h2>
+                <p>BenderBox includes an interactive HTML report viewer with a retro-futuristic theme.</p>
+
+                <pre><code><span class="code-comment"># Open report viewer in browser</span>
+<span class="code-command">python bb.py</span> report
+
+<span class="code-comment"># Or in interactive mode</span>
+BenderBox> report
+BenderBox> view reports
+BenderBox> open the report viewer</code></pre>
+            </div>
+
+            <div class="section">
+                <h2>Export Formats</h2>
+                <table>
+                    <tr>
+                        <th>Format</th>
+                        <th>Description</th>
+                        <th>Use Case</th>
+                    </tr>
+                    <tr>
+                        <td><code>html</code></td>
+                        <td>Interactive HTML with charts</td>
+                        <td>Sharing with teams</td>
+                    </tr>
+                    <tr>
+                        <td><code>json</code></td>
+                        <td>Machine-readable JSON</td>
+                        <td>CI/CD integration</td>
+                    </tr>
+                    <tr>
+                        <td><code>markdown</code></td>
+                        <td>Human-readable Markdown</td>
+                        <td>Documentation</td>
+                    </tr>
+                    <tr>
+                        <td><code>sarif</code></td>
+                        <td>SARIF format</td>
+                        <td>Security tool integration</td>
+                    </tr>
+                    <tr>
+                        <td><code>csv</code></td>
+                        <td>CSV spreadsheet</td>
+                        <td>Data analysis</td>
+                    </tr>
+                </table>
+            </div>
+
+            <div class="section">
+                <h2>Export Commands</h2>
+
+                <pre><code><span class="code-comment"># List recent reports</span>
+<span class="code-command">python bb.py</span> report list
+
+<span class="code-comment"># Export as HTML and open</span>
+<span class="code-command">python bb.py</span> export --format html --open
+
+<span class="code-comment"># Export as JSON</span>
+<span class="code-command">python bb.py</span> export --format json --output report.json
+
+<span class="code-comment"># Export specific report</span>
+<span class="code-command">python bb.py</span> report export REPORT_ID --format sarif</code></pre>
+            </div>
+
+            <div class="section">
+                <h2>Report Storage</h2>
+                <p>Reports are stored in <code>data/reports/</code> as JSON files. The report viewer automatically discovers and displays all available reports.</p>
+
+                <pre><code>data/
+  reports/
+    mcp_analysis_2024-01-15.json
+    model_phi-2_2024-01-15.json
+    context_scan_2024-01-15.json</code></pre>
+            </div>
+        </div>
+
+        <!-- API & CONFIG TAB -->
+        <div id="api" class="tab-content">
+            <h1>API & Configuration</h1>
+
+            <div class="section">
+                <h2>API Key Management</h2>
+                <p>BenderBox can test cloud AI models from OpenAI, Anthropic, Google, and xAI.</p>
+
+                <h3>Set API Keys</h3>
+                <pre><code><span class="code-comment"># Interactive (masked input)</span>
+<span class="code-command">python bb.py</span> config set-key openai
+<span class="code-command">python bb.py</span> config set-key anthropic
+<span class="code-command">python bb.py</span> config set-key google
+<span class="code-command">python bb.py</span> config set-key xai</code></pre>
+
+                <h3>View Configured Keys</h3>
+                <pre><code><span class="code-command">python bb.py</span> config api-keys</code></pre>
+
+                <h3>Test API Connection</h3>
+                <pre><code><span class="code-command">python bb.py</span> config test-key openai</code></pre>
+            </div>
+
+            <div class="section">
+                <h2>Environment Variables</h2>
+                <p>Alternatively, set API keys via environment variables:</p>
+                <pre><code><span class="code-comment"># Linux/macOS</span>
+export OPENAI_API_KEY="sk-..."
+export ANTHROPIC_API_KEY="sk-ant-..."
+export GOOGLE_API_KEY="..."
+export XAI_API_KEY="..."
+
+<span class="code-comment"># Windows PowerShell</span>
+$env:OPENAI_API_KEY="sk-..."</code></pre>
+            </div>
+
+            <div class="section">
+                <h2>Cloud Model Targets</h2>
+                <table>
+                    <tr>
+                        <th>Provider</th>
+                        <th>Target Format</th>
+                    </tr>
+                    <tr>
+                        <td>OpenAI</td>
+                        <td><code>openai:gpt-4-turbo</code>, <code>openai:gpt-4o</code></td>
+                    </tr>
+                    <tr>
+                        <td>Anthropic</td>
+                        <td><code>anthropic:claude-3-5-sonnet-20241022</code></td>
+                    </tr>
+                    <tr>
+                        <td>Google</td>
+                        <td><code>gemini:gemini-1.5-pro</code></td>
+                    </tr>
+                    <tr>
+                        <td>xAI</td>
+                        <td><code>grok:grok-2</code></td>
+                    </tr>
+                </table>
+            </div>
+
+            <div class="section">
+                <h2>Configuration Files</h2>
+                <p>Configuration is stored in <code>~/.benderbox/</code>:</p>
+                <pre><code>~/.benderbox/
+  config.yaml      # Main configuration
+  secrets.yaml     # API keys (encrypted)</code></pre>
+
+                <div class="info-box warning">
+                    <div class="info-box-title">Security Note</div>
+                    <p>API keys are stored encrypted in <code>secrets.yaml</code>. Never commit this file to version control.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- NATURAL LANGUAGE TAB -->
+        <div id="nlp" class="tab-content">
+            <h1>Natural Language Interface</h1>
+
+            <div class="section">
+                <h2>How It Works</h2>
+                <p>BenderBox uses a keyword mapping system to translate natural language queries into actions. This works even with small local models or without any model loaded.</p>
+
+                <div class="info-box">
+                    <div class="info-box-title">Supported Phrasing</div>
+                    <p>You can phrase commands many ways:</p>
+                    <ul>
+                        <li>"analyze phi-2" = "review model phi-2" = "test phi-2"</li>
+                        <li>"list models" = "show the models" = "what models do I have?"</li>
+                        <li>"run security tests" = "interrogate" = "probe"</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>Example Queries</h2>
+
+                <h3>Model Analysis</h3>
+                <pre><code>BenderBox> analyze phi-2
+BenderBox> review model phi-2 and run security tests
+BenderBox> test tinyllama with adversarial profile
+BenderBox> is this model safe for production?
+BenderBox> compare phi-2 to tinyllama</code></pre>
+
+                <h3>Model Management</h3>
+                <pre><code>BenderBox> list models
+BenderBox> what models do I have?
+BenderBox> show the downloaded models</code></pre>
+
+                <h3>MCP Testing</h3>
+                <pre><code>BenderBox> test the mcp server for vulnerabilities
+BenderBox> what tools does this server expose?
+BenderBox> mcp interrogate server.py</code></pre>
+
+                <h3>Context Analysis</h3>
+                <pre><code>BenderBox> analyze this prompt for security risks
+BenderBox> scan the prompts directory
+BenderBox> context analyze skills.md</code></pre>
+
+                <h3>Reports</h3>
+                <pre><code>BenderBox> show my reports
+BenderBox> open the report viewer
+BenderBox> report</code></pre>
+            </div>
+
+            <div class="section">
+                <h2>Misspelling Tolerance</h2>
+                <p>BenderBox corrects common misspellings:</p>
+                <pre><code><span class="code-comment"># These all work:</span>
+BenderBox> reveiw model phi-2
+BenderBox> anaylze tinyllama
+BenderBox> interogate the server</code></pre>
+            </div>
+
+            <div class="section">
+                <h2>Help Commands</h2>
+                <pre><code>BenderBox> help
+BenderBox> help models
+BenderBox> help mcp
+BenderBox> help context
+BenderBox> help reports
+BenderBox> help config
+BenderBox> help examples</code></pre>
+            </div>
+        </div>
+    </main>
+
+    <footer class="footer">
+        <p>BenderBox <span class="version">v3.0.0-alpha</span></p>
+        <p style="margin-top: 10px;">AI Security Interrogation & Testing Toolkit</p>
+        <p style="margin-top: 5px; font-size: 0.85em;">"Analyze AI models with confidence. Built with security in mind."</p>
+    </footer>
+
+    <script>
+        // Tab navigation
+        document.querySelectorAll('.nav-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                // Remove active from all tabs
+                document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+                // Add active to clicked tab
+                tab.classList.add('active');
+                const tabId = tab.getAttribute('data-tab');
+                document.getElementById(tabId).classList.add('active');
+
+                // Scroll to top
+                window.scrollTo(0, 0);
+            });
+        });
+
+        // Handle hash navigation
+        function navigateToHash() {
+            const hash = window.location.hash.substring(1);
+            if (hash) {
+                const tab = document.querySelector(`.nav-tab[data-tab="${hash}"]`);
+                if (tab) {
+                    tab.click();
+                }
+            }
+        }
+
+        window.addEventListener('hashchange', navigateToHash);
+        navigateToHash();
+    </script>
+</body>
+</html>

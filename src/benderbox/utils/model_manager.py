@@ -281,54 +281,137 @@ class ModelManager:
 
     def find_model_by_name(self, name: str, purpose: str = "analysis") -> Optional[Path]:
         """
-        Find a model by name with fuzzy matching.
+        Find a model by name with fuzzy matching across all model locations.
 
         Args:
             name: Model name (partial match supported, case-insensitive)
-            purpose: "analysis" or "nlp"
+            purpose: "analysis" or "nlp" (affects search order, not exclusivity)
 
         Returns:
             Path to the model if found, None otherwise.
 
         Search order:
-        1. Exact match (filename without extension)
-        2. Exact match (full filename with .gguf)
-        3. Fuzzy match (name contained in filename)
-        """
-        model_dir = self.get_model_dir_for_purpose(purpose)
-        if not model_dir.exists():
-            return None
+        1. Purpose-specific directory (models/analysis/ or models/nlp/)
+        2. Downloaded models (data/models/huggingface/)
+        3. All models directories (models/)
 
+        For each location:
+        - Exact match (filename without extension)
+        - Exact match (full filename with .gguf)
+        - Fuzzy match (name contained in filename)
+        """
         name_lower = name.lower().strip()
 
-        # 1. Exact match (stem)
-        for gguf in model_dir.glob("*.gguf"):
-            if gguf.stem.lower() == name_lower:
-                return gguf
+        # Build search directories in priority order
+        search_dirs = []
 
-        # 2. Exact match (full filename)
-        if not name_lower.endswith(".gguf"):
-            name_with_ext = name_lower + ".gguf"
-        else:
-            name_with_ext = name_lower
+        # 1. Purpose-specific directory first
+        try:
+            purpose_dir = self.get_model_dir_for_purpose(purpose)
+            if purpose_dir.exists():
+                search_dirs.append(purpose_dir)
+        except ValueError:
+            pass
 
-        for gguf in model_dir.glob("*.gguf"):
-            if gguf.name.lower() == name_with_ext:
-                return gguf
+        # 2. Downloaded models (HuggingFace)
+        hf_dir = self.data_models_dir / "huggingface"
+        if hf_dir.exists():
+            search_dirs.append(hf_dir)
 
-        # 3. Fuzzy match (name contained in filename)
-        matches = []
-        for gguf in model_dir.glob("*.gguf"):
-            if name_lower in gguf.stem.lower():
-                matches.append(gguf)
+        # 3. URL downloaded models
+        url_dir = self.data_models_dir / "url"
+        if url_dir.exists():
+            search_dirs.append(url_dir)
 
-        if len(matches) == 1:
-            return matches[0]
-        elif len(matches) > 1:
-            # Return shortest match (most specific)
-            return min(matches, key=lambda p: len(p.stem))
+        # 4. All model directories as fallback
+        if self.models_dir.exists():
+            search_dirs.append(self.models_dir)
+
+        # Search each directory
+        all_matches = []
+
+        for search_dir in search_dirs:
+            # Recursively find all .gguf files
+            for gguf in search_dir.rglob("*.gguf"):
+                # 1. Exact match (stem)
+                if gguf.stem.lower() == name_lower:
+                    return gguf
+
+                # 2. Exact match (full filename)
+                if not name_lower.endswith(".gguf"):
+                    name_with_ext = name_lower + ".gguf"
+                else:
+                    name_with_ext = name_lower
+
+                if gguf.name.lower() == name_with_ext:
+                    return gguf
+
+                # 3. Fuzzy match (name contained in filename) - collect for later
+                if name_lower in gguf.stem.lower():
+                    all_matches.append(gguf)
+
+        # Return best fuzzy match
+        if len(all_matches) == 1:
+            return all_matches[0]
+        elif len(all_matches) > 1:
+            # Deduplicate by resolved path
+            unique_matches = list({p.resolve(): p for p in all_matches}.values())
+            if len(unique_matches) == 1:
+                return unique_matches[0]
+            # Return shortest stem (most specific match)
+            return min(unique_matches, key=lambda p: len(p.stem))
 
         return None
+
+    def get_all_models(self) -> List[Dict]:
+        """
+        Get all available GGUF models from all locations.
+
+        Returns:
+            List of model info dictionaries with deduplication.
+        """
+        models = []
+        seen_paths = set()
+
+        # Check all locations
+        for gguf_file in self._iter_all_models():
+            resolved = gguf_file.resolve()
+            if resolved in seen_paths:
+                continue
+            seen_paths.add(resolved)
+
+            # Determine location category
+            rel_path = str(gguf_file)
+            if "data/models" in rel_path or "data\\models" in rel_path:
+                location = "downloaded"
+            elif "analysis" in rel_path:
+                location = "analysis"
+            elif "nlp" in rel_path:
+                location = "nlp"
+            elif "code" in rel_path:
+                location = "code"
+            else:
+                location = "other"
+
+            models.append({
+                "path": str(gguf_file),
+                "name": gguf_file.stem,
+                "filename": gguf_file.name,
+                "size_mb": gguf_file.stat().st_size // (1024 * 1024),
+                "location": location,
+            })
+
+        return sorted(models, key=lambda m: m["name"].lower())
+
+    def _iter_all_models(self):
+        """Iterate over all GGUF files in all model locations."""
+        # models/ directory
+        if self.models_dir.exists():
+            yield from self.models_dir.rglob("*.gguf")
+
+        # data/models/ directory
+        if self.data_models_dir.exists():
+            yield from self.data_models_dir.rglob("*.gguf")
 
     def get_model_suggestions(self, partial_name: str, purpose: str = "analysis") -> List[str]:
         """

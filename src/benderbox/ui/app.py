@@ -68,6 +68,7 @@ class BenderBoxApp:
         self._config = None
         self._llm_engine = None
         self._conversation_manager = None
+        self._model_manager = None
         self._terminal_ui = None
         self._chat_ui = None
 
@@ -94,10 +95,22 @@ class BenderBoxApp:
         # Load configuration
         _ = self.config
 
-        # Initialize LLM engine if available
+        # Initialize model manager FIRST (needed for model path resolution)
+        try:
+            from benderbox.utils.model_manager import ModelManager
+            self._model_manager = ModelManager()
+            logger.info("Model manager initialized")
+        except Exception as e:
+            logger.warning(f"Could not initialize model manager: {e}")
+            self._model_manager = None
+
+        # Initialize LLM engine with model manager for automatic model discovery
         try:
             from benderbox.nlp.llm_engine import LocalLLMEngine
-            self._llm_engine = LocalLLMEngine(self.config.llm)
+            self._llm_engine = LocalLLMEngine(
+                config=self.config.llm,
+                model_manager=self._model_manager
+            )
             if self._llm_engine.is_available:
                 logger.info("LLM engine initialized with llama-cpp-python")
             else:
@@ -116,6 +129,9 @@ class BenderBoxApp:
             self._conversation_manager = ConversationManager(
                 llm_engine=self._llm_engine,
             )
+            # Set model manager for command mapping
+            if self._model_manager:
+                self._conversation_manager.set_model_manager(self._model_manager)
             logger.info("Conversation manager initialized")
         except ImportError as e:
             logger.warning(f"Conversation manager not available: {e}")
@@ -131,6 +147,7 @@ class BenderBoxApp:
         self._chat_ui = ChatUI(
             conversation_manager=self._conversation_manager,
             terminal_ui=self.terminal_ui,
+            model_manager=self._model_manager,
         )
 
         await self._chat_ui.run()
@@ -3551,6 +3568,60 @@ def report_export(ctx, report_id: Optional[str], output_format: str,
 
     except Exception as e:
         ui.print_error(f"Export failed: {e}")
+
+
+# =============================================================================
+# DOCUMENTATION COMMANDS
+# =============================================================================
+
+@cli.command("docs")
+@click.option("--no-open", is_flag=True, help="Don't open in browser, just show path")
+@click.pass_context
+def docs(ctx, no_open: bool):
+    """
+    Open the BenderBox documentation guide.
+
+    Opens the comprehensive HTML documentation in your default browser.
+    The guide includes detailed instructions for all BenderBox features.
+
+    Examples:
+        benderbox docs
+        benderbox docs --no-open
+    """
+    from benderbox.ui.terminal import TerminalUI
+    from pathlib import Path
+
+    ui = TerminalUI()
+
+    # Find docs/guide.html relative to the package or current directory
+    possible_paths = [
+        Path(__file__).parent.parent.parent.parent / "docs" / "guide.html",  # From src/benderbox/ui/app.py
+        Path.cwd() / "docs" / "guide.html",  # Current directory
+        Path.home() / ".benderbox" / "docs" / "guide.html",  # User directory
+    ]
+
+    docs_path = None
+    for path in possible_paths:
+        if path.exists():
+            docs_path = path
+            break
+
+    if docs_path is None:
+        ui.print_error("Documentation not found.")
+        ui.print_info("Expected location: docs/guide.html")
+        ui.print_info("Make sure you're running from the BenderBox directory.")
+        return
+
+    ui.print_header("BenderBox Documentation")
+    ui.print_info(f"Documentation: {docs_path}")
+
+    if not no_open:
+        import webbrowser
+        file_url = docs_path.as_uri()
+        webbrowser.open(file_url)
+        ui.print_success("Opened documentation in browser")
+    else:
+        ui.print_info(f"Open manually: {docs_path.as_uri()}")
 
 
 def main():

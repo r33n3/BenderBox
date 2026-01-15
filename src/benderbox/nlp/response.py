@@ -148,6 +148,7 @@ class ResponseGenerator:
             IntentType.GENERATE_REPORT: self._format_report,
             IntentType.LIST_REPORTS: self._format_report_list,
             IntentType.VIEW_REPORTS: self._format_view_reports,
+            IntentType.VIEW_DOCS: self._format_view_docs,
             IntentType.GET_STATUS: self._format_status,
             IntentType.HELP: self._format_help,
             IntentType.GENERAL_QUESTION: self._answer_general_question,
@@ -458,12 +459,21 @@ class ResponseGenerator:
                 lines.append("  Download with: `benderbox models download tinyllama`")
             lines.append("")
 
+        # Always show downloaded models (available for both analysis and NLP)
         if purpose == "all":
+            downloaded_models = manager.get_downloaded_models()
+            # Filter to only data/models/ location (not models/analysis or models/nlp)
+            downloaded_only = [m for m in downloaded_models if "data/models" in m["path"].replace("\\", "/")]
+            if downloaded_only:
+                lines.append("**Downloaded Models** (data/models/):")
+                for m in downloaded_only:
+                    lines.append(f"- `{m['name']}` ({m['size_mb']} MB)")
+                lines.append("")
+                lines.append("Use `/load <name> --for nlp` or `/load <name> --for analysis`")
+            lines.append("")
             lines.append("**Commands:**")
-            lines.append("- `models list --for analysis` - List analysis targets")
-            lines.append("- `models list --for nlp` - List NLP/chat models")
-            lines.append("- `models add <path> --for analysis` - Add model for analysis")
-            lines.append("- `analyze <model-name>` - Analyze by name")
+            lines.append("- `analyze <model-name>` - Analyze a model by name")
+            lines.append("- `models download <id>` - Download a recommended model")
 
         return "\n".join(lines)
 
@@ -676,6 +686,54 @@ No analysis reports were found. Run an analysis first:
 After running an analysis, use `open reports` or `report view` to open the viewer."""
 
         return "I tried to open the report viewer but encountered an issue. Try `report view` from the command line."
+
+    async def _format_view_docs(self, context: ResponseContext) -> str:
+        """Format response for opening documentation."""
+        import webbrowser
+        from pathlib import Path
+
+        # Find docs/guide.html
+        docs_path = Path(__file__).parent.parent.parent.parent / "docs" / "guide.html"
+
+        if not docs_path.exists():
+            return """**Documentation Not Found**
+
+The documentation file (docs/guide.html) was not found.
+
+You can regenerate it or view help directly:
+- `help` - Show command help
+- `help mcp` - MCP server analysis help
+- `help context` - Context/prompt analysis help
+- `help models` - Model analysis help"""
+
+        try:
+            # Open in default browser
+            webbrowser.open(f"file://{docs_path.resolve()}")
+            return f"""**Documentation Opened**
+
+Opened the BenderBox Guide in your browser.
+
+The guide includes:
+- Getting Started overview
+- Model Analysis instructions
+- MCP Security Testing guide
+- Context Analysis examples
+- Reporting features
+- API & Configuration
+
+Path: `{docs_path.resolve()}`
+
+For quick help, you can also type `help` or `help <topic>`."""
+
+        except Exception as e:
+            return f"""**Could Not Open Browser**
+
+Documentation file found but couldn't open browser: {str(e)}
+
+You can open the file manually:
+`{docs_path.resolve()}`
+
+Or use `help` for command-line help."""
 
     async def _format_status(self, context: ResponseContext) -> str:
         """Format system status with Bender personality."""

@@ -205,7 +205,7 @@ class ChatUI:
         "search": ["search", "find", "lookup", "query-reports"],
         "compare": ["compare", "diff", "vs", "c"],
         "status": ["status", "info", "state", "s"],
-        "reports": ["reports", "list", "history", "r"],
+        "reports": ["reports", "history", "r"],
         "export": ["export", "save", "e"],
         "help": ["help", "?", "h"],
         "clear": ["clear", "cls", "reset"],
@@ -232,6 +232,7 @@ class ChatUI:
         self,
         conversation_manager=None,
         terminal_ui: Optional[TerminalUI] = None,
+        model_manager=None,
     ):
         """
         Initialize ChatUI.
@@ -239,9 +240,15 @@ class ChatUI:
         Args:
             conversation_manager: ConversationManager for query processing.
             terminal_ui: TerminalUI for output.
+            model_manager: ModelManager for model operations.
         """
         self._conversation = conversation_manager
         self.ui = terminal_ui or TerminalUI()
+        self._model_manager = model_manager
+
+        # Set model manager on conversation manager for command mapping
+        if self._conversation and model_manager:
+            self._conversation.set_model_manager(model_manager)
 
         # Command handlers
         self._handlers: Dict[CommandType, Callable] = {}

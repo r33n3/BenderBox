@@ -19,6 +19,7 @@ from benderbox.nlp.intent import Intent, IntentRouter, IntentType
 from benderbox.nlp.context import ContextManager
 from benderbox.nlp.response import Message, ResponseContext, ResponseGenerator
 from benderbox.nlp.analysis_bridge import AnalysisBridge
+from benderbox.nlp.command_mapper import CommandMapper, ActionType, TargetType
 
 logger = logging.getLogger(__name__)
 
@@ -81,11 +82,22 @@ class ConversationManager:
             knowledge_base=knowledge_base,
         )
 
+        # Command mapper for keyword-based intent detection
+        self._command_mapper: Optional[CommandMapper] = None
+
         # Conversation history
         self._history: List[Message] = []
 
         # Session metadata
         self._session_start = datetime.now()
+
+    def set_model_manager(self, model_manager) -> None:
+        """Set model manager for command mapper and LLM engine."""
+        self._model_manager = model_manager
+        self._command_mapper = CommandMapper(model_manager)
+        # Also update LLM engine if available for model path resolution
+        if self._llm_engine and hasattr(self._llm_engine, 'set_model_manager'):
+            self._llm_engine.set_model_manager(model_manager)
 
     def _set_llm_engine(self, llm_engine) -> None:
         """Set the LLM engine (for lazy initialization)."""
@@ -93,6 +105,10 @@ class ConversationManager:
         self._intent_router._set_llm_engine(llm_engine)
         self._response_generator._set_llm_engine(llm_engine)
         self._analysis_bridge._set_llm_engine(llm_engine)
+        # Pass model manager to llm engine if available
+        if hasattr(self, '_model_manager') and self._model_manager:
+            if hasattr(llm_engine, 'set_model_manager'):
+                llm_engine.set_model_manager(self._model_manager)
 
     def _set_knowledge_base(self, knowledge_base) -> None:
         """Set the knowledge base (for lazy initialization)."""
@@ -128,9 +144,54 @@ class ConversationManager:
             # Resolve any references in the query
             resolved_query = self._context_manager.resolve_query_references(user_input)
 
+            # Use command mapper to extract entities and normalize query
+            entities = None
+            if self._command_mapper:
+                entities = self._command_mapper.parse(resolved_query)
+                # Use normalized query for better intent classification
+                if entities.normalized_query:
+                    resolved_query = entities.normalized_query
+                    logger.debug(f"Normalized query: {resolved_query}")
+
             # Classify intent
             intent = await self._intent_router.classify(resolved_query)
             logger.debug(f"Classified intent: {intent.intent_type.value} ({intent.confidence:.2f})")
+
+            # Enhance intent parameters with extracted entities
+            if entities:
+                # Model refs are resolved paths - they should override generic targets like "model"
+                if entities.model_refs:
+                    current_target = intent.parameters.get("target", "")
+                    # Override if no target, or if current target is generic (doesn't look like a real path)
+                    if not current_target or (
+                        not current_target.endswith(".gguf") and
+                        "/" not in current_target and
+                        "\\" not in current_target
+                    ):
+                        intent.parameters["target"] = entities.model_refs[0]
+                        logger.debug(f"Set target from model_refs: {entities.model_refs[0]}")
+
+                if entities.profile and "profile" not in intent.parameters:
+                    intent.parameters["profile"] = entities.profile
+
+                # File paths override generic targets
+                if entities.file_paths:
+                    current_target = intent.parameters.get("target", "")
+                    if not current_target or not (
+                        current_target.endswith((".py", ".js", ".yaml", ".md", ".gguf"))
+                    ):
+                        intent.parameters["target"] = entities.file_paths[0]
+
+                # URLs override generic targets
+                if entities.urls:
+                    current_target = intent.parameters.get("target", "")
+                    if not current_target or not current_target.startswith("http"):
+                        intent.parameters["target"] = entities.urls[0]
+
+                if entities.wants_report:
+                    intent.parameters["generate_report"] = True
+                if entities.output_format:
+                    intent.parameters["output_format"] = entities.output_format
 
             # Execute based on intent
             analysis_result = None

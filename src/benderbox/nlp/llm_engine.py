@@ -242,16 +242,18 @@ class LocalLLMEngine:
 
     MODEL_TYPES = {"analysis", "code"}
 
-    def __init__(self, config: Optional[LLMConfig] = None):
+    def __init__(self, config: Optional[LLMConfig] = None, model_manager=None):
         """
         Initialize LocalLLMEngine.
 
         Args:
             config: LLM configuration. Uses global config if not provided.
+            model_manager: Optional ModelManager for finding available models.
         """
         if config is None:
             config = get_config().llm
         self.config = config
+        self._model_manager = model_manager
 
         # Check if llama-cpp-python is available
         self._llama_available = check_llama_cpp_available()
@@ -264,10 +266,59 @@ class LocalLLMEngine:
         # Model instances (LRU ordered)
         self._loaded_models: OrderedDict[str, LlamaModel] = OrderedDict()
 
-        # Model paths
+        # Model paths - resolve with fallback to available models
         self._model_paths = {
-            "analysis": config.analysis_model_path,
-            "code": config.code_model_path,
+            "analysis": self._resolve_model_path(config.analysis_model_path, "analysis"),
+            "code": self._resolve_model_path(config.code_model_path, "code"),
+        }
+
+    def _resolve_model_path(self, configured_path: str, purpose: str) -> str:
+        """
+        Resolve model path, falling back to available models if configured path doesn't exist.
+
+        Args:
+            configured_path: Path from config file.
+            purpose: "analysis" or "code" for fallback search.
+
+        Returns:
+            Path to use (may be different from configured_path if it doesn't exist).
+        """
+        path = Path(configured_path)
+
+        # If configured path exists, use it
+        if path.exists():
+            return str(path)
+
+        # Try to find an alternative using ModelManager
+        if self._model_manager:
+            # First try to get the default model path (checks purpose-specific dirs first)
+            default = self._model_manager.get_default_model_path()
+            if default:
+                logger.info(f"Config model not found, using discovered model for {purpose}: {default}")
+                return str(default)
+
+            # Fall back to any available model
+            all_models = self._model_manager.get_all_models()
+            if all_models:
+                first_model = all_models[0]["path"]
+                logger.info(f"Config model not found, using first available model for {purpose}: {first_model}")
+                return first_model
+
+        # Return configured path (will fail with helpful error when loaded)
+        return configured_path
+
+    def set_model_manager(self, model_manager) -> None:
+        """
+        Set the ModelManager for dynamic model resolution.
+
+        Args:
+            model_manager: ModelManager instance.
+        """
+        self._model_manager = model_manager
+        # Re-resolve paths with the new manager
+        self._model_paths = {
+            "analysis": self._resolve_model_path(self.config.analysis_model_path, "analysis"),
+            "code": self._resolve_model_path(self.config.code_model_path, "code"),
         }
 
     @property

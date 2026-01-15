@@ -35,6 +35,7 @@ class IntentType(Enum):
     GENERATE_REPORT = "generate_report"
     LIST_REPORTS = "list_reports"
     VIEW_REPORTS = "view_reports"  # Open report viewer
+    VIEW_DOCS = "view_docs"  # Open documentation/instructions
     GET_STATUS = "get_status"
     GENERAL_QUESTION = "general_question"
     HELP = "help"
@@ -137,12 +138,37 @@ KEYWORD_PATTERNS: List[Tuple[re.Pattern, IntentType, bool, bool]] = [
      IntentType.VIEW_REPORTS, False, False),
     (re.compile(r"\b(show|see)\s+(my\s+)?reports?\b", re.I),
      IntentType.VIEW_REPORTS, False, False),
+    # Simple "report" or "reports" should open viewer
+    (re.compile(r"^reports?$", re.I),
+     IntentType.VIEW_REPORTS, False, False),
+    (re.compile(r"^open\s+reports?$", re.I),
+     IntentType.VIEW_REPORTS, False, False),
+    (re.compile(r"^reports?\s*viewer$", re.I),
+     IntentType.VIEW_REPORTS, False, False),
+    # Common misspellings of "report"
+    (re.compile(r"^(reprot|repotr|repport|rpeort|reoprt|repost|repor)s?$", re.I),
+     IntentType.VIEW_REPORTS, False, False),
     (re.compile(r"\b(list|show|get)\s*(reports?|analyses|scans)\b", re.I),
      IntentType.LIST_REPORTS, False, False),
     (re.compile(r"\b(list|show|get)\b.*\b(report|analysis|scan)\b", re.I),
      IntentType.LIST_REPORTS, False, False),
     (re.compile(r"\b(recent|latest|last)\b.*\b(report|analysis|scan)s?\b", re.I),
      IntentType.LIST_REPORTS, False, False),
+
+    # Documentation/instructions intents
+    (re.compile(r"\b(open|show|view)\b.*\b(docs?|documentation|instructions?|guide|manual)\b", re.I),
+     IntentType.VIEW_DOCS, False, False),
+    (re.compile(r"\bdocs?\b$", re.I),
+     IntentType.VIEW_DOCS, False, False),
+    (re.compile(r"^(documentation|instructions?|guide|manual)$", re.I),
+     IntentType.VIEW_DOCS, False, False),
+    (re.compile(r"\b(read|see)\s+(the\s+)?(docs?|documentation|instructions?|guide)\b", re.I),
+     IntentType.VIEW_DOCS, False, False),
+    (re.compile(r"\bhow\s+do\s+i\s+use\s+(this|benderbox)\b", re.I),
+     IntentType.VIEW_DOCS, False, False),
+    # Misspellings
+    (re.compile(r"^(documenation|documention|instrcutions|instrucions|insturctions)$", re.I),
+     IntentType.VIEW_DOCS, False, False),
 
     # Knowledge queries
     (re.compile(r"\b(what|how|why|when|where|who)\b.*\b(jailbreak|vulnerability|attack|exploit)\b", re.I),

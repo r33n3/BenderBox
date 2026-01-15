@@ -360,22 +360,31 @@ Type `help <category>` for detailed help on a topic.
 | `help mcp` | MCP server security testing |
 | `help context` | Context/instruction file analysis |
 | `help reports` | Report management & export |
+| `help config` | Configuration & API keys |
 | `help examples` | Usage examples |
 
 ## Quick Reference
 
 | Command | Description |
 |---------|-------------|
-| `/models` | List available models |
-| `/load <name> --for nlp` | Load model for chat |
-| `/load <name> --for analysis` | Load model for interrogation |
-| `/current` | Show loaded models |
-| `analyze` | Interrogate loaded model |
-| `analyze <model> --profile full` | Full security test |
+| `list models` | List available models |
+| `analyze <model>` | Analyze model for security issues |
+| `analyze phi-2 --profile full` | Full security test |
 | `compare <a> <b>` | Compare two models |
-| `/mcp tools <target>` | List MCP server tools |
+| `mcp tools <target>` | List MCP server tools |
+| `mcp interrogate <target>` | Security test MCP server |
+| `context analyze <file>` | Analyze instruction file |
+| `report` | Open report viewer |
 | `status` | Show system status |
 | `exit` | Exit BenderBox |
+
+## Natural Language
+
+You can also use natural language:
+- "review model phi-2 and run security tests"
+- "what models do I have?"
+- "test the mcp server for vulnerabilities"
+- "show my reports"
 """
 
         models_help = """
@@ -648,6 +657,52 @@ compare tinyllama phi-2 --profile adversarial
 4. Export HTML reports for sharing with teams
 """
 
+        config_help = """
+# Configuration & API Keys
+
+## API Key Management
+
+BenderBox can test cloud AI providers (OpenAI, Anthropic, Google, xAI).
+
+| Command | Description |
+|---------|-------------|
+| `config set-key openai` | Set OpenAI API key |
+| `config set-key anthropic` | Set Anthropic API key |
+| `config api-keys` | List configured keys |
+| `config test-key openai` | Test API connection |
+
+## Supported Providers
+
+| Provider | Target Format |
+|----------|---------------|
+| OpenAI | `openai:gpt-4-turbo` |
+| Anthropic | `anthropic:claude-3-5-sonnet-20241022` |
+| Google | `gemini:gemini-1.5-pro` |
+| xAI | `grok:grok-2` |
+
+## Environment Variables
+
+```
+OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
+GOOGLE_API_KEY=...
+XAI_API_KEY=...
+```
+
+## Examples
+
+```
+# Set API key (masked input)
+python bb.py config set-key openai
+
+# Test cloud model
+analyze openai:gpt-4-turbo --profile quick
+
+# Compare local vs cloud
+compare phi-2 openai:gpt-4-turbo
+```
+"""
+
         # Category mapping
         categories = {
             "models": models_help,
@@ -663,6 +718,9 @@ compare tinyllama phi-2 --profile adversarial
             "report": reports_help,
             "examples": examples_help,
             "example": examples_help,
+            "config": config_help,
+            "api": config_help,
+            "keys": config_help,
         }
 
         if category and category.lower() in categories:
