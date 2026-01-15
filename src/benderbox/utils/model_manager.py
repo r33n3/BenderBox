@@ -875,21 +875,21 @@ class ModelManager:
             return recommendations[0]["id"]
         return None
 
-    async def download_huggingface_model(
+    def download_huggingface_model_sync(
         self,
         repo_id: str,
         filename: str,
         purpose: str = "nlp",
-        progress_callback=None,
+        show_progress: bool = True,
     ) -> Tuple[bool, str, Optional[Path]]:
         """
-        Download a GGUF model from any HuggingFace repository.
+        Synchronously download a GGUF model from HuggingFace with progress.
 
         Args:
             repo_id: HuggingFace repository ID (e.g., "TheBloke/Llama-2-7B-GGUF")
             filename: GGUF filename (e.g., "llama-2-7b.Q4_K_M.gguf")
             purpose: "nlp", "analysis", or "code"
-            progress_callback: Optional callback for download progress
+            show_progress: Whether to show download progress bar
 
         Returns:
             Tuple of (success, message, path_if_success)
@@ -911,7 +911,8 @@ class ModelManager:
 
             logger.info(f"Downloading {repo_id}/{filename}...")
 
-            # Download to HuggingFace cache then copy
+            # Download with progress display
+            # huggingface_hub shows its own progress by default
             downloaded_path = hf_hub_download(
                 repo_id=repo_id,
                 filename=filename,
@@ -922,6 +923,8 @@ class ModelManager:
             # Copy to purpose-specific directory
             final_path = target_dir / filename
             if not final_path.exists():
+                if show_progress:
+                    print(f"Copying to {target_dir.name}/...")
                 shutil.copy2(downloaded_path, final_path)
 
             return True, f"Downloaded to {final_path}", final_path
@@ -930,6 +933,31 @@ class ModelManager:
             return False, "huggingface_hub not installed. Run: pip install huggingface-hub", None
         except Exception as e:
             return False, f"Download failed: {e}", None
+
+    async def download_huggingface_model(
+        self,
+        repo_id: str,
+        filename: str,
+        purpose: str = "nlp",
+        progress_callback=None,
+    ) -> Tuple[bool, str, Optional[Path]]:
+        """
+        Async wrapper for download_huggingface_model_sync.
+
+        Args:
+            repo_id: HuggingFace repository ID (e.g., "TheBloke/Llama-2-7B-GGUF")
+            filename: GGUF filename (e.g., "llama-2-7b.Q4_K_M.gguf")
+            purpose: "nlp", "analysis", or "code"
+            progress_callback: Optional callback for download progress
+
+        Returns:
+            Tuple of (success, message, path_if_success)
+        """
+        import asyncio
+        return await asyncio.to_thread(
+            self.download_huggingface_model_sync,
+            repo_id, filename, purpose, progress_callback is None
+        )
 
     def parse_huggingface_url(self, url: str) -> Tuple[Optional[str], Optional[str]]:
         """

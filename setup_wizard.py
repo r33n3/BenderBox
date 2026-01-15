@@ -604,6 +604,18 @@ def offer_model_download():
     return download_model(selected)
 
 
+def get_model_size_estimate(model_id):
+    """Get estimated download size and time for a model."""
+    sizes = {
+        "tinyllama": (700, "1-3 min"),
+        "tinyllama-small": (500, "1-2 min"),
+        "qwen2-1.5b": (1000, "2-5 min"),
+        "phi2": (1700, "3-8 min"),
+        "mistral-7b": (4400, "10-20 min"),
+    }
+    return sizes.get(model_id, (None, "unknown"))
+
+
 def download_custom_huggingface_model():
     """Download a custom model from HuggingFace."""
     print(f"\n{Colors.BOLD}Custom HuggingFace Model{Colors.END}")
@@ -654,16 +666,14 @@ Enter a HuggingFace URL or repository path.
         purpose_choice = input(f"{Colors.CYAN}Select [1]: {Colors.END}").strip()
         purpose = "analysis" if purpose_choice == "2" else "nlp"
 
-        # Download
+        # Download with progress (huggingface_hub shows its own progress)
         print(f"\n{Colors.CYAN}Downloading {repo_id}/{filename}...{Colors.END}")
-        print("This may take a while depending on model size and connection.\n")
+        print(f"{Colors.YELLOW}Large models may take 10-30 minutes to download.{Colors.END}")
+        print(f"Progress bar will appear below:\n")
 
-        import asyncio
-
-        async def do_download():
-            return await manager.download_huggingface_model(repo_id, filename, purpose)
-
-        success, message, path = asyncio.run(do_download())
+        success, message, path = manager.download_huggingface_model_sync(
+            repo_id, filename, purpose, show_progress=True
+        )
 
         if success:
             print(f"\n{Colors.GREEN}Download complete!{Colors.END}")
@@ -673,20 +683,32 @@ Enter a HuggingFace URL or repository path.
             print(f"\n{Colors.RED}Download failed:{Colors.END} {message}")
             return False
 
+    except KeyboardInterrupt:
+        print(f"\n\n{Colors.YELLOW}Download cancelled by user.{Colors.END}")
+        print(f"Partial download may be cached. Retry later to resume.")
+        return False
     except Exception as e:
         print(f"\n{Colors.RED}Error: {e}{Colors.END}")
         return False
 
 
 def download_model(model_id):
-    """Download a recommended model by ID."""
+    """Download a recommended model by ID with progress display."""
+    size_mb, time_est = get_model_size_estimate(model_id)
+
     print(f"\n{Colors.CYAN}Downloading {model_id}...{Colors.END}")
-    print("This may take a few minutes depending on your connection.\n")
+    if size_mb:
+        print(f"Size: ~{size_mb}MB | Estimated time: {time_est}")
+    print(f"\n{Colors.YELLOW}Progress will be shown by the download tool.{Colors.END}")
+    print(f"Press Ctrl+C to cancel.\n")
+
+    # Calculate timeout based on model size (10 seconds per MB, min 5 min)
+    timeout_seconds = max(600, (size_mb or 1000) * 10) if size_mb else 1800
 
     try:
         result = subprocess.run(
             [sys.executable, "bb.py", "models", "download", model_id],
-            timeout=1200,  # 20 minute timeout for larger models
+            timeout=timeout_seconds,
             cwd=Path(__file__).parent
         )
 
@@ -694,12 +716,18 @@ def download_model(model_id):
             print(f"\n{Colors.GREEN}{model_id} downloaded successfully!{Colors.END}")
             return True
         else:
-            print(f"\n{Colors.YELLOW}Download failed. You can try again later:{Colors.END}")
-            print(f"  python bb.py models download {model_id}")
+            print(f"\n{Colors.YELLOW}Download may have failed. Check above for errors.{Colors.END}")
+            print(f"You can retry: python bb.py models download {model_id}")
             return False
     except subprocess.TimeoutExpired:
-        print(f"\n{Colors.RED}Download timed out.{Colors.END}")
-        print(f"You can retry: python bb.py models download {model_id}")
+        print(f"\n{Colors.RED}Download timed out after {timeout_seconds // 60} minutes.{Colors.END}")
+        print(f"The download may still be cached. Retry with:")
+        print(f"  python bb.py models download {model_id}")
+        return False
+    except KeyboardInterrupt:
+        print(f"\n\n{Colors.YELLOW}Download cancelled by user.{Colors.END}")
+        print(f"Partial download may be cached. Retry later to resume:")
+        print(f"  python bb.py models download {model_id}")
         return False
     except Exception as e:
         print(f"\n{Colors.RED}Error: {e}{Colors.END}")
