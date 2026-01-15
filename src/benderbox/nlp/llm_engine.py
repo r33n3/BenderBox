@@ -62,7 +62,7 @@ class LlamaModel:
     def __init__(
         self,
         model_path: str,
-        context_length: int = 4096,
+        context_length: int = 2048,  # Match TinyLlama's training context
         threads: int = 4,
         gpu_layers: int = 0,
     ):

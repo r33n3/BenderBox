@@ -464,11 +464,15 @@ class ConversationManager:
 
 Summary:"""
 
+            # Stop tokens to prevent hallucination
+            stop_tokens = ["user:", "User:", "\nQuestion:", "\nassistant:"]
+
             return await self._llm_engine.generate(
                 prompt=prompt,
                 model_type="analysis",
-                max_tokens=200,
-                temperature=0.5,
+                max_tokens=150,
+                temperature=0.3,
+                stop=stop_tokens,
             )
         else:
             # Simple summary without LLM

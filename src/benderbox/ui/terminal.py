@@ -54,21 +54,39 @@ class TerminalUI:
     Rich-based terminal UI for BenderBox.
 
     Provides beautiful console output with:
-    - Styled panels and tables
+    - Futurama-inspired retro-futuristic theme
+    - Neon color scheme matching report viewer
     - Progress indicators
-    - Syntax highlighting
     - Risk-level color coding
     """
 
-    # Color scheme for risk levels
+    # Futurama-inspired neon color scheme (matching report viewer)
+    # Use RGB hex colors for exact matching where possible
+    THEME = {
+        # Neon accent colors
+        "neon_green": "#39ff14",      # Primary accent - neon green
+        "neon_purple": "#bf00ff",     # Secondary accent - purple
+        "neon_orange": "#ff6b35",     # Tertiary accent - orange
+        "neon_cyan": "#00ffff",       # Info/headers - cyan
+        "neon_pink": "#ff00ff",       # Alternate accent
+        # Status colors
+        "danger": "#ff3366",          # Errors/critical
+        "warning": "#ffaa00",         # Warnings
+        "success": "#00ff88",         # Success/passed
+        # Text colors
+        "text_primary": "#e0e0e0",    # Main text
+        "text_muted": "#888899",      # Muted/dim text
+    }
+
+    # Color scheme for risk levels (neon-style)
     RISK_COLORS = {
-        "critical": "bold red",
-        "high": "bold orange1",
-        "medium": "bold yellow",
-        "low": "bold green",
-        "info": "bold blue",
-        "safe": "bold green",
-        "unknown": "bold white",
+        "critical": "bold #ff3366",   # Neon red/pink
+        "high": "bold #ffaa00",       # Neon orange
+        "medium": "bold #ffff00",     # Neon yellow
+        "low": "bold #00ff88",        # Neon green
+        "info": "bold #00ffff",       # Neon cyan
+        "safe": "bold #39ff14",       # Bright neon green
+        "unknown": "bold #888899",    # Muted
     }
 
     RISK_EMOJI = {
@@ -96,16 +114,17 @@ class TerminalUI:
             logger.warning("Rich not available. Using basic output.")
 
     def print_banner(self) -> None:
-        """Print the BenderBox banner with ASCII art."""
+        """Print the BenderBox banner with ASCII art in Futurama neon style."""
         # Try to load ASCII art from file
         banner = self._load_ascii_art()
 
         if self.console:
+            # Neon green banner with purple border - Futurama style
             self.console.print(Panel(
-                Text(banner, style="bold cyan"),
-                title="[bold white]AI Security Analysis Platform[/bold white]",
-                subtitle="[dim]v3.0.0-alpha[/dim]",
-                border_style="cyan",
+                Text(banner, style=f"bold {self.THEME['neon_green']}"),
+                title=f"[bold {self.THEME['neon_orange']}]AI Security Analysis Platform[/bold {self.THEME['neon_orange']}]",
+                subtitle=f"[{self.THEME['text_muted']}]v3.0.0-alpha[/{self.THEME['text_muted']}]",
+                border_style=self.THEME['neon_purple'],
             ))
         else:
             print(banner)
@@ -179,16 +198,17 @@ class TerminalUI:
         results = result.get("results", [])
 
         if self.console:
-            # Create summary table
+            # Create summary table with neon Futurama theme
             table = Table(
-                title=f"Analysis Summary: {target}",
+                title=f"[bold {self.THEME['neon_green']}]Analysis Summary: {target}[/bold {self.THEME['neon_green']}]",
                 box=box.ROUNDED,
                 show_header=True,
-                header_style="bold cyan",
+                header_style=f"bold {self.THEME['neon_purple']}",
+                border_style=self.THEME['neon_purple'],
             )
 
-            table.add_column("Property", style="bold")
-            table.add_column("Value")
+            table.add_column("Property", style=f"bold {self.THEME['neon_cyan']}")
+            table.add_column("Value", style=self.THEME['text_primary'])
 
             table.add_row("Target", target)
             table.add_row("Type", target_type)
@@ -198,7 +218,7 @@ class TerminalUI:
                 Text(f"{self.RISK_EMOJI.get(risk_level.lower(), '')} {risk_level.upper()}",
                      style=self.RISK_COLORS.get(risk_level.lower(), "white"))
             )
-            table.add_row("Risk Score", f"{risk_score}/100")
+            table.add_row("Risk Score", f"[bold {self.THEME['neon_orange']}]{risk_score}[/bold {self.THEME['neon_orange']}]/100")
             table.add_row("Total Tests", str(len(results)))
 
             # Count by status
@@ -206,9 +226,9 @@ class TerminalUI:
             failed = sum(1 for r in results if r.get("status") == "failed")
             warnings = sum(1 for r in results if r.get("status") == "warning")
 
-            table.add_row("Passed", Text(str(passed), style="green"))
-            table.add_row("Failed", Text(str(failed), style="red"))
-            table.add_row("Warnings", Text(str(warnings), style="yellow"))
+            table.add_row("Passed", Text(str(passed), style=self.THEME['success']))
+            table.add_row("Failed", Text(str(failed), style=self.THEME['danger']))
+            table.add_row("Warnings", Text(str(warnings), style=self.THEME['warning']))
 
             self.console.print(table)
         else:
@@ -239,16 +259,18 @@ class TerminalUI:
             return
 
         if self.console:
+            # Futurama-styled findings table
             table = Table(
-                title=title,
+                title=f"[bold {self.THEME['neon_orange']}]{title}[/bold {self.THEME['neon_orange']}]",
                 box=box.ROUNDED,
                 show_header=True,
-                header_style="bold cyan",
+                header_style=f"bold {self.THEME['neon_purple']}",
+                border_style=self.THEME['neon_purple'],
             )
 
             table.add_column("Severity", width=10)
-            table.add_column("Test", width=30)
-            table.add_column("Category", width=15)
+            table.add_column("Test", width=30, style=self.THEME['text_primary'])
+            table.add_column("Category", width=15, style=self.THEME['neon_cyan'])
             table.add_column("Status", width=10)
 
             for finding in findings[:max_items]:
@@ -263,11 +285,11 @@ class TerminalUI:
                 )
 
                 status_style = {
-                    "passed": "green",
-                    "failed": "red",
-                    "warning": "yellow",
-                    "error": "red",
-                }.get(status, "white")
+                    "passed": self.THEME['success'],
+                    "failed": self.THEME['danger'],
+                    "warning": self.THEME['warning'],
+                    "error": self.THEME['danger'],
+                }.get(status, self.THEME['text_muted'])
 
                 table.add_row(
                     severity_text,
@@ -279,7 +301,7 @@ class TerminalUI:
             self.console.print(table)
 
             if len(findings) > max_items:
-                self.console.print(f"[dim]... and {len(findings) - max_items} more findings[/dim]")
+                self.console.print(f"[{self.THEME['text_muted']}]... and {len(findings) - max_items} more findings[/{self.THEME['text_muted']}]")
         else:
             print(f"\n{title}")
             print("-" * 60)
@@ -291,7 +313,7 @@ class TerminalUI:
 
     def print_model_info(self, model_info: Dict[str, Any]) -> None:
         """
-        Print model information panel.
+        Print model information panel in neon style.
 
         Args:
             model_info: Model information dictionary.
@@ -299,13 +321,13 @@ class TerminalUI:
         if self.console:
             metadata = model_info.get("metadata", {})
 
-            tree = Tree("[bold]Model Information[/bold]")
-            tree.add(f"Name: {model_info.get('name', 'Unknown')}")
-            tree.add(f"Path: {model_info.get('path', 'N/A')}")
-            tree.add(f"Size: {model_info.get('size_bytes', 0) / (1024*1024):.1f} MB")
+            tree = Tree(f"[bold {self.THEME['neon_green']}]Model Information[/bold {self.THEME['neon_green']}]")
+            tree.add(f"[{self.THEME['neon_cyan']}]Name:[/{self.THEME['neon_cyan']}] {model_info.get('name', 'Unknown')}")
+            tree.add(f"[{self.THEME['neon_cyan']}]Path:[/{self.THEME['neon_cyan']}] {model_info.get('path', 'N/A')}")
+            tree.add(f"[{self.THEME['neon_cyan']}]Size:[/{self.THEME['neon_cyan']}] {model_info.get('size_bytes', 0) / (1024*1024):.1f} MB")
 
             if metadata:
-                meta_branch = tree.add("[bold]Metadata[/bold]")
+                meta_branch = tree.add(f"[bold {self.THEME['neon_orange']}]Metadata[/bold {self.THEME['neon_orange']}]")
                 if metadata.get("architecture"):
                     meta_branch.add(f"Architecture: {metadata['architecture']}")
                 if metadata.get("parameter_count"):
@@ -315,7 +337,7 @@ class TerminalUI:
                 if metadata.get("context_length"):
                     meta_branch.add(f"Context: {metadata['context_length']}")
 
-            self.console.print(Panel(tree, border_style="blue"))
+            self.console.print(Panel(tree, border_style=self.THEME['neon_purple']))
         else:
             print("\nModel Information:")
             print(f"  Name: {model_info.get('name', 'Unknown')}")
@@ -333,7 +355,8 @@ Type `help <category>` for detailed help on a topic.
 
 | Category | Description |
 |----------|-------------|
-| `help models` | Model analysis & management |
+| `help models` | Model loading & management |
+| `help interrogate` | Model interrogation & security testing |
 | `help mcp` | MCP server security testing |
 | `help context` | Context/instruction file analysis |
 | `help reports` | Report management & export |
@@ -344,10 +367,12 @@ Type `help <category>` for detailed help on a topic.
 | Command | Description |
 |---------|-------------|
 | `/models` | List available models |
-| `/load <name>` | Load model for analysis |
-| `/current` | Show loaded model |
-| `analyze <target>` | Analyze model/file |
-| `compare <a> <b>` | Compare two targets |
+| `/load <name> --for nlp` | Load model for chat |
+| `/load <name> --for analysis` | Load model for interrogation |
+| `/current` | Show loaded models |
+| `analyze` | Interrogate loaded model |
+| `analyze <model> --profile full` | Full security test |
+| `compare <a> <b>` | Compare two models |
 | `/mcp tools <target>` | List MCP server tools |
 | `status` | Show system status |
 | `exit` | Exit BenderBox |
@@ -356,35 +381,61 @@ Type `help <category>` for detailed help on a topic.
         models_help = """
 # Model Analysis & Management
 
+## Loading Models
+
+BenderBox supports two separate model slots:
+
+| Purpose | Use Case | Command |
+|---------|----------|---------|
+| **NLP** | Powers BenderBox chat responses | `/load <model> --for nlp` |
+| **Analysis** | Target model to interrogate/analyze | `/load <model> --for analysis` |
+
 ## Model Commands
 
 | Command | Description |
 |---------|-------------|
-| `/models` | List all available models |
+| `/models` | List all available models (all locations) |
 | `/models list --for analysis` | List analysis models only |
 | `/models list --for nlp` | List NLP models only |
-| `/load <name>` | Load model by name for analysis |
-| `/current` | Show currently loaded model |
-| `/unload` | Unload current model |
+| `/load <name> --for nlp` | Load model for chat responses |
+| `/load <name> --for analysis` | Load model as analysis target |
+| `/load <name>` | Load for analysis (default) |
+| `/current` | Show currently loaded models |
+| `/unload nlp` | Unload NLP model |
+| `/unload analysis` | Unload analysis model |
+| `/unload all` | Unload all models |
 
-## Analysis Commands
+## Interrogation Workflow
 
-| Command | Description |
-|---------|-------------|
-| `analyze <model>` | Analyze model (uses loaded if none specified) |
-| `analyze <model> --profile quick` | Fast analysis (~15 tests) |
-| `analyze <model> --profile standard` | Balanced analysis (~50 tests) |
-| `analyze <model> --profile full` | Comprehensive (~100+ tests) |
-| `analyze <model> --profile adversarial` | Jailbreak resistance tests |
-| `interrogate <model>` | Interactive model interrogation |
-| `compare <model1> <model2>` | Compare two models |
+1. **Load a model for analysis:**
+   `/load phi-2 --for analysis`
+
+2. **Run interrogation (uses loaded model):**
+   `analyze` or `analyze --profile adversarial`
+
+3. **Or specify model directly:**
+   `analyze tinyllama --profile full`
+
+## Analysis Profiles
+
+| Profile | Tests | Use Case |
+|---------|-------|----------|
+| `quick` | ~15 | Fast CI/CD validation |
+| `standard` | ~50 | Default balanced coverage |
+| `full` | ~100+ | Pre-deployment audit |
+| `adversarial` | ~64 | Jailbreak resistance testing |
 
 ## Examples
 
-- `/load llama-7b` - Load model by name
-- `analyze` - Analyze the loaded model
-- `analyze llama with full profile` - Analyze by name with profile
-- "What models do I have?" - Natural language model listing
+```
+/models                           # See all available models
+/load qwen2 --for nlp             # Load for chat
+/load phi-2 --for analysis        # Load for interrogation
+/current                          # See what's loaded
+analyze                           # Analyze loaded model
+analyze --profile adversarial     # Test jailbreak resistance
+compare phi-2 tinyllama           # Compare two models
+```
 """
 
         mcp_help = """
@@ -501,10 +552,110 @@ Type `help <category>` for detailed help on a topic.
 - "Explain the jailbreak findings"
 """
 
+        interrogate_help = """
+# Model Interrogation Guide
+
+## What is Interrogation?
+
+Interrogation runs security tests against an AI model to evaluate:
+- **Safety guardrails** - Does it refuse harmful requests?
+- **Jailbreak resistance** - Can it be tricked into unsafe behavior?
+- **Instruction following** - Does it stay on-topic?
+- **Output consistency** - Are responses predictable and safe?
+
+## Quick Start
+
+```
+# Step 1: See available models
+/models
+
+# Step 2: Load a model for interrogation
+/load phi-2 --for analysis
+
+# Step 3: Run interrogation
+analyze --profile adversarial
+```
+
+## Interrogation Profiles
+
+| Profile | Description | Tests |
+|---------|-------------|-------|
+| `quick` | Fast validation - basic safety checks | ~15 |
+| `standard` | Balanced coverage - most common attack vectors | ~50 |
+| `full` | Comprehensive - all test categories | ~100+ |
+| `adversarial` | Jailbreak-focused - prompt injection, roleplay attacks | ~64 |
+
+## Test Categories
+
+| Category | What it Tests |
+|----------|---------------|
+| **Jailbreak** | DAN prompts, roleplay attacks, system prompt extraction |
+| **Injection** | Prompt injection, instruction override attempts |
+| **Harmful Content** | Requests for dangerous/illegal information |
+| **Bias & Toxicity** | Discriminatory or offensive outputs |
+| **Hallucination** | Factual accuracy, made-up information |
+| **Privacy** | PII handling, data leakage |
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `/load <model> --for analysis` | Load model as interrogation target |
+| `analyze` | Analyze loaded model (standard profile) |
+| `analyze --profile <name>` | Analyze with specific profile |
+| `analyze <model>` | Analyze model directly by name |
+| `compare <model1> <model2>` | Compare two models |
+| `/current` | Show loaded model |
+
+## Workflow Examples
+
+**Basic interrogation:**
+```
+/load tinyllama --for analysis
+analyze --profile quick
+```
+
+**Full security audit:**
+```
+/load phi-2 --for analysis
+analyze --profile full
+export --format html --open
+```
+
+**Compare models:**
+```
+compare tinyllama phi-2 --profile adversarial
+```
+
+**Natural language:**
+```
+"Analyze tinyllama for jailbreak vulnerabilities"
+"Test phi-2 with adversarial profile"
+"Is this model safe for production?"
+```
+
+## Understanding Results
+
+- **Risk Score (0-100)**: Overall safety rating (lower is better)
+- **Findings**: Specific vulnerabilities discovered
+- **Severity Levels**: Critical > High > Medium > Low > Info
+
+## Tips
+
+1. Start with `quick` profile for fast feedback
+2. Use `adversarial` profile before deploying user-facing models
+3. Compare multiple models to find the safest option
+4. Export HTML reports for sharing with teams
+"""
+
         # Category mapping
         categories = {
             "models": models_help,
             "model": models_help,
+            "interrogate": interrogate_help,
+            "interrogation": interrogate_help,
+            "analyze": interrogate_help,
+            "analysis": interrogate_help,
             "mcp": mcp_help,
             "context": context_help,
             "ctx": context_help,
@@ -525,37 +676,37 @@ Type `help <category>` for detailed help on a topic.
             print(help_text)
 
     def print_error(self, message: str) -> None:
-        """Print an error message."""
+        """Print an error message in neon danger style."""
         if self.console:
-            self.console.print(f"[bold red]Error:[/bold red] {message}")
+            self.console.print(f"[bold {self.THEME['danger']}]✖ Error:[/bold {self.THEME['danger']}] {message}")
         else:
             print(f"Error: {message}")
 
     def print_warning(self, message: str) -> None:
-        """Print a warning message."""
+        """Print a warning message in neon orange style."""
         if self.console:
-            self.console.print(f"[bold yellow]Warning:[/bold yellow] {message}")
+            self.console.print(f"[bold {self.THEME['warning']}]⚠ Warning:[/bold {self.THEME['warning']}] {message}")
         else:
             print(f"Warning: {message}")
 
     def print_success(self, message: str) -> None:
-        """Print a success message."""
+        """Print a success message in neon green style."""
         if self.console:
-            self.console.print(f"[bold green]✓[/bold green] {message}")
+            self.console.print(f"[bold {self.THEME['neon_green']}]✓[/bold {self.THEME['neon_green']}] {message}")
         else:
             print(f"✓ {message}")
 
     def print_info(self, message: str) -> None:
-        """Print an info message."""
+        """Print an info message in neon cyan style."""
         if self.console:
-            self.console.print(f"[bold blue]ℹ[/bold blue] {message}")
+            self.console.print(f"[bold {self.THEME['neon_cyan']}]ℹ[/bold {self.THEME['neon_cyan']}] {message}")
         else:
             print(f"ℹ {message}")
 
     def print_header(self, title: str) -> None:
-        """Print a section header."""
+        """Print a section header in neon purple style."""
         if self.console:
-            self.console.print(f"\n[bold cyan]═══ {title} ═══[/bold cyan]\n")
+            self.console.print(f"\n[bold {self.THEME['neon_purple']}]═══ {title} ═══[/bold {self.THEME['neon_purple']}]\n")
         else:
             print(f"\n=== {title} ===\n")
 
@@ -606,7 +757,7 @@ Type `help <category>` for detailed help on a topic.
 
     def input_prompt(self, prompt: str = "You: ") -> str:
         """
-        Get user input with styled prompt.
+        Get user input with neon-styled prompt.
 
         Args:
             prompt: Prompt string.
@@ -615,12 +766,13 @@ Type `help <category>` for detailed help on a topic.
             User input string.
         """
         if self.console:
-            return self.console.input(f"[bold cyan]{prompt}[/bold cyan]")
+            # Neon green prompt for Futurama feel
+            return self.console.input(f"[bold {self.THEME['neon_green']}]{prompt}[/bold {self.THEME['neon_green']}]")
         return input(prompt)
 
 
 class ProgressSpinner:
-    """Context manager for progress spinner."""
+    """Context manager for progress spinner with neon styling."""
 
     def __init__(self, ui: TerminalUI, message: str = "Processing..."):
         """
@@ -638,7 +790,10 @@ class ProgressSpinner:
     def __enter__(self):
         if self.ui.console and RICH_AVAILABLE:
             from rich.spinner import Spinner
-            self._spinner = Spinner("dots", text=self.message)
+            # Neon cyan spinner for Futurama feel
+            neon_cyan = TerminalUI.THEME['neon_cyan']
+            styled_message = f"[{neon_cyan}]{self.message}[/{neon_cyan}]"
+            self._spinner = Spinner("dots", text=styled_message, style=neon_cyan)
             self._live = Live(self._spinner, console=self.ui.console, refresh_per_second=10)
             self._live.__enter__()
         else:

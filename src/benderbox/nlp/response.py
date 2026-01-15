@@ -16,6 +16,18 @@ from benderbox.nlp.persona import BenderPersona, Severity
 
 logger = logging.getLogger(__name__)
 
+# Stop tokens for TinyLlama to prevent hallucination
+# Using ### format which TinyLlama understands well
+STOP_TOKENS = [
+    "<|im_end|>",           # ChatML end token
+    "\n### User",           # Next user turn in ### format
+    "\n### System",         # System message
+    "\n### Human",          # Alternate user format
+    "\n###",                # Any ### section marker
+    "\n\n---",              # Markdown separator
+    "</s>",                 # End of sequence token
+]
+
 # Strong system prompt to prevent hallucination
 BENDERBOX_SYSTEM_PROMPT = """You are BenderBox, an AI model security analysis assistant.
 
@@ -161,14 +173,15 @@ class ResponseGenerator:
             yield response
             return
 
-        # For LLM responses, stream generation
+        # For LLM responses, stream generation with stop tokens
         prompt = self._build_response_prompt(context)
 
         async for chunk in self._llm_engine.generate_stream(
             prompt=prompt,
             model_type="analysis",
-            max_tokens=1024,
-            temperature=0.7,
+            max_tokens=256,          # Shorter for Q&A
+            temperature=0.3,         # Lower for consistency
+            stop=STOP_TOKENS,        # Prevent hallucination
         ):
             yield chunk
 
@@ -492,8 +505,9 @@ class ResponseGenerator:
         return await self._llm_engine.generate(
             prompt=prompt,
             model_type="analysis",
-            max_tokens=512,
-            temperature=0.7,
+            max_tokens=256,
+            temperature=0.3,
+            stop=STOP_TOKENS,
         )
 
     def _template_explanation(self, context: ResponseContext) -> str:
@@ -548,8 +562,9 @@ class ResponseGenerator:
             return await self._llm_engine.generate(
                 prompt=prompt,
                 model_type="analysis",
-                max_tokens=512,
-                temperature=0.7,
+                max_tokens=256,
+                temperature=0.3,
+                stop=STOP_TOKENS,
             )
 
         return "I don't have specific information about that topic in my knowledge base."
@@ -886,8 +901,9 @@ See `examples/README.md` for full documentation.
         return await self._llm_engine.generate(
             prompt=prompt,
             model_type="analysis",
-            max_tokens=512,
-            temperature=0.7,
+            max_tokens=256,
+            temperature=0.3,
+            stop=STOP_TOKENS,
         )
 
     def _format_error(self, error: str, context: str = None) -> str:
@@ -895,82 +911,70 @@ See `examples/README.md` for full documentation.
         return self._persona.format_error(error, context)
 
     def _build_response_prompt(self, context: ResponseContext) -> str:
-        """Build prompt for LLM response generation."""
+        """Build prompt for LLM response generation - simplified for TinyLlama."""
+        # Build conversation history in ### format
         history_str = ""
         if context.history:
-            for msg in context.history[-5:]:  # Last 5 messages
-                history_str += f"{msg.role}: {msg.content}\n"
+            for msg in context.history[-3:]:  # Last 3 messages
+                role = "User" if msg.role == "user" else "Assistant"
+                history_str += f"### {role}:\n{msg.content[:200]}\n\n"
 
-        return f"""{BENDERBOX_SYSTEM_PROMPT}
+        return f"""### System:
+You are BenderBox, an AI security analysis assistant. Help users analyze AI models, test MCP servers, and review prompts for security. Be concise and helpful.
 
-Conversation history:
-{history_str}
+{history_str}### User:
+{context.user_query}
 
-User query: {context.user_query}
-
-Provide a helpful response about security analysis. If the question is outside your scope, politely redirect to your capabilities:"""
+### Assistant:
+"""
 
     def _build_explanation_prompt(self, context: ResponseContext) -> str:
-        """Build prompt for explanation generation."""
+        """Build prompt for explanation generation - simplified for TinyLlama."""
         result_str = ""
         if context.analysis_result:
             import json
-            result_str = json.dumps(context.analysis_result, indent=2)[:2000]
+            result_str = json.dumps(context.analysis_result, indent=2)[:1500]
 
-        return f"""{BENDERBOX_SYSTEM_PROMPT}
+        return f"""### System:
+You are BenderBox explaining analysis results. Only describe what is in the data below. Do not make up findings.
 
-You are explaining REAL analysis results from BenderBox. Only describe what is in the data below.
-
-Analysis results:
+Analysis data:
 {result_str}
 
-User question: {context.user_query}
+### User:
+{context.user_query}
 
-Explain these results clearly and accurately. Do not make up findings that are not in the data:"""
+### Assistant:
+"""
 
     def _build_knowledge_prompt(self, context: ResponseContext) -> str:
-        """Build prompt for knowledge query."""
+        """Build prompt for knowledge query - simplified for TinyLlama."""
         knowledge_str = ""
         if context.knowledge:
             knowledge_str = "\n".join([
-                f"- {entry.name}: {entry.description[:200]}"
-                for entry in context.knowledge[:5]
+                f"- {entry.name}: {entry.description[:150]}"
+                for entry in context.knowledge[:3]
             ])
 
-        return f"""{BENDERBOX_SYSTEM_PROMPT}
+        return f"""### System:
+You are BenderBox answering questions about AI security. Topics: model vulnerabilities, jailbreaks, MCP server security, prompt injection. Be concise.
 
-You are answering a question about AI security topics within BenderBox's scope.
+{f"Knowledge:{chr(10)}{knowledge_str}" if knowledge_str else ""}
 
-ONLY answer about:
-- AI model security vulnerabilities
-- Jailbreak techniques and defenses
-- MCP server security
-- Prompt injection attacks
-- Model safety testing
+### User:
+{context.user_query}
 
-If the question is outside these topics, explain that BenderBox focuses on AI security analysis.
-
-{f"Relevant knowledge from database:{chr(10)}{knowledge_str}" if knowledge_str else "No specific knowledge entries found for this query."}
-
-Question: {context.user_query}
-
-Provide a focused answer about AI security:"""
+### Assistant:
+"""
 
     def _build_general_prompt(self, context: ResponseContext) -> str:
-        """Build prompt for general questions."""
-        history_str = ""
-        if context.history:
-            for msg in context.history[-3:]:  # Last 3 messages for context
-                history_str += f"{msg.role}: {msg.content[:100]}...\n"
+        """Build prompt for general questions - simplified for TinyLlama."""
+        # Simple, direct prompt format that TinyLlama handles better
+        return f"""### System:
+You are BenderBox, an AI security analysis assistant. You help users analyze AI models, test MCP servers, and review prompts for security issues. Keep responses brief and helpful. If asked about unrelated topics, politely explain your purpose.
 
-        return f"""{BENDERBOX_SYSTEM_PROMPT}
+### User:
+{context.user_query}
 
-{f"Recent conversation:{chr(10)}{history_str}" if history_str else ""}
-
-User question: {context.user_query}
-
-If this question is about AI security analysis, MCP servers, model testing, or prompt security, answer it.
-If it's about something else (self-driving cars, image generation, general coding, etc.), politely explain:
-"I'm BenderBox, an AI security analysis tool. I can help you analyze models, test MCP servers, and review prompts for security issues. Try 'help' to see what I can do."
-
-Response:"""
+### Assistant:
+"""

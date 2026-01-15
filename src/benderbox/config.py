@@ -84,7 +84,7 @@ class LLMConfig:
     code_model_path: str = "models/code/model.gguf"
 
     # Model parameters
-    context_length: int = 4096
+    context_length: int = 2048  # Match TinyLlama's training context
     threads: int = 4
     gpu_layers: int = 0  # 0 = CPU only
 

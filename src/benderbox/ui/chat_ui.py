@@ -250,6 +250,7 @@ class ChatUI:
         self._running = False
         self._last_result: Optional[Dict[str, Any]] = None
         self._current_analysis_model: Optional[str] = None  # Path to loaded analysis model
+        self._current_nlp_model: Optional[str] = None  # Path to loaded NLP/chat model
 
     def register_handler(
         self,
@@ -567,7 +568,7 @@ class ChatUI:
             self.ui.print_warning("Semantic analysis requires conversation manager.")
 
     def _print_semantic_result(self, result: Dict[str, Any]) -> None:
-        """Print semantic analysis result with formatting."""
+        """Print semantic analysis result with neon-themed formatting."""
         # Check if this is a semantic analysis result
         if result.get("analysis_type") != "semantic":
             self.ui.print_analysis_summary(result)
@@ -579,15 +580,16 @@ class ChatUI:
         # Print header
         self.ui.print_header(f"Semantic Analysis: {result.get('target', 'Unknown')}")
 
-        # Print summary
+        # Print summary - use theme colors
         risk_score = summary.get("risk_score", 0)
-        risk_color = "red" if risk_score >= 70 else "yellow" if risk_score >= 40 else "green"
+        theme = TerminalUI.THEME
+        risk_color = theme['danger'] if risk_score >= 70 else theme['warning'] if risk_score >= 40 else theme['success']
 
         if self.ui.console:
             from rich.table import Table
             from rich.panel import Panel
 
-            # Summary panel
+            # Summary panel with neon styling
             summary_text = f"""
 Risk Score: [{risk_color}]{risk_score:.0f}/100[/{risk_color}]
 Critical: {summary.get('critical_count', 0)} | High: {summary.get('high_count', 0)}
@@ -596,23 +598,23 @@ LLM Used: {'Yes' if result.get('llm_used') else 'No (pattern-based)'}
 
 {summary.get('text', 'No summary available.')}
 """
-            self.ui.console.print(Panel(summary_text, title="Summary", border_style="cyan"))
+            self.ui.console.print(Panel(summary_text, title=f"[{theme['neon_orange']}]Summary[/{theme['neon_orange']}]", border_style=theme['neon_purple']))
 
-            # Findings table
+            # Findings table with neon styling
             if findings:
-                table = Table(title="Security Findings", show_header=True)
+                table = Table(title=f"[{theme['neon_orange']}]Security Findings[/{theme['neon_orange']}]", show_header=True, border_style=theme['neon_purple'], header_style=f"bold {theme['neon_purple']}")
                 table.add_column("Severity", style="bold")
-                table.add_column("Category")
+                table.add_column("Category", style=theme['neon_cyan'])
                 table.add_column("Title")
                 table.add_column("Location")
                 table.add_column("Confidence")
 
                 severity_colors = {
-                    "critical": "red bold",
-                    "high": "red",
-                    "medium": "yellow",
-                    "low": "cyan",
-                    "info": "dim",
+                    "critical": f"{theme['danger']} bold",
+                    "high": theme['warning'],
+                    "medium": "#ffff00",
+                    "low": theme['neon_cyan'],
+                    "info": theme['text_muted'],
                 }
 
                 for finding in findings:
@@ -631,14 +633,14 @@ LLM Used: {'Yes' if result.get('llm_used') else 'No (pattern-based)'}
                 # Print details for critical/high findings
                 critical_high = [f for f in findings if f.get("severity") in ("critical", "high")]
                 if critical_high:
-                    self.ui.console.print("\n[bold]Finding Details:[/bold]")
+                    self.ui.console.print(f"\n[bold {theme['neon_orange']}]Finding Details:[/bold {theme['neon_orange']}]")
                     for finding in critical_high[:5]:  # Limit to top 5
-                        self.ui.console.print(f"\n[bold]{finding.get('title')}[/bold]")
+                        self.ui.console.print(f"\n[bold {theme['neon_cyan']}]{finding.get('title')}[/bold {theme['neon_cyan']}]")
                         self.ui.console.print(f"  {finding.get('description', 'No description')}")
                         if finding.get("recommendation"):
-                            self.ui.console.print(f"  [green]Recommendation:[/green] {finding.get('recommendation')}")
+                            self.ui.console.print(f"  [{theme['success']}]Recommendation:[/{theme['success']}] {finding.get('recommendation')}")
                         if finding.get("cwe_id"):
-                            self.ui.console.print(f"  [dim]CWE: {finding.get('cwe_id')}[/dim]")
+                            self.ui.console.print(f"  [{theme['text_muted']}]CWE: {finding.get('cwe_id')}[/{theme['text_muted']}]")
             else:
                 self.ui.print_success("No security issues found!")
         else:
@@ -704,23 +706,29 @@ LLM Used: {'Yes' if result.get('llm_used') else 'No (pattern-based)'}
             self.ui.print_error(f"Search failed: {e}")
 
     def _print_search_results(self, results: List[Dict[str, Any]], query: str) -> None:
-        """Print search results with formatting."""
+        """Print search results with neon-themed formatting."""
         self.ui.print_header(f"Search Results for: {query}")
 
         if self.ui.console:
             from rich.table import Table
             from rich.panel import Panel
 
-            table = Table(title=f"Found {len(results)} results", show_header=True)
+            theme = TerminalUI.THEME
+            table = Table(
+                title=f"[{theme['neon_orange']}]Found {len(results)} results[/{theme['neon_orange']}]",
+                show_header=True,
+                border_style=theme['neon_purple'],
+                header_style=f"bold {theme['neon_purple']}"
+            )
             table.add_column("Type", style="bold", width=10)
-            table.add_column("Score", width=8)
-            table.add_column("Name/Target", width=25)
-            table.add_column("Details", width=40)
+            table.add_column("Score", width=8, style=theme['neon_orange'])
+            table.add_column("Name/Target", width=25, style=theme['text_primary'])
+            table.add_column("Details", width=40, style=theme['neon_cyan'])
 
             type_colors = {
-                "report": "cyan",
-                "finding": "yellow",
-                "knowledge": "green",
+                "report": theme['neon_cyan'],
+                "finding": theme['warning'],
+                "knowledge": theme['success'],
             }
 
             for result in results:
@@ -739,7 +747,7 @@ LLM Used: {'Yes' if result.get('llm_used') else 'No (pattern-based)'}
                     name = metadata.get("name", "Unknown")
                     details = metadata.get("category", "")
 
-                color = type_colors.get(result_type, "white")
+                color = type_colors.get(result_type, theme['text_muted'])
                 table.add_row(
                     f"[{color}]{result_type}[/{color}]",
                     f"{score:.2f}",
@@ -755,7 +763,7 @@ LLM Used: {'Yes' if result.get('llm_used') else 'No (pattern-based)'}
                 content = top.get("content", "")[:300]
                 if len(top.get("content", "")) > 300:
                     content += "..."
-                self.ui.console.print(Panel(content, title="Top Result Preview", border_style="dim"))
+                self.ui.console.print(Panel(content, title=f"[{theme['neon_cyan']}]Top Result Preview[/{theme['neon_cyan']}]", border_style=theme['text_muted']))
         else:
             print(f"\nFound {len(results)} results:\n")
             for i, result in enumerate(results, 1):
@@ -967,8 +975,122 @@ LLM Used: {'Yes' if result.get('llm_used') else 'No (pattern-based)'}
 
             self.ui.print_info(f"\nOverall Risk: {server_info.overall_risk_level.value.upper()} ({server_info.overall_risk_score}/100)")
 
+            # Save report to reports directory
+            await self._save_mcp_tools_report(target, server_info)
+
         except Exception as e:
             self.ui.print_error(f"Failed to list tools: {e}")
+
+    async def _save_mcp_tools_report(self, target: str, server_info) -> None:
+        """Save MCP tools analysis report to reports directory."""
+        import json
+        from datetime import datetime
+        from pathlib import Path
+        from benderbox.config import get_config
+
+        try:
+            config = get_config()
+            reports_path = Path(config.storage.reports_path)
+            reports_path.mkdir(parents=True, exist_ok=True)
+
+            # Generate base filename from target
+            import re
+            safe_name = re.sub(r'[^\w\-]', '_', target)[:50]
+            base_filename = f"mcp_tools_{safe_name}"
+
+            # Check for existing reports with same base name
+            existing = list(reports_path.glob(f"{base_filename}*.json"))
+
+            filename = f"{base_filename}.json"
+            report_path = reports_path / filename
+
+            if existing:
+                # Found existing report(s) - ask user what to do
+                latest_existing = max(existing, key=lambda p: p.stat().st_mtime)
+                self.ui.print_warning(f"Existing report found: {latest_existing.name}")
+
+                choice = await self._prompt_report_action(latest_existing.name)
+
+                if choice == "overwrite":
+                    # Use the existing filename (overwrite it)
+                    report_path = latest_existing
+                elif choice == "rename":
+                    # Add number suffix
+                    suffix = len(existing) + 1
+                    filename = f"{base_filename}_{suffix}.json"
+                    report_path = reports_path / filename
+                elif choice == "skip":
+                    self.ui.print_info("Report save skipped.")
+                    return
+                # "update" falls through to overwrite with new data
+
+            # Build report in format compatible with report viewer
+            report = {
+                "schema_version": "1.0.0",
+                "report_type": "mcp_tools",
+                "analysis_type": "mcp_server",
+                "timestamp": datetime.now().isoformat(),
+                "target": target,
+                "target_name": server_info.name or target,
+                "target_type": "mcp_server",
+                "server": {
+                    "name": server_info.name or target,
+                    "description": server_info.description or "",
+                    "url": target,
+                },
+                "risk_assessment": {
+                    "overall_level": server_info.overall_risk_level.value,
+                    "overall_score": server_info.overall_risk_score,
+                },
+                "tools": [
+                    {
+                        "name": tool.name,
+                        "description": tool.description or "",
+                        "risk_level": tool.risk_level.value,
+                        "risk_score": tool.risk_score,
+                        "capabilities": [c.value if hasattr(c, 'value') else str(c) for c in (tool.capabilities or [])],
+                        "risk_factors": tool.risk_factors or [],
+                        "input_schema": tool.input_schema or {},
+                    }
+                    for tool in server_info.tools
+                ],
+                "summary": {
+                    "total_tools": len(server_info.tools),
+                    "critical_tools": len([t for t in server_info.tools if t.risk_level.value == "critical"]),
+                    "high_tools": len([t for t in server_info.tools if t.risk_level.value == "high"]),
+                    "medium_tools": len([t for t in server_info.tools if t.risk_level.value == "medium"]),
+                    "low_tools": len([t for t in server_info.tools if t.risk_level.value == "low"]),
+                },
+            }
+
+            report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+            self.ui.print_info(f"Report saved: {report_path}")
+
+        except Exception as e:
+            self.ui.print_warning(f"Failed to save report: {e}")
+
+    async def _prompt_report_action(self, existing_name: str) -> str:
+        """Prompt user for action when duplicate report exists."""
+        self.ui.print_info("What would you like to do?")
+        self.ui.print_info("  [1] Overwrite existing report")
+        self.ui.print_info("  [2] Save as new (rename with number)")
+        self.ui.print_info("  [3] Skip saving")
+
+        try:
+            response = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: input("Choice [1/2/3]: ").strip()
+            )
+            if response == "1":
+                return "overwrite"
+            elif response == "2":
+                return "rename"
+            elif response == "3":
+                return "skip"
+            else:
+                # Default to rename for safety
+                return "rename"
+        except (EOFError, KeyboardInterrupt):
+            return "skip"
 
     async def _handle_mcp_interrogate(self, command: ParsedCommand) -> None:
         """Handle MCP security interrogation command."""
@@ -1316,13 +1438,20 @@ LLM Used: {'Yes' if result.get('llm_used') else 'No (pattern-based)'}
         # Default: show models with current loaded status
         await self._show_model_list(manager, "all")
 
-        # Show current loaded model
+        # Show current loaded models
+        from pathlib import Path
+        loaded_info = []
+        if self._current_nlp_model:
+            model_name = Path(self._current_nlp_model).stem
+            loaded_info.append(f"NLP: {model_name}")
         if self._current_analysis_model:
-            from pathlib import Path
             model_name = Path(self._current_analysis_model).stem
-            self.ui.print_success(f"\nCurrently loaded: {model_name}")
+            loaded_info.append(f"Analysis: {model_name}")
+
+        if loaded_info:
+            self.ui.print_success(f"\nCurrently loaded: {', '.join(loaded_info)}")
         else:
-            self.ui.print_info("\nNo analysis model loaded. Use '/load <model>' to load one.")
+            self.ui.print_info("\nNo models loaded. Use '/load <model> --for nlp|analysis' to load one.")
 
     async def _show_model_list(self, manager, purpose: str) -> None:
         """Show model list based on purpose."""
@@ -1344,62 +1473,162 @@ LLM Used: {'Yes' if result.get('llm_used') else 'No (pattern-based)'}
             self.ui.print_info("\n**NLP Models** (models/nlp/):")
             if nlp_models:
                 for m in nlp_models:
-                    self.ui.print_info(f"  - {m['name']} ({m['size_mb']} MB)")
+                    nlp_marker = " [LOADED]" if self._current_nlp_model and m['path'] == self._current_nlp_model else ""
+                    self.ui.print_info(f"  - {m['name']} ({m['size_mb']} MB){nlp_marker}")
             else:
                 self.ui.print_warning("  No NLP models found.")
                 self.ui.print_info("  Download with: benderbox models download tinyllama")
+
+        # Show ALL downloaded models (including data/models/huggingface/)
+        if purpose == "all":
+            all_models = manager.get_downloaded_models()
+            # Filter out models already shown above
+            analysis_paths = {m['path'] for m in manager.list_analysis_models()}
+            nlp_paths = {m['path'] for m in manager.list_nlp_models()}
+            other_models = [m for m in all_models if m['path'] not in analysis_paths and m['path'] not in nlp_paths]
+
+            if other_models:
+                self.ui.print_info("\n**Downloaded Models** (data/models/):")
+                for m in other_models:
+                    # Check if loaded for either purpose
+                    markers = []
+                    if self._current_analysis_model and m['path'] == self._current_analysis_model:
+                        markers.append("ANALYSIS")
+                    if self._current_nlp_model and m['path'] == self._current_nlp_model:
+                        markers.append("NLP")
+                    marker = f" [{', '.join(markers)}]" if markers else ""
+                    self.ui.print_info(f"  - {m['name']} ({m['size_mb']} MB){marker}")
+                self.ui.print_info("\n  Use '/load <name> --for nlp' or '/load <name> --for analysis'")
 
     async def _handle_load_model(self, command: ParsedCommand) -> None:
         """Handle load model command."""
         if not command.args:
             self.ui.print_error("Please specify a model name to load.")
-            self.ui.print_info("Usage: /load <model-name>")
-            self.ui.print_info("Example: /load llama-7b")
+            self.ui.print_info("Usage: /load <model-name> [--for nlp|analysis]")
+            self.ui.print_info("Example: /load tinyllama --for nlp")
+            self.ui.print_info("Example: /load phi-2 --for analysis")
             self.ui.print_info("Use '/models' to see available models.")
             return
 
         model_name = command.args[0]
+        purpose = command.flags.get("for", "analysis").lower()
+
+        if purpose not in ("nlp", "analysis"):
+            self.ui.print_error(f"Invalid purpose: {purpose}. Use 'nlp' or 'analysis'.")
+            return
 
         from benderbox.utils.model_manager import ModelManager
         from pathlib import Path
 
         manager = ModelManager()
 
-        # Check if it's a direct path
-        if model_name.endswith(".gguf"):
+        # Check if it's a direct path (contains path separators)
+        if os.path.sep in model_name or model_name.startswith("."):
             model_path = Path(model_name)
             if model_path.exists():
-                self._current_analysis_model = str(model_path.resolve())
-                self.ui.print_success(f"Loaded model: {model_path.name}")
+                resolved_path = str(model_path.resolve())
+                if purpose == "nlp":
+                    self._current_nlp_model = resolved_path
+                    self.ui.print_success(f"Loaded NLP model: {model_path.name}")
+                    self.ui.print_info("This model will be used for chat responses.")
+                else:
+                    self._current_analysis_model = resolved_path
+                    self.ui.print_success(f"Loaded analysis model: {model_path.name}")
+                    self.ui.print_info("This model will be the target for analysis/interrogation.")
                 return
             else:
                 self.ui.print_error(f"Model file not found: {model_name}")
                 return
 
-        # Try to find by name in analysis folder
-        model_path = manager.find_model_by_name(model_name, purpose="analysis")
+        # Search for model in all locations (by name, even if it ends with .gguf)
+        model_path = self._find_model_anywhere(manager, model_name)
 
         if model_path:
-            self._current_analysis_model = str(model_path)
-            self.ui.print_success(f"Loaded model: {model_path.name}")
-            self.ui.print_info(f"Path: {model_path}")
-            self.ui.print_info("\nYou can now analyze this model with 'analyze' or interrogate it.")
+            resolved_path = str(model_path)
+            if purpose == "nlp":
+                self._current_nlp_model = resolved_path
+                self.ui.print_success(f"Loaded NLP model: {model_path.name}")
+                self.ui.print_info(f"Path: {model_path}")
+                self.ui.print_info("\nThis model will be used for chat responses.")
+            else:
+                self._current_analysis_model = resolved_path
+                self.ui.print_success(f"Loaded analysis model: {model_path.name}")
+                self.ui.print_info(f"Path: {model_path}")
+                self.ui.print_info("\nYou can now analyze this model with 'analyze' or interrogate it.")
         else:
-            # Show suggestions
-            suggestions = manager.get_model_suggestions(model_name, purpose="analysis")
-            if suggestions:
+            # Show available models
+            all_models = manager.get_downloaded_models()
+            if all_models:
                 self.ui.print_error(f"Model '{model_name}' not found.")
-                self.ui.print_info("Did you mean:")
-                for s in suggestions[:5]:
-                    self.ui.print_info(f"  - {s}")
+                self.ui.print_info("Available models:")
+                for m in all_models[:5]:
+                    self.ui.print_info(f"  - {m['name']}")
+                if len(all_models) > 5:
+                    self.ui.print_info(f"  ... and {len(all_models) - 5} more (use /models to see all)")
             else:
                 self.ui.print_error(f"Model '{model_name}' not found.")
                 self.ui.print_info("Use '/models' to see available models.")
 
+    def _find_model_anywhere(self, manager, name: str) -> Optional[Path]:
+        """Find a model by name in any location."""
+        from pathlib import Path
+
+        name_lower = name.lower().strip()
+
+        # 1. Check purpose-specific folders first
+        for purpose in ("analysis", "nlp"):
+            model_path = manager.find_model_by_name(name, purpose=purpose)
+            if model_path:
+                return model_path
+
+        # 2. Search all downloaded models
+        all_models = manager.get_downloaded_models()
+        matches = []
+
+        for m in all_models:
+            model_name = Path(m['path']).stem.lower()
+            filename = Path(m['path']).name.lower()
+
+            # Exact stem match
+            if model_name == name_lower:
+                return Path(m['path'])
+
+            # Exact filename match
+            if filename == name_lower or filename == name_lower + ".gguf":
+                return Path(m['path'])
+
+            # Fuzzy match (name contained in filename)
+            if name_lower in model_name:
+                matches.append(m)
+
+        if len(matches) == 1:
+            return Path(matches[0]['path'])
+        elif len(matches) > 1:
+            # Return shortest match (most specific)
+            return Path(min(matches, key=lambda m: len(Path(m['path']).stem))['path'])
+
+        return None
+
     async def _handle_current_model(self, command: ParsedCommand) -> None:
-        """Handle current model command - show loaded model."""
+        """Handle current model command - show loaded models."""
+        from pathlib import Path
+
+        has_models = False
+
+        if self._current_nlp_model:
+            has_models = True
+            model_path = Path(self._current_nlp_model)
+            model_name = model_path.stem
+            size_mb = model_path.stat().st_size // (1024 * 1024) if model_path.exists() else "?"
+
+            self.ui.print_header("Current NLP/Chat Model")
+            self.ui.print_info(f"Name: {model_name}")
+            self.ui.print_info(f"Path: {model_path}")
+            self.ui.print_info(f"Size: {size_mb} MB")
+            self.ui.print_info("Purpose: Powers BenderBox chat responses")
+
         if self._current_analysis_model:
-            from pathlib import Path
+            has_models = True
             model_path = Path(self._current_analysis_model)
             model_name = model_path.stem
             size_mb = model_path.stat().st_size // (1024 * 1024) if model_path.exists() else "?"
@@ -1408,24 +1637,51 @@ LLM Used: {'Yes' if result.get('llm_used') else 'No (pattern-based)'}
             self.ui.print_info(f"Name: {model_name}")
             self.ui.print_info(f"Path: {model_path}")
             self.ui.print_info(f"Size: {size_mb} MB")
+            self.ui.print_info("Purpose: Target for analysis/interrogation")
+
+        if has_models:
             self.ui.print_info("\nCommands:")
-            self.ui.print_info("  /unload    - Unload current model")
-            self.ui.print_info("  /load <name> - Switch to another model")
-            self.ui.print_info("  analyze    - Analyze the loaded model")
+            self.ui.print_info("  /unload nlp      - Unload NLP model")
+            self.ui.print_info("  /unload analysis - Unload analysis model")
+            self.ui.print_info("  /unload all      - Unload all models")
+            self.ui.print_info("  /load <name> --for nlp|analysis")
         else:
-            self.ui.print_warning("No analysis model currently loaded.")
-            self.ui.print_info("Use '/load <model-name>' to load one.")
+            self.ui.print_warning("No models currently loaded.")
+            self.ui.print_info("Use '/load <model-name> --for nlp' for chat model")
+            self.ui.print_info("Use '/load <model-name> --for analysis' for analysis target")
             self.ui.print_info("Use '/models' to see available models.")
 
     async def _handle_unload_model(self, command: ParsedCommand) -> None:
         """Handle unload model command."""
-        if self._current_analysis_model:
-            from pathlib import Path
+        from pathlib import Path
+
+        # Determine which model to unload
+        target = command.args[0].lower() if command.args else "all"
+
+        if target not in ("nlp", "analysis", "all"):
+            self.ui.print_error(f"Invalid target: {target}. Use 'nlp', 'analysis', or 'all'.")
+            return
+
+        unloaded = []
+
+        if target in ("nlp", "all") and self._current_nlp_model:
+            model_name = Path(self._current_nlp_model).stem
+            self._current_nlp_model = None
+            unloaded.append(f"NLP model: {model_name}")
+
+        if target in ("analysis", "all") and self._current_analysis_model:
             model_name = Path(self._current_analysis_model).stem
             self._current_analysis_model = None
-            self.ui.print_success(f"Unloaded model: {model_name}")
+            unloaded.append(f"Analysis model: {model_name}")
+
+        if unloaded:
+            for msg in unloaded:
+                self.ui.print_success(f"Unloaded {msg}")
         else:
-            self.ui.print_info("No model currently loaded.")
+            if target == "all":
+                self.ui.print_info("No models currently loaded.")
+            else:
+                self.ui.print_info(f"No {target} model currently loaded.")
 
     async def run(self) -> None:
         """Run the interactive chat loop."""
@@ -1489,7 +1745,7 @@ class StreamingChatUI(ChatUI):
     Chat UI with streaming response support.
 
     Displays responses as they are generated for a more
-    interactive experience.
+    interactive experience with neon-themed styling.
     """
 
     async def _handle_query(self, command: ParsedCommand) -> None:
@@ -1501,9 +1757,10 @@ class StreamingChatUI(ChatUI):
 
         if self._conversation:
             try:
-                # Print response prefix
+                # Print response prefix with neon green
+                theme = TerminalUI.THEME
                 if self.ui.console:
-                    self.ui.console.print("[bold cyan]BenderBox:[/bold cyan] ", end="")
+                    self.ui.console.print(f"[bold {theme['neon_green']}]BenderBox:[/bold {theme['neon_green']}] ", end="")
                 else:
                     print("BenderBox: ", end="")
 

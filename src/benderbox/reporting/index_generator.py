@@ -195,6 +195,22 @@ REPORT_VIEWER_HTML = '''<!DOCTYPE html>
             color: var(--neon-green);
         }
 
+        .report-item.selected {
+            background: var(--bg-card);
+            border-left-color: var(--neon-cyan) !important;
+            box-shadow: inset 0 0 10px rgba(0, 255, 255, 0.1);
+        }
+
+        .report-item.selected::before {
+            content: "✓";
+            position: absolute;
+            right: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--neon-cyan);
+            font-weight: bold;
+        }
+
         .report-name {
             font-weight: bold;
             margin-bottom: 5px;
@@ -831,7 +847,8 @@ REPORT_VIEWER_HTML = '''<!DOCTYPE html>
             const list = document.getElementById('report-list');
             list.innerHTML = reports.map((report, index) => `
                 <li class="report-item ${index === 0 ? 'active' : ''}"
-                    onclick="selectReport(${index})"
+                    onclick="selectReport(${index}, event)"
+                    data-index="${index}"
                     data-name="${escapeHtml(report.target_name || 'Unknown').toLowerCase()}"
                     data-type="${escapeHtml(report._analysis_type || 'unknown')}">
                     <div class="report-name">${escapeHtml(report.target_name || 'Unknown')}</div>
@@ -846,17 +863,112 @@ REPORT_VIEWER_HTML = '''<!DOCTYPE html>
             `).join('');
         }
 
-        function selectReport(index) {
+        function selectReport(index, event) {
+            // Handle Ctrl+Click for comparison selection
+            if (event && event.ctrlKey) {
+                const idx = selectedReports.indexOf(index);
+                if (idx > -1) {
+                    // Deselect if already selected
+                    selectedReports.splice(idx, 1);
+                } else {
+                    // Add to selection (max 4 for comparison)
+                    if (selectedReports.length < 4) {
+                        selectedReports.push(index);
+                    }
+                }
+
+                // Update visual selection state
+                document.querySelectorAll('.report-item').forEach((item, i) => {
+                    const isSelected = selectedReports.includes(i);
+                    item.classList.toggle('selected', isSelected);
+                    item.style.borderLeftColor = isSelected ? 'var(--neon-cyan)' : '';
+                });
+
+                // Auto-switch to Compare tab if multiple selected
+                if (selectedReports.length > 1) {
+                    switchTab('compare');
+                    renderComparison();
+                }
+                return;
+            }
+
+            // Normal click - single selection
             currentReport = reports[index];
+            selectedReports = [index]; // Reset comparison selection
 
             // Update active state
             document.querySelectorAll('.report-item').forEach((item, i) => {
                 item.classList.toggle('active', i === index);
+                item.classList.remove('selected');
+                item.style.borderLeftColor = '';
             });
 
             renderOverview();
             renderFindings();
             renderDetails();
+        }
+
+        function renderComparison() {
+            const container = document.getElementById('comparison-view');
+
+            if (selectedReports.length < 2) {
+                container.innerHTML = `
+                    <div class="empty-state" style="grid-column: 1 / -1;">
+                        <div class="icon">📊</div>
+                        <h3>Select Reports to Compare</h3>
+                        <p>Ctrl+Click on 2-4 reports in the sidebar to compare them</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const selected = selectedReports.map(i => reports[i]);
+
+            container.innerHTML = selected.map(report => {
+                const riskScore = report._risk_score || 0;
+                const riskLevel = report._risk_level || 'UNKNOWN';
+                const findingsCount = report._findings_count || 0;
+                const results = report.results || [];
+                const passed = results.filter(r => r.status === 'passed').length;
+                const failed = results.filter(r => r.status === 'failed').length;
+
+                return `
+                    <div class="comparison-card">
+                        <h4>${escapeHtml(report.target_name || 'Unknown')}</h4>
+                        <table class="data-table" style="margin: 0;">
+                            <tr>
+                                <td>Risk Level</td>
+                                <td><span class="report-risk risk-${riskLevel.toLowerCase()}">${riskLevel}</span></td>
+                            </tr>
+                            <tr>
+                                <td>Risk Score</td>
+                                <td><strong style="color: var(--neon-orange);">${riskScore}</strong>/100</td>
+                            </tr>
+                            <tr>
+                                <td>Tests Run</td>
+                                <td>${results.length}</td>
+                            </tr>
+                            <tr>
+                                <td>Passed</td>
+                                <td style="color: var(--success);">${passed}</td>
+                            </tr>
+                            <tr>
+                                <td>Failed</td>
+                                <td style="color: var(--danger);">${failed}</td>
+                            </tr>
+                            <tr>
+                                <td>Type</td>
+                                <td>${escapeHtml((report._analysis_type || 'unknown').toUpperCase())}</td>
+                            </tr>
+                        </table>
+                        <div class="risk-meter-container" style="margin-top: 15px;">
+                            <div class="risk-meter">
+                                <div class="risk-marker" style="left: ${Math.min(riskScore, 100)}%;"></div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
         }
 
         function updateStats() {
@@ -882,34 +994,40 @@ REPORT_VIEWER_HTML = '''<!DOCTYPE html>
             const analysisType = currentReport._analysis_type || currentReport.target_type || 'unknown';
             const findingsCount = currentReport._findings_count || 0;
 
-            // Get results/tools/tests depending on analysis type
+            // Use pre-normalized results array from Python (has test_name, severity, status, details)
             let results = currentReport.results || [];
             let testsCount = results.length;
 
-            if (analysisType === 'mcp_server' && currentReport.tools) {
-                results = currentReport.tools.map(t => ({
-                    name: t.name,
-                    severity: t.risk_level,
-                    status: t.risk_level === 'critical' || t.risk_level === 'high' ? 'failed' : 'passed',
-                    description: t.description || t.risk_factors?.join(', ') || ''
-                }));
-                testsCount = currentReport.tools.length;
-            } else if (analysisType === 'model' && currentReport.tests) {
-                results = currentReport.tests.map(t => ({
-                    name: t.name || t.test_id,
-                    severity: t.severity || 'medium',
-                    status: t.result === 'fail' ? 'failed' : 'passed',
-                    description: t.details || ''
-                }));
-                testsCount = currentReport.tests.length;
-            } else if (analysisType === 'context' && currentReport.findings) {
-                results = currentReport.findings.map(f => ({
-                    name: f.pattern || f.type,
-                    severity: f.severity || 'medium',
-                    status: 'failed',
-                    description: f.description || f.match || ''
-                }));
-                testsCount = currentReport.findings.length;
+            // Fallback: if no normalized results, try to build from raw data
+            if (results.length === 0) {
+                if (analysisType === 'mcp_server' && currentReport.tools) {
+                    results = currentReport.tools.map(t => ({
+                        test_name: t.name,
+                        severity: t.risk_level,
+                        status: t.risk_level === 'critical' || t.risk_level === 'high' ? 'failed' : 'passed',
+                        category: 'mcp_tool',
+                        details: { message: t.description || t.risk_factors?.join(', ') || '' }
+                    }));
+                    testsCount = currentReport.tools.length;
+                } else if (analysisType === 'model' && currentReport.tests) {
+                    results = currentReport.tests.map(t => ({
+                        test_name: t.name || t.test_id || t.test_name,
+                        severity: t.severity || 'medium',
+                        status: t.result === 'fail' ? 'failed' : 'passed',
+                        category: t.category || 'model',
+                        details: t.details || {}
+                    }));
+                    testsCount = currentReport.tests.length;
+                } else if (analysisType === 'context' && currentReport.findings) {
+                    results = currentReport.findings.map(f => ({
+                        test_name: f.description || f.pattern_id || f.pattern || 'Unknown',
+                        severity: (f.risk_level || f.severity || 'medium').toLowerCase(),
+                        status: 'failed',
+                        category: f.category || 'context',
+                        details: { message: f.matched_text || f.match || '' }
+                    }));
+                    testsCount = currentReport.findings.length;
+                }
             }
 
             // Risk score
@@ -1077,6 +1195,11 @@ ${escapeHtml(JSON.stringify(currentReport, null, 2))}
             document.querySelectorAll('.tab-content').forEach(content => {
                 content.classList.toggle('active', content.id === 'tab-' + tabName);
             });
+
+            // Render comparison view when switching to compare tab
+            if (tabName === 'compare') {
+                renderComparison();
+            }
         }
 
         function filterReports(query) {
@@ -1152,6 +1275,7 @@ class ReportViewerGenerator:
         Normalize different analysis report formats into a consistent structure.
 
         Handles:
+        - Model interrogation (schema 1.0.0): report_type="model_interrogation", summary, risk_assessment, results
         - Model analysis (schema 0.2.0): overall_risk, model, tests
         - MCP server analysis (schema 1.0.0): risk_assessment, server, tools
         - Context/skills analysis: risk_patterns, findings
@@ -1161,9 +1285,15 @@ class ReportViewerGenerator:
         """
         normalized = data.copy()
 
-        # Detect analysis type
+        # Detect analysis type - check report_type first for explicit typing
+        report_type = data.get("report_type", "")
         analysis_type = data.get("analysis_type", "unknown")
-        if "model" in data and "path" in data.get("model", {}):
+
+        if report_type == "model_interrogation":
+            analysis_type = "model_interrogation"
+        elif report_type == "mcp_tools":
+            analysis_type = "mcp_server"
+        elif "model" in data and "path" in data.get("model", {}):
             analysis_type = "model"
         elif "server" in data or "tools" in data:
             analysis_type = "mcp_server"
@@ -1176,7 +1306,9 @@ class ReportViewerGenerator:
 
         # Normalize target name
         if "target_name" not in normalized:
-            if analysis_type == "model":
+            if analysis_type == "model_interrogation":
+                normalized["target_name"] = data.get("model", {}).get("name", "Unknown Model")
+            elif analysis_type == "model":
                 normalized["target_name"] = data.get("model", {}).get("name", "Unknown Model")
             elif analysis_type == "mcp_server":
                 normalized["target_name"] = data.get("server", {}).get("name", "Unknown MCP Server")
@@ -1186,8 +1318,14 @@ class ReportViewerGenerator:
                 normalized["target_name"] = data.get("run_id", source_file.stem)
 
         # Normalize risk level and score
-        if "overall_risk" in data:
-            # Model/infrastructure analysis format
+        if analysis_type == "model_interrogation":
+            # Model interrogation format: summary.overall_risk is a number, summary.risk_level is string
+            summary = data.get("summary", {})
+            risk_assessment = data.get("risk_assessment", {})
+            normalized["_risk_level"] = (summary.get("risk_level") or risk_assessment.get("risk_level", "unknown")).upper()
+            normalized["_risk_score"] = summary.get("overall_risk", risk_assessment.get("overall_risk", 0))
+        elif "overall_risk" in data and isinstance(data["overall_risk"], dict):
+            # Model/infrastructure analysis format (overall_risk is dict)
             risk = data["overall_risk"]
             normalized["_risk_level"] = risk.get("level", "UNKNOWN").upper()
             normalized["_risk_score"] = risk.get("score", 0)
@@ -1196,6 +1334,10 @@ class ReportViewerGenerator:
             risk = data["risk_assessment"]
             normalized["_risk_level"] = risk.get("overall_level", "unknown").upper()
             normalized["_risk_score"] = risk.get("overall_score", 0)
+        elif "risk_level" in data and "risk_score" in data:
+            # Context analysis format (root level risk_level and risk_score)
+            normalized["_risk_level"] = data.get("risk_level", "UNKNOWN").upper()
+            normalized["_risk_score"] = data.get("risk_score", 0)
         else:
             normalized["_risk_level"] = "UNKNOWN"
             normalized["_risk_score"] = 0
@@ -1211,7 +1353,12 @@ class ReportViewerGenerator:
 
         # Normalize findings/issues count
         findings_count = 0
-        if "tests" in data:
+        if analysis_type == "model_interrogation":
+            # Model interrogation: count from summary.failed or results with passed=false
+            findings_count = data.get("summary", {}).get("failed", 0)
+            if findings_count == 0 and "results" in data:
+                findings_count = len([r for r in data.get("results", []) if not r.get("passed", True)])
+        elif "tests" in data:
             findings_count = len([t for t in data.get("tests", []) if t.get("result") == "fail"])
         elif "tools" in data:
             findings_count = len([t for t in data.get("tools", []) if t.get("risk_level") in ["critical", "high"]])
@@ -1229,6 +1376,105 @@ class ReportViewerGenerator:
                 normalized["_summary"] = data["overall_risk"].get("notes", "")
             else:
                 normalized["_summary"] = data.get("summary", "")
+
+        # Normalize findings/tools/tests into consistent 'results' array for the viewer
+        # The JavaScript renderFindings() expects: test_name, severity, category, status, details.message
+        results = []
+
+        if analysis_type == "model_interrogation" and "results" in data:
+            # Model interrogation results: prompt_id, passed (bool), severity, prompt_category, classification
+            for r in data.get("results", []):
+                results.append({
+                    "test_name": r.get("prompt_id", "Unknown Prompt"),
+                    "severity": r.get("severity", "info").lower(),
+                    "category": r.get("prompt_category", "unknown"),
+                    "status": "passed" if r.get("passed", False) else "failed",
+                    "details": {
+                        "message": r.get("prompt_text", ""),
+                        "classification": r.get("classification", "unknown"),
+                        "response_preview": (r.get("response", "") or "")[:200] + "..." if len(r.get("response", "") or "") > 200 else r.get("response", ""),
+                    }
+                })
+
+        elif analysis_type == "context" and "findings" in data:
+            # Context analysis findings
+            for f in data.get("findings", []):
+                results.append({
+                    "test_name": f.get("description", f.get("pattern_id", "Unknown")),
+                    "severity": f.get("risk_level", "info").lower(),
+                    "category": f.get("category", "unknown"),
+                    "status": "failed",  # All findings are issues
+                    "details": {
+                        "message": f"Line {f.get('line_number', 'N/A')}: {f.get('matched_text', '')}",
+                        "recommendation": f.get("recommendation", ""),
+                        "pattern_id": f.get("pattern_id", ""),
+                    }
+                })
+
+        elif analysis_type == "mcp_server" and "tools" in data:
+            # MCP server tool analysis
+            for t in data.get("tools", []):
+                risk_level = t.get("risk_level", "info").lower()
+                risk_factors = t.get("risk_factors", [])
+                capabilities = t.get("capabilities", [])
+
+                # Build specific message for this tool
+                if t.get("description"):
+                    message = t.get("description")
+                else:
+                    # Extract top critical/high risks only
+                    critical_risks = [r.split(":")[0] for r in risk_factors if "critical" in r.lower()]
+                    high_risks = [r.split(":")[0] for r in risk_factors if "high" in r.lower()]
+                    top_risks = (critical_risks + high_risks)[:3]
+
+                    if top_risks:
+                        message = f"Risk: {', '.join(top_risks)}"
+                    elif capabilities:
+                        message = f"Capabilities: {', '.join(capabilities[:3])}"
+                    else:
+                        message = f"Risk score: {t.get('risk_score', 0)}/100"
+
+                results.append({
+                    "test_name": t.get("name", "Unknown Tool"),
+                    "severity": risk_level,
+                    "category": "mcp_tool",
+                    "status": "failed" if risk_level in ["critical", "high"] else "passed",
+                    "details": {
+                        "message": message,
+                        "capabilities": capabilities,
+                        "risk_score": t.get("risk_score", 0),
+                        "all_risk_factors": risk_factors,
+                    }
+                })
+
+        elif "tests" in data:
+            # Model analysis tests (already mostly correct format)
+            for t in data.get("tests", []):
+                results.append({
+                    "test_name": t.get("test_name", t.get("name", "Unknown Test")),
+                    "severity": t.get("severity", "info").lower(),
+                    "category": t.get("category", "unknown"),
+                    "status": t.get("result", t.get("status", "unknown")),
+                    "details": t.get("details", {}),
+                })
+
+        # Also include 'risk_patterns' if present (context/skills)
+        if "risk_patterns" in data:
+            for rp in data.get("risk_patterns", []):
+                results.append({
+                    "test_name": rp.get("description", rp.get("pattern", "Unknown Pattern")),
+                    "severity": rp.get("severity", "medium").lower(),
+                    "category": rp.get("category", "risk_pattern"),
+                    "status": "failed",
+                    "details": {
+                        "message": rp.get("matched_text", rp.get("context", "")),
+                        "recommendation": rp.get("recommendation", ""),
+                    }
+                })
+
+        # Only add results if we found any
+        if results:
+            normalized["results"] = results
 
         return normalized
 
