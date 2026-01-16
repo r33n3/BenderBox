@@ -769,6 +769,175 @@ class ModelManager:
 
         return info
 
+    def extract_parameter_count(self, filename: str) -> Optional[float]:
+        """
+        Extract parameter count (in billions) from model filename.
+
+        Recognizes patterns like:
+        - llama-2-7b, llama-7b, llama2-7b
+        - mistral-7b-instruct
+        - phi-2 (implies 2.7B), phi-3
+        - tinyllama-1.1b
+        - mixtral-8x7b (MoE models)
+        - 70b, 13b, 30b, 120b
+
+        Args:
+            filename: Model filename or path.
+
+        Returns:
+            Parameter count in billions, or None if not detected.
+        """
+        import re
+
+        name = Path(filename).stem.lower()
+
+        # Pattern for explicit billion params: 7b, 13b, 70b, 1.1b, etc.
+        patterns = [
+            r'(\d+\.?\d*)b(?:illion)?(?:[-_\.]|$)',  # 7b, 13b, 70b, 1.1b
+            r'[-_](\d+\.?\d*)b[-_]',  # -7b- or _7b_
+            r'^(\d+\.?\d*)b[-_]',  # 7b- at start
+            r'(\d+)x(\d+)b',  # MoE: 8x7b = 56b effective
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, name)
+            if match:
+                groups = match.groups()
+                if len(groups) == 2 and groups[1]:  # MoE pattern
+                    return float(groups[0]) * float(groups[1])
+                return float(groups[0])
+
+        # Special cases for known model families
+        known_params = {
+            'phi-2': 2.7,
+            'phi2': 2.7,
+            'phi-3-mini': 3.8,
+            'phi3-mini': 3.8,
+            'phi-3-small': 7.0,
+            'phi-3-medium': 14.0,
+            'tinyllama': 1.1,
+            'tiny-llama': 1.1,
+            'gemma-2b': 2.0,
+            'gemma-7b': 7.0,
+            'qwen-1.5': 1.5,
+            'stablelm-2': 1.6,
+        }
+
+        for key, params in known_params.items():
+            if key in name:
+                return params
+
+        return None
+
+    def estimate_ram_requirement(
+        self,
+        file_size_mb: int,
+        param_billions: Optional[float] = None
+    ) -> Dict:
+        """
+        Estimate RAM requirements for a model.
+
+        Uses both file size and parameter count for better estimates.
+        GGUF models typically need 1.1-1.3x file size in RAM.
+        Parameter count helps estimate context memory needs.
+
+        Args:
+            file_size_mb: Model file size in MB.
+            param_billions: Parameter count in billions (optional).
+
+        Returns:
+            Dictionary with:
+            - estimated_ram_gb: Estimated RAM needed
+            - min_ram_gb: Minimum RAM to attempt loading
+            - recommended_ram_gb: Recommended RAM for smooth operation
+            - confidence: "high", "medium", or "low"
+        """
+        # Base estimate from file size (1.2x multiplier for loading overhead)
+        base_ram_gb = (file_size_mb * 1.2) / 1024
+
+        # If we have parameter count, refine the estimate
+        # Larger models need more context memory
+        if param_billions:
+            # Context memory scales with parameters
+            # ~0.5GB per billion parameters for context at 2048 tokens
+            context_overhead_gb = param_billions * 0.5
+            estimated_ram_gb = base_ram_gb + context_overhead_gb
+            confidence = "high"
+        else:
+            estimated_ram_gb = base_ram_gb * 1.1  # Add 10% uncertainty
+            confidence = "medium" if file_size_mb > 1000 else "low"
+
+        # Calculate min and recommended
+        min_ram_gb = max(estimated_ram_gb * 0.9, 2)  # At least 2GB
+        recommended_ram_gb = estimated_ram_gb * 1.3  # 30% headroom
+
+        return {
+            "estimated_ram_gb": round(estimated_ram_gb, 1),
+            "min_ram_gb": round(min_ram_gb, 1),
+            "recommended_ram_gb": round(recommended_ram_gb, 1),
+            "confidence": confidence,
+            "param_billions": param_billions,
+            "file_size_mb": file_size_mb,
+        }
+
+    def get_model_requirements(self, model_path: str) -> Dict:
+        """
+        Get complete requirements info for a model.
+
+        Args:
+            model_path: Path to model file.
+
+        Returns:
+            Dictionary with size, parameters, RAM requirements, and warnings.
+        """
+        path = Path(model_path)
+
+        if not path.exists():
+            return {"error": f"Model not found: {model_path}"}
+
+        file_size_mb = path.stat().st_size // (1024 * 1024)
+        param_billions = self.extract_parameter_count(path.name)
+        ram_req = self.estimate_ram_requirement(file_size_mb, param_billions)
+
+        # Check against system RAM
+        system_ram_gb = self.get_system_ram_gb()
+        available_ram_gb = max(system_ram_gb - 4, 2)  # Leave 4GB for OS
+
+        warnings = []
+        can_load = True
+
+        if ram_req["estimated_ram_gb"] > available_ram_gb:
+            warnings.append(
+                f"Model needs ~{ram_req['estimated_ram_gb']}GB RAM, "
+                f"but only {available_ram_gb}GB available"
+            )
+            can_load = False
+        elif ram_req["estimated_ram_gb"] > available_ram_gb * 0.8:
+            warnings.append(
+                f"Model will use most available RAM ({ram_req['estimated_ram_gb']}GB of {available_ram_gb}GB)"
+            )
+
+        # Parameter-based warnings
+        if param_billions:
+            if param_billions >= 30:
+                warnings.append(f"{param_billions}B model - requires high-end system or GPU offloading")
+            elif param_billions >= 13:
+                warnings.append(f"{param_billions}B model - may be slow without GPU")
+
+        return {
+            "name": path.stem,
+            "filename": path.name,
+            "path": str(path),
+            "file_size_mb": file_size_mb,
+            "param_billions": param_billions,
+            "param_display": f"{param_billions}B" if param_billions else "Unknown",
+            "ram_requirements": ram_req,
+            "system_ram_gb": system_ram_gb,
+            "available_ram_gb": available_ram_gb,
+            "can_load": can_load,
+            "warnings": warnings,
+        }
+
     def get_system_assessment(self) -> Dict:
         """
         Comprehensive system assessment for model selection.

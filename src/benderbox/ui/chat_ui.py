@@ -549,6 +549,29 @@ class ChatUI:
 
         print()
 
+        # System Resources
+        self.ui.print_header("System Resources")
+        ram_gb = manager.get_system_ram_gb()
+        available_ram_gb = max(ram_gb - 4, 2)
+        self.ui.print_info(f"  RAM: {ram_gb}GB total, ~{available_ram_gb}GB available for models")
+
+        gpu_info = manager.get_gpu_info()
+        if gpu_info.get('has_nvidia'):
+            vram = gpu_info.get('vram_gb', 'Unknown')
+            gpu_name = gpu_info.get('gpu_name', 'NVIDIA GPU')
+            self.ui.print_success(f"  GPU: {gpu_name} ({vram}GB VRAM)")
+            if gpu_info.get('cuda_available'):
+                self.ui.print_info(f"       CUDA available - GPU acceleration enabled")
+            else:
+                self.ui.print_info(f"       CUDA not configured - CPU only")
+        else:
+            self.ui.print_info("  GPU: No NVIDIA GPU detected (CPU only)")
+
+        cpu_info = manager.get_cpu_info()
+        self.ui.print_info(f"  CPU: {cpu_info.get('cores', '?')} cores, {cpu_info.get('threads', '?')} threads")
+
+        print()
+
         # LLM Engine status
         self.ui.print_header("LLM Engine")
         llm_engine = self._get_llm_engine()
@@ -1559,10 +1582,16 @@ LLM Used: {'Yes' if result.get('llm_used') else 'No (pattern-based)'}
             self.ui.print_info("\nNo models loaded. Use '/load <model> --for nlp|analysis' to load one.")
 
     async def _show_model_list(self, manager, purpose: str) -> None:
-        """Show model list based on purpose."""
+        """Show model list based on purpose with RAM requirements."""
         from pathlib import Path
 
         self.ui.print_header("Available Models")
+
+        # Get system info for warnings
+        system_ram_gb = manager.get_system_ram_gb()
+        available_ram_gb = max(system_ram_gb - 4, 2)
+        self.ui.print_info(f"  System RAM: {system_ram_gb}GB (Available: ~{available_ram_gb}GB)")
+        print()
 
         # Helper to check if a model is loaded (compare by filename)
         def is_loaded_for(model_path: str, loaded_path: str | None) -> bool:
@@ -1575,14 +1604,33 @@ LLM Used: {'Yes' if result.get('llm_used') else 'No (pattern-based)'}
 
         if all_models:
             for m in all_models:
+                # Get detailed requirements
+                req = manager.get_model_requirements(m['path'])
+
                 # Check if loaded for either purpose (by filename)
                 markers = []
                 if is_loaded_for(m['path'], self._current_analysis_model):
                     markers.append("ANALYSIS")
                 if is_loaded_for(m['path'], self._current_nlp_model):
                     markers.append("NLP")
+
+                # Build display line
+                param_str = f" ({req['param_display']})" if req.get('param_billions') else ""
+                ram_str = f"~{req['ram_requirements']['estimated_ram_gb']}GB RAM"
                 marker = f" [LOADED: {', '.join(markers)}]" if markers else ""
-                self.ui.print_info(f"  - {m['name']} ({m['size_mb']} MB){marker}")
+
+                # Color based on whether it can load
+                if not req.get('can_load', True):
+                    self.ui.print_error(f"  - {m['name']}{param_str} ({m['size_mb']} MB) {ram_str}{marker}")
+                    for warning in req.get('warnings', []):
+                        self.ui.print_warning(f"      ! {warning}")
+                elif req.get('warnings'):
+                    self.ui.print_warning(f"  - {m['name']}{param_str} ({m['size_mb']} MB) {ram_str}{marker}")
+                    for warning in req.get('warnings', []):
+                        self.ui.print_info(f"      * {warning}")
+                else:
+                    self.ui.print_success(f"  - {m['name']}{param_str} ({m['size_mb']} MB) {ram_str}{marker}")
+
             self.ui.print_info("\n  Use '/load <name> --for nlp' or '/load <name> --for analysis'")
         else:
             self.ui.print_warning("  No models found.")
@@ -1642,7 +1690,43 @@ LLM Used: {'Yes' if result.get('llm_used') else 'No (pattern-based)'}
                 self.ui.print_info("Use '/models' to see available models.")
 
     async def _load_model_for_purpose(self, resolved_path: str, model_name: str, purpose: str) -> None:
-        """Load a model for NLP or analysis purpose."""
+        """Load a model for NLP or analysis purpose with pre-load checks."""
+        from benderbox.utils.model_manager import ModelManager
+
+        manager = self._model_manager or ModelManager()
+
+        # Check model requirements before loading
+        req = manager.get_model_requirements(resolved_path)
+
+        if req.get('error'):
+            self.ui.print_error(req['error'])
+            return
+
+        # Show model info
+        param_str = f" ({req['param_display']})" if req.get('param_billions') else ""
+        self.ui.print_info(f"Model: {model_name}{param_str}")
+        self.ui.print_info(f"Size: {req['file_size_mb']} MB")
+        self.ui.print_info(f"Estimated RAM: ~{req['ram_requirements']['estimated_ram_gb']}GB")
+
+        # Show warnings
+        if req.get('warnings'):
+            print()
+            for warning in req['warnings']:
+                self.ui.print_warning(f"Warning: {warning}")
+
+        # Block loading if model definitely won't fit
+        if not req.get('can_load', True):
+            print()
+            self.ui.print_error("Model cannot be loaded - exceeds available system RAM.")
+            self.ui.print_info(f"System RAM: {req['system_ram_gb']}GB, Available: ~{req['available_ram_gb']}GB")
+            self.ui.print_info("Options:")
+            self.ui.print_info("  - Use a smaller quantized version (Q2_K, Q3_K)")
+            self.ui.print_info("  - Use a smaller model (TinyLlama, Phi-2)")
+            self.ui.print_info("  - Increase system RAM or use GPU offloading")
+            return
+
+        print()
+
         if purpose == "nlp":
             # Actually load the model into the LLM engine for chat
             llm_engine = self._get_llm_engine()

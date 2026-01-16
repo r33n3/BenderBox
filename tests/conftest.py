@@ -99,6 +99,40 @@ def mock_model_manager():
     mock.list_nlp_models.return_value = []
     mock.find_model_by_name.return_value = None
 
+    # System resource mocks
+    mock.get_system_ram_gb.return_value = 16
+    mock.get_gpu_info.return_value = {
+        "has_nvidia": False,
+        "gpu_name": None,
+        "vram_gb": None,
+        "cuda_available": False,
+    }
+    mock.get_cpu_info.return_value = {"cores": 4, "threads": 8}
+
+    # Model requirements mock
+    mock.get_model_requirements.return_value = {
+        "name": "test-model",
+        "filename": "test-model.gguf",
+        "path": "/fake/path/test-model.gguf",
+        "file_size_mb": 100,
+        "param_billions": 1.1,
+        "param_display": "1.1B",
+        "ram_requirements": {
+            "estimated_ram_gb": 1.5,
+            "min_ram_gb": 1.4,
+            "recommended_ram_gb": 2.0,
+            "confidence": "high",
+        },
+        "system_ram_gb": 16,
+        "available_ram_gb": 12,
+        "can_load": True,
+        "warnings": [],
+    }
+
+    # Default model path
+    mock.nlp_model_dir = Path("/fake/models/nlp")
+    mock.get_default_model_path.return_value = None
+
     return mock
 
 
