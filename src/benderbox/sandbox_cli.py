@@ -55,6 +55,39 @@ RUNNER_VERSION = "2.0.0"  # Infrastructure analysis extension
 SCHEMA_VERSION = "0.2.0"  # Extended schema
 
 
+# ---------- Utility Functions ----------
+
+def _parse_parameter_count(param_str: str) -> Optional[int]:
+    """
+    Parse parameter count string (e.g., '135M', '1B', '7B') to integer.
+
+    Returns None if parsing fails.
+    """
+    if not param_str:
+        return None
+
+    param_str = param_str.strip().upper()
+
+    try:
+        if param_str.endswith('B'):
+            # Billions (e.g., "7B", "1.5B")
+            value = float(param_str[:-1])
+            return int(value * 1_000_000_000)
+        elif param_str.endswith('M'):
+            # Millions (e.g., "135M", "350M")
+            value = float(param_str[:-1])
+            return int(value * 1_000_000)
+        elif param_str.endswith('K'):
+            # Thousands (rare, but handle it)
+            value = float(param_str[:-1])
+            return int(value * 1_000)
+        else:
+            # Try parsing as raw number
+            return int(float(param_str))
+    except (ValueError, TypeError):
+        return None
+
+
 # ---------- Data Models ----------
 
 # Import base classes from sandbox_base to avoid circular imports
@@ -204,6 +237,16 @@ class GGUFMetadataSanityTest(SandboxTest):
                 warnings.append(f"Extremely low quantization: {quant_bits} bits")
             elif quant_bits > 8:
                 warnings.append(f"Unusual quantization level: {quant_bits} bits")
+
+        # Check for small model size - may produce incoherent responses
+        if "parameter_count" in metadata:
+            param_str = metadata["parameter_count"]
+            param_value = _parse_parameter_count(param_str)
+            if param_value and param_value < 1_000_000_000:  # Less than 1B
+                warnings.append(
+                    f"Small model ({param_str} parameters): May produce incoherent "
+                    f"responses during dynamic testing due to limited capacity"
+                )
 
         # Determine test status
         if issues:
