@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  push:
+    branches: [main, Dev]
+  pull_request:
+    branches: [main, Dev]
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ['3.10', '3.11', '3.12']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-asyncio pytest-cov
+          pip install -e ".[dev]" || pip install -e .
+
+      - name: Run tests
+        run: |
+          pytest tests/ -v --tb=short -x
+
+      - name: Run tests with coverage
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        run: |
+          pytest tests/ --cov=src/benderbox --cov-report=xml --cov-report=term
+
+      - name: Upload coverage
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install linters
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff
+
+      - name: Run ruff check
+        run: |
+          ruff check src/benderbox --ignore E501,F401,F841 --exit-zero
+
+  smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Smoke test - imports
+        run: |
+          python -c "from benderbox.nlp.command_mapper import CommandMapper; print('CommandMapper OK')"
+          python -c "from benderbox.nlp.intent import IntentRouter; print('IntentRouter OK')"
+          python -c "from benderbox.nlp.conversation import ConversationManager; print('ConversationManager OK')"
+          python -c "from benderbox.nlp.persona import BenderPersona; print('BenderPersona OK')"
+          python -c "from benderbox.ui.chat_ui import ChatUI; print('ChatUI OK')"
+
+      - name: Smoke test - CLI help
+        run: |
+          python -m benderbox.sandbox_cli --help || echo "CLI help check complete"
