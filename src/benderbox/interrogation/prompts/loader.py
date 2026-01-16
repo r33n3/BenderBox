@@ -5,13 +5,24 @@ Prompt library loader for model interrogation.
 import logging
 import re
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
 
 import yaml
 
-from .schema import PromptCategory, PromptSet, TestPrompt
+from .schema import PromptCategory, PromptSet, TestPrompt, ExpectedBehavior, Severity
+
+if TYPE_CHECKING:
+    from ..profiles.loader import ProfileConfig
 
 logger = logging.getLogger(__name__)
+
+# Try to import ProfileLoader
+try:
+    from ..profiles.loader import ProfileLoader, ProfileConfig
+    PROFILE_LOADER_AVAILABLE = True
+except ImportError:
+    PROFILE_LOADER_AVAILABLE = False
+    logger.debug("ProfileLoader not available, using built-in profiles only")
 
 
 # Category aliases for user-friendly markdown files
@@ -595,15 +606,34 @@ class PromptLibrary:
         """
         Get prompts for a specific interrogation profile.
 
-        Profiles:
-        - quick: ~30 prompts for fast screening
-        - standard: ~100 prompts for comprehensive eval
-        - full: All prompts for exhaustive audit
-        - adversarial: ~64 prompts focused on jailbreaks and security testing
+        Profiles can be:
+        - Built-in: quick, standard, full, adversarial
+        - Custom YAML: custom/my-profile (from configs/profiles/custom/)
+        - Any YAML file in configs/profiles/
+
+        Args:
+            profile: Profile name or path.
+
+        Returns:
+            List of TestPrompt objects for the profile.
         """
         if not self._loaded:
             self.load()
 
+        # Try to load from YAML profile first
+        if PROFILE_LOADER_AVAILABLE:
+            try:
+                loader = ProfileLoader()
+                config = loader.load(profile)
+                return self._get_prompts_from_config(config)
+            except FileNotFoundError:
+                # Fall through to built-in profiles
+                pass
+            except Exception as e:
+                logger.warning(f"Error loading YAML profile '{profile}': {e}")
+                # Fall through to built-in profiles
+
+        # Built-in profiles
         if profile == "quick":
             return self._get_quick_profile()
         elif profile == "standard":
@@ -615,6 +645,94 @@ class PromptLibrary:
         else:
             logger.warning(f"Unknown profile '{profile}', using standard")
             return self._get_standard_profile()
+
+    def _get_prompts_from_config(self, config: "ProfileConfig") -> List[TestPrompt]:
+        """
+        Get prompts based on a ProfileConfig from YAML.
+
+        Args:
+            config: ProfileConfig object loaded from YAML.
+
+        Returns:
+            List of TestPrompt objects.
+        """
+        prompts = []
+
+        # Get prompts from each configured category
+        for category_name, limit in config.categories.items():
+            # Convert category name to PromptCategory enum
+            category = CATEGORY_ALIASES.get(category_name)
+            if category is None:
+                try:
+                    category = PromptCategory(category_name)
+                except ValueError:
+                    logger.warning(f"Unknown category in profile: {category_name}")
+                    continue
+
+            # Get prompts with limit
+            if limit == "all":
+                prompts.extend(self.get_by_category(category))
+            else:
+                prompts.extend(self.get_by_category(category, limit=int(limit)))
+
+        # Add custom prompts from the profile
+        for custom in config.custom_prompts:
+            prompt = self._custom_prompt_to_test_prompt(custom, config)
+            if prompt:
+                prompts.append(prompt)
+
+        return prompts
+
+    def _custom_prompt_to_test_prompt(
+        self, custom: "CustomPrompt", config: "ProfileConfig"
+    ) -> Optional[TestPrompt]:
+        """
+        Convert a CustomPrompt from YAML to a TestPrompt.
+
+        Args:
+            custom: CustomPrompt from profile config.
+            config: Parent ProfileConfig for variable substitution.
+
+        Returns:
+            TestPrompt object or None if invalid.
+        """
+        try:
+            # Get category
+            category = CATEGORY_ALIASES.get(custom.category)
+            if category is None:
+                try:
+                    category = PromptCategory(custom.category)
+                except ValueError:
+                    category = PromptCategory.BASELINE_SAFETY
+
+            # Get expected behavior
+            try:
+                expected = ExpectedBehavior(custom.expected_behavior)
+            except ValueError:
+                expected = ExpectedBehavior.REFUSE
+
+            # Get severity
+            try:
+                severity = Severity(custom.severity)
+            except ValueError:
+                severity = Severity.MEDIUM
+
+            # Apply variable substitutions to prompt
+            prompt_text = custom.prompt
+            for var_name, var_value in config.variables.items():
+                prompt_text = prompt_text.replace(f"{{{{{var_name}}}}}", var_value)
+
+            return TestPrompt(
+                id=custom.id,
+                prompt=prompt_text,
+                category=category,
+                expected_behavior=expected,
+                severity=severity,
+                tags=custom.tags,
+            )
+        except Exception as e:
+            logger.warning(f"Error converting custom prompt '{custom.id}': {e}")
+            return None
 
     def _get_quick_profile(self) -> List[TestPrompt]:
         """Get prompts for quick profile (~30 prompts)."""
