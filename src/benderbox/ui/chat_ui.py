@@ -481,14 +481,96 @@ class ChatUI:
         self.ui.print_success("Conversation cleared.")
 
     async def _handle_status(self, command: ParsedCommand) -> None:
-        """Handle status command."""
-        if self._conversation:
-            # Use conversation manager to get status
-            response = await self._conversation.process_query("status")
-            self.ui.print_markdown(response.content)
+        """Handle status command with detailed model state."""
+        from pathlib import Path
+        from benderbox.utils.model_manager import ModelManager
+
+        self.ui.print_header("BenderBox Status")
+        self.ui.print_info("Version: 3.0.0-alpha")
+        print()
+
+        # Model status section
+        self.ui.print_header("Loaded Models")
+
+        # NLP Model
+        if self._current_nlp_model:
+            model_path = Path(self._current_nlp_model)
+            size_mb = model_path.stat().st_size // (1024 * 1024) if model_path.exists() else 0
+            self.ui.print_success(f"  NLP: {model_path.name} ({size_mb} MB) [LOADED]")
+            self.ui.print_info(f"       Path: {self._current_nlp_model}")
+
+            # Check if actually in memory
+            llm_engine = self._get_llm_engine()
+            if llm_engine and hasattr(llm_engine, 'is_nlp_model_loaded'):
+                in_memory = llm_engine.is_nlp_model_loaded()
+                self.ui.print_info(f"       In memory: {'Yes' if in_memory else 'No (will load on first use)'}")
         else:
-            self.ui.print_info("BenderBox v3.0.0-alpha")
-            self.ui.print_info("Conversation manager not initialized.")
+            self.ui.print_warning("  NLP: Not loaded")
+            self.ui.print_info("       Use '/load <model> --for nlp' to load")
+
+        # Analysis Model
+        if self._current_analysis_model:
+            model_path = Path(self._current_analysis_model)
+            size_mb = model_path.stat().st_size // (1024 * 1024) if model_path.exists() else 0
+            self.ui.print_success(f"  Analysis: {model_path.name} ({size_mb} MB) [LOADED]")
+            self.ui.print_info(f"       Path: {self._current_analysis_model}")
+        else:
+            self.ui.print_warning("  Analysis: Not loaded")
+            self.ui.print_info("       Use '/load <model> --for analysis' to load")
+
+        print()
+
+        # Available models section
+        manager = self._model_manager or ModelManager()
+        all_models = manager.get_downloaded_models()
+        nlp_models = manager.list_nlp_models()
+        analysis_models = manager.list_analysis_models()
+
+        self.ui.print_header("Available Models")
+        self.ui.print_info(f"  Total downloaded: {len(all_models)}")
+        self.ui.print_info(f"  NLP directory: {len(nlp_models)}")
+        self.ui.print_info(f"  Analysis directory: {len(analysis_models)}")
+
+        # Show default paths
+        default_nlp = manager.nlp_model_dir / "model.gguf"
+        default_analysis = manager.get_default_model_path()
+
+        print()
+        self.ui.print_header("Default Model Paths")
+        if default_nlp.exists():
+            self.ui.print_info(f"  NLP default: {default_nlp}")
+        else:
+            self.ui.print_info(f"  NLP default: Not configured")
+
+        if default_analysis:
+            self.ui.print_info(f"  Analysis default: {default_analysis}")
+        else:
+            self.ui.print_info(f"  Analysis default: Not configured")
+
+        print()
+
+        # LLM Engine status
+        self.ui.print_header("LLM Engine")
+        llm_engine = self._get_llm_engine()
+        if llm_engine:
+            is_available = getattr(llm_engine, 'is_available', False)
+            self.ui.print_info(f"  llama-cpp-python: {'Available' if is_available else 'Not installed'}")
+            if hasattr(llm_engine, '_loaded_models'):
+                loaded_count = len(llm_engine._loaded_models)
+                self.ui.print_info(f"  Models in memory: {loaded_count}")
+            if hasattr(llm_engine, 'config'):
+                self.ui.print_info(f"  Max loaded models: {llm_engine.config.max_loaded_models}")
+                self.ui.print_info(f"  Context length: {llm_engine.config.context_length}")
+        else:
+            self.ui.print_warning("  LLM Engine: Not initialized")
+
+        # Conversation status
+        print()
+        self.ui.print_header("Conversation")
+        if self._conversation:
+            history_len = len(self._conversation._history) if hasattr(self._conversation, '_history') else 0
+            self.ui.print_info(f"  History: {history_len} messages")
+            self.ui.print_info("  Use '/clear' to reset conversation")
 
     async def _handle_reports(self, command: ParsedCommand) -> None:
         """Handle reports command."""
@@ -1720,6 +1802,86 @@ LLM Used: {'Yes' if result.get('llm_used') else 'No (pattern-based)'}
                 analysis_model=self._current_analysis_model,
             )
 
+    async def _show_startup_model_status(self) -> None:
+        """Show model availability and status at startup."""
+        from benderbox.utils.model_manager import ModelManager
+        from pathlib import Path
+
+        manager = self._model_manager or ModelManager()
+
+        # Get available models
+        all_models = manager.get_downloaded_models()
+        nlp_models = manager.list_nlp_models()
+        analysis_models = manager.list_analysis_models()
+
+        print()
+        self.ui.print_header("Model Status")
+
+        if not all_models:
+            self.ui.print_warning("  No models found.")
+            self.ui.print_info("  Download with: benderbox models download tinyllama")
+            return
+
+        # Show NLP models
+        if nlp_models:
+            self.ui.print_info(f"  NLP models: {len(nlp_models)} available")
+            default_nlp = manager.nlp_model_dir / "model.gguf"
+            if default_nlp.exists():
+                self.ui.print_success(f"    Default: {default_nlp.name} (will auto-load)")
+        else:
+            self.ui.print_info("  NLP models: None configured")
+            self.ui.print_info("    Use: benderbox models add <model> --for nlp")
+
+        # Show Analysis models
+        if analysis_models:
+            self.ui.print_info(f"  Analysis models: {len(analysis_models)} available")
+            default_analysis = manager.get_default_model_path()
+            if default_analysis:
+                self.ui.print_info(f"    Default: {default_analysis.name}")
+        else:
+            self.ui.print_info("  Analysis models: None configured")
+
+        # Show total available
+        if all_models and not nlp_models and not analysis_models:
+            self.ui.print_info(f"  Downloaded models: {len(all_models)}")
+            self.ui.print_info("  Use '/models' to see all, '/load <model> --for nlp' to load")
+
+    async def _auto_load_default_nlp_model(self) -> None:
+        """Auto-load default NLP model if available."""
+        from benderbox.utils.model_manager import ModelManager
+        from pathlib import Path
+
+        manager = self._model_manager or ModelManager()
+
+        # Check for default NLP model
+        default_nlp = manager.nlp_model_dir / "model.gguf"
+        if not default_nlp.exists():
+            # Try any model in nlp dir
+            nlp_models = manager.list_nlp_models()
+            if nlp_models:
+                default_nlp = Path(nlp_models[0]["path"])
+            else:
+                return  # No NLP model to load
+
+        # Get LLM engine
+        llm_engine = self._get_llm_engine()
+        if not llm_engine:
+            return
+
+        # Load the model
+        self.ui.print_info(f"  Loading NLP model: {default_nlp.name}...")
+        try:
+            success = await llm_engine.set_nlp_model(str(default_nlp))
+            if success:
+                self._current_nlp_model = str(default_nlp)
+                self._sync_loaded_models()
+                self.ui.print_success(f"  NLP model ready: {default_nlp.name}")
+            else:
+                self.ui.print_warning(f"  Could not load NLP model (llama-cpp-python may not be installed)")
+        except Exception as e:
+            logger.warning(f"Auto-load NLP model failed: {e}")
+            self.ui.print_warning(f"  NLP model load failed: {e}")
+
     async def run(self) -> None:
         """Run the interactive chat loop."""
         self._running = True
@@ -1736,12 +1898,22 @@ LLM Used: {'Yes' if result.get('llm_used') else 'No (pattern-based)'}
             self.ui.print_info("Tip: pip install pyreadline3 for tab completion (Windows)")
 
         # Check if LLM is available and show helpful message if not
+        llm_available = False
         if self._conversation and self._conversation._llm_engine:
-            if not getattr(self._conversation._llm_engine, 'is_available', False):
+            llm_available = getattr(self._conversation._llm_engine, 'is_available', False)
+            if not llm_available:
                 print()
                 self.ui.print_warning("NLP features limited: llama-cpp-python not installed.")
                 self.ui.print_info("Commands like 'analyze', 'status', 'help' work fine.")
                 self.ui.print_info("For full NLP: pip install llama-cpp-python")
+
+        # Show model status at startup
+        await self._show_startup_model_status()
+
+        # Auto-load default NLP model if available
+        if llm_available:
+            await self._auto_load_default_nlp_model()
+
         print()
 
         while self._running:
