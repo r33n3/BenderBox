@@ -57,16 +57,8 @@ SCHEMA_VERSION = "0.2.0"  # Extended schema
 
 # ---------- Data Models ----------
 
-@dataclass
-class TestResult:
-    name: str
-    category: str
-    status: str = "PASS"   # PASS, FAIL, WARN, ERROR, SKIP
-    severity: str = "INFO" # INFO, LOW, MEDIUM, HIGH, CRITICAL
-    score: Optional[float] = None
-    details: str = ""
-    metrics: Optional[Dict[str, float]] = None
-    artifacts: Optional[List[Dict[str, str]]] = None
+# Import base classes from sandbox_base to avoid circular imports
+from benderbox.sandbox_base import TestResult, SandboxTest
 
 
 @dataclass
@@ -87,22 +79,7 @@ class SandboxRunResult:
 
 # ---------- Test Registry & Profiles ----------
 
-class SandboxTest:
-    """
-    Base class for sandbox tests. Override `run` in subclasses.
-
-    `context` will hold:
-      - model_info
-      - profile
-      - global settings
-      - utilities for llama.cpp calls (later)
-    """
-
-    name: str = "base_test"
-    category: str = "generic"
-
-    def run(self, context: Dict[str, Any]) -> TestResult:
-        raise NotImplementedError
+# SandboxTest is imported from sandbox_base above
 
 
 class DummyStaticMetadataTest(SandboxTest):
