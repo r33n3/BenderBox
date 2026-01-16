@@ -1129,7 +1129,24 @@ pip install -e ".[nlp]"  # Just NLP features
         """Format help message with Bender personality."""
         query = context.user_query.lower() if context.user_query else ""
 
-        # Check for sub-help topics
+        # Check for topic from intent parameters (for questions about features)
+        topic = context.intent.parameters.get("topic", "") if context.intent else ""
+
+        # Route to topic-specific help
+        if topic == "interrogation" or topic == "security":
+            return self._get_interrogation_help()
+        elif topic == "analysis":
+            return self._get_model_help()
+        elif topic == "mcp":
+            return self._get_mcp_help()
+        elif topic == "reports":
+            return self._get_reports_help()
+        elif topic == "profiles":
+            return self._get_profiles_help()
+        elif topic == "models":
+            return self._get_model_help()
+
+        # Check for sub-help topics from query text
         if "help mcp" in query or "mcp help" in query:
             return self._get_mcp_help()
         elif "help context" in query or "context help" in query or "help prompt" in query:
@@ -1339,6 +1356,140 @@ context scan examples/skills/
 ```
 
 See `examples/README.md` for full documentation.
+"""
+
+    def _get_interrogation_help(self) -> str:
+        """Get interrogation/security testing help."""
+        return """**Model Interrogation & Security Testing**
+
+BenderBox interrogates AI models to test their safety guardrails and identify vulnerabilities.
+
+**How to Interrogate a Model:**
+```
+# 1. Load a model for analysis
+/load phi-2 --for analysis
+
+# 2. Run interrogation with a profile
+analyze --profile standard
+
+# Or interrogate by name
+interrogate phi-2 --profile adversarial
+```
+
+**Interrogation Profiles:**
+| Profile | Tests | Description |
+|---------|-------|-------------|
+| `quick` | ~15 | Fast validation, basic safety checks |
+| `standard` | ~50 | Balanced coverage of safety categories |
+| `full` | ~128 | Comprehensive audit, all test categories |
+| `adversarial` | ~64 | Focused jailbreak resistance testing |
+
+**What Interrogation Tests:**
+1. **Jailbreak Resistance** - DAN, roleplay, context switching attacks
+2. **Content Filtering** - Harmful content generation attempts
+3. **Prompt Injection** - System prompt override attacks
+4. **Safety Guardrails** - Policy enforcement validation
+5. **Bias Detection** - Fairness and bias probes
+6. **Data Extraction** - Training data leakage tests
+
+**Techniques Used:**
+- Direct harm prompts
+- Roleplay jailbreaks (DAN, evil twin)
+- Context switching attacks
+- Encoding obfuscation (ROT13, pig latin)
+- Emotional manipulation
+- System prompt injection
+
+**Example Commands:**
+```
+analyze phi-2 --profile quick           # Quick safety scan
+interrogate ./model.gguf --profile full # Full interrogation
+analyze --profile adversarial           # Test loaded model
+```
+
+**View Results:**
+```
+reports              # List recent reports
+open reports         # Open report viewer in browser
+```
+"""
+
+    def _get_reports_help(self) -> str:
+        """Get reports help."""
+        return """**Analysis Reports**
+
+BenderBox generates detailed reports for each analysis.
+
+**Report Commands:**
+- `reports` - List recent reports
+- `open reports` - Open HTML report viewer in browser
+- `reports --last` - Show last report details
+
+**Report Contents:**
+- Overall risk score (0-100)
+- Risk level (LOW, MEDIUM, HIGH, CRITICAL)
+- Individual test results
+- Detailed findings with evidence
+- Recommendations
+
+**Report Formats:**
+- HTML (interactive, browser-based)
+- JSON (machine-readable)
+- Both saved automatically to `logs/` directory
+
+**Report Viewer:**
+The HTML viewer at `reports/index.html` provides:
+- Search and filter capabilities
+- Side-by-side comparisons
+- Historical trend analysis
+- Export options
+"""
+
+    def _get_profiles_help(self) -> str:
+        """Get profiles help."""
+        return """**Analysis Profiles**
+
+Profiles control the depth and focus of security analysis.
+
+| Profile | Tests | Speed | Use Case |
+|---------|-------|-------|----------|
+| `quick` | ~15 | Fast | Quick validation, CI/CD |
+| `standard` | ~50 | Medium | Regular security checks |
+| `full` | ~128 | Slow | Comprehensive audits |
+| `adversarial` | ~64 | Medium | Jailbreak resistance focus |
+
+**Using Profiles:**
+```
+analyze model --profile quick
+analyze model --profile standard
+analyze model --profile full
+analyze model --profile adversarial
+```
+
+**Profile Details:**
+
+**quick** - Essential safety checks
+- Basic jailbreak tests
+- Core content filtering
+- Minimal runtime
+
+**standard** (default) - Balanced coverage
+- All quick tests plus
+- Extended jailbreak patterns
+- Bias detection
+- Safety guardrails
+
+**full** - Comprehensive audit
+- All standard tests plus
+- Edge cases
+- Encoding attacks
+- Exhaustive coverage
+
+**adversarial** - Red team focus
+- Specialized jailbreak battery
+- Advanced prompt injection
+- Evasion techniques
+- Resistance scoring
 """
 
     async def _answer_general_question(self, context: ResponseContext) -> str:

@@ -369,9 +369,10 @@ class IntentRouter:
         Returns:
             Intent if matched, None otherwise.
         """
-        # Check if this is a conversational question that should go to the LLM
-        # Questions starting with these words should be answered by the NLP model
         query_lower = query.lower().strip()
+
+        # Check if this is a question about BenderBox capabilities
+        # These should show help/documentation about the feature
         question_starters = (
             "what ", "what's ", "whats ",
             "how ", "how's ", "hows ",
@@ -386,17 +387,37 @@ class IntentRouter:
             "i want to know ", "i'd like to know ",
         )
 
-        # If query starts with a question word, route to LLM for a conversational answer
-        # unless it's a very short command-like query
+        # Feature keywords that indicate asking about BenderBox capabilities
+        feature_keywords = (
+            "interrogat", "analyz", "test", "scan", "security",
+            "model", "mcp", "report", "profile",
+        )
+
+        # If query is a question AND mentions BenderBox features, show help
         if len(query_lower) > 15 and query_lower.startswith(question_starters):
-            return Intent(
-                intent_type=IntentType.GENERAL_QUESTION,
-                confidence=0.85,
-                parameters={},
-                requires_analysis=False,
-                requires_llm=True,
-                raw_query=query,
-            )
+            # Check if asking about BenderBox features
+            mentions_feature = any(kw in query_lower for kw in feature_keywords)
+
+            if mentions_feature:
+                # Route to HELP with context about what they're asking
+                return Intent(
+                    intent_type=IntentType.HELP,
+                    confidence=0.90,
+                    parameters={"topic": self._extract_help_topic(query_lower)},
+                    requires_analysis=False,
+                    requires_llm=True,  # Allow LLM to elaborate after showing help
+                    raw_query=query,
+                )
+            else:
+                # General question - route to LLM
+                return Intent(
+                    intent_type=IntentType.GENERAL_QUESTION,
+                    confidence=0.85,
+                    parameters={},
+                    requires_analysis=False,
+                    requires_llm=True,
+                    raw_query=query,
+                )
 
         best_match: Optional[Intent] = None
         best_confidence = 0.0
@@ -420,6 +441,33 @@ class IntentRouter:
                     )
 
         return best_match
+
+    def _extract_help_topic(self, query: str) -> str:
+        """
+        Extract the help topic from a question about BenderBox features.
+
+        Args:
+            query: Lowercase query string.
+
+        Returns:
+            Topic string for contextual help.
+        """
+        if "interrogat" in query:
+            return "interrogation"
+        elif "analyz" in query or "analysis" in query:
+            return "analysis"
+        elif "mcp" in query or "server" in query:
+            return "mcp"
+        elif "report" in query:
+            return "reports"
+        elif "profile" in query:
+            return "profiles"
+        elif "model" in query:
+            return "models"
+        elif "test" in query or "security" in query:
+            return "security"
+        else:
+            return "general"
 
     def _extract_parameters(self, query: str, intent_type: IntentType) -> Dict[str, Any]:
         """
