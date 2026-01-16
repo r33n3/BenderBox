@@ -160,7 +160,7 @@ class ReportGenerator:
                         "high": "🟠",
                         "medium": "🟡",
                         "low": "🟢",
-                        "info": "ℹ️",
+                        "info": "🤖",
                     }.get(severity, "")
 
                     lines.append(f"### {severity_emoji} {severity.upper()} Severity ({len(severity_findings)})")

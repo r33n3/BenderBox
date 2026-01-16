@@ -94,7 +94,7 @@ class TerminalUI:
         "high": "🟠",
         "medium": "🟡",
         "low": "🟢",
-        "info": "ℹ️",
+        "info": "🤖",
         "safe": "✅",
         "unknown": "⚪",
     }
@@ -757,9 +757,9 @@ compare phi-2 openai:gpt-4-turbo
     def print_info(self, message: str) -> None:
         """Print an info message in neon cyan style."""
         if self.console:
-            self.console.print(f"[bold {self.THEME['neon_cyan']}]ℹ[/bold {self.THEME['neon_cyan']}] {message}")
+            self.console.print(f"[bold {self.THEME['neon_cyan']}]🤖[/bold {self.THEME['neon_cyan']}] {message}")
         else:
-            print(f"ℹ {message}")
+            print(f"🤖 {message}")
 
     def print_metrics(self, metrics_line: str, inline: bool = True) -> None:
         """
