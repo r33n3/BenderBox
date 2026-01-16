@@ -369,6 +369,35 @@ class IntentRouter:
         Returns:
             Intent if matched, None otherwise.
         """
+        # Check if this is a conversational question that should go to the LLM
+        # Questions starting with these words should be answered by the NLP model
+        query_lower = query.lower().strip()
+        question_starters = (
+            "what ", "what's ", "whats ",
+            "how ", "how's ", "hows ",
+            "why ", "why's ",
+            "can ", "can't ", "cant ",
+            "could ", "couldn't ",
+            "would ", "wouldn't ",
+            "should ", "shouldn't ",
+            "is there ", "are there ",
+            "do you ", "does ", "did ",
+            "tell me ", "explain ", "describe ",
+            "i want to know ", "i'd like to know ",
+        )
+
+        # If query starts with a question word, route to LLM for a conversational answer
+        # unless it's a very short command-like query
+        if len(query_lower) > 15 and query_lower.startswith(question_starters):
+            return Intent(
+                intent_type=IntentType.GENERAL_QUESTION,
+                confidence=0.85,
+                parameters={},
+                requires_analysis=False,
+                requires_llm=True,
+                raw_query=query,
+            )
+
         best_match: Optional[Intent] = None
         best_confidence = 0.0
 
