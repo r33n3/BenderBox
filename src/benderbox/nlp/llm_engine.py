@@ -240,7 +240,7 @@ class LocalLLMEngine:
     - Async interface for non-blocking operations
     """
 
-    MODEL_TYPES = {"analysis", "code"}
+    MODEL_TYPES = {"analysis", "code", "nlp"}
 
     def __init__(self, config: Optional[LLMConfig] = None, model_manager=None):
         """
@@ -270,6 +270,7 @@ class LocalLLMEngine:
         self._model_paths = {
             "analysis": self._resolve_model_path(config.analysis_model_path, "analysis"),
             "code": self._resolve_model_path(config.code_model_path, "code"),
+            "nlp": None,  # Set dynamically via set_nlp_model()
         }
 
     def _resolve_model_path(self, configured_path: str, purpose: str) -> str:
@@ -315,11 +316,69 @@ class LocalLLMEngine:
             model_manager: ModelManager instance.
         """
         self._model_manager = model_manager
-        # Re-resolve paths with the new manager
+        # Re-resolve paths with the new manager (preserve nlp path if set)
+        current_nlp = self._model_paths.get("nlp")
         self._model_paths = {
             "analysis": self._resolve_model_path(self.config.analysis_model_path, "analysis"),
             "code": self._resolve_model_path(self.config.code_model_path, "code"),
+            "nlp": current_nlp,
         }
+
+    async def set_nlp_model(self, model_path: str) -> bool:
+        """
+        Set and load the NLP model for chat responses.
+
+        Args:
+            model_path: Path to GGUF model file.
+
+        Returns:
+            True if model loaded successfully, False otherwise.
+        """
+        if not self._llama_available:
+            logger.warning("llama-cpp-python not available, NLP model will not be loaded")
+            return False
+
+        path = Path(model_path)
+        if not path.exists():
+            logger.error(f"NLP model file not found: {model_path}")
+            return False
+
+        # Unload existing NLP model if loaded
+        if "nlp" in self._loaded_models:
+            await self.unload_model("nlp")
+
+        # Set the new path
+        self._model_paths["nlp"] = str(path)
+        logger.info(f"NLP model path set to: {model_path}")
+
+        # Pre-load the model
+        try:
+            await self.load_model("nlp")
+            logger.info(f"NLP model loaded successfully: {path.name}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to load NLP model: {e}")
+            self._model_paths["nlp"] = None
+            return False
+
+    async def unload_nlp_model(self) -> None:
+        """Unload the NLP model and clear its path."""
+        if "nlp" in self._loaded_models:
+            await self.unload_model("nlp")
+        self._model_paths["nlp"] = None
+        logger.info("NLP model unloaded")
+
+    def get_nlp_model_path(self) -> Optional[str]:
+        """Get the currently configured NLP model path."""
+        return self._model_paths.get("nlp")
+
+    def is_nlp_model_loaded(self) -> bool:
+        """Check if an NLP model is loaded and ready."""
+        return (
+            self._model_paths.get("nlp") is not None
+            and "nlp" in self._loaded_models
+            and self._loaded_models["nlp"].is_loaded
+        )
 
     @property
     def is_available(self) -> bool:
@@ -338,6 +397,14 @@ class LocalLLMEngine:
         if model_type not in self.MODEL_TYPES:
             raise ValueError(f"Unknown model type: {model_type}. Valid types: {self.MODEL_TYPES}")
 
+        # Check if model path is configured (especially for nlp which is dynamically set)
+        model_path = self._model_paths.get(model_type)
+        if model_path is None:
+            raise LLMEngineError(
+                f"No model configured for '{model_type}'. "
+                + ("Use '/load <model> --for nlp' to load a chat model." if model_type == "nlp" else "")
+            )
+
         # Check if already loaded
         if model_type in self._loaded_models:
             # Move to end (most recently used)
@@ -352,7 +419,6 @@ class LocalLLMEngine:
             logger.info(f"Evicted model due to memory limit: {oldest_type}")
 
         # Create new model
-        model_path = self._model_paths[model_type]
         model = LlamaModel(
             model_path=model_path,
             context_length=self.config.context_length,

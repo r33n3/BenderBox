@@ -1533,15 +1533,7 @@ LLM Used: {'Yes' if result.get('llm_used') else 'No (pattern-based)'}
             model_path = Path(model_name)
             if model_path.exists():
                 resolved_path = str(model_path.resolve())
-                if purpose == "nlp":
-                    self._current_nlp_model = resolved_path
-                    self.ui.print_success(f"Loaded NLP model: {model_path.name}")
-                    self.ui.print_info("This model will be used for chat responses.")
-                else:
-                    self._current_analysis_model = resolved_path
-                    self.ui.print_success(f"Loaded analysis model: {model_path.name}")
-                    self.ui.print_info("This model will be the target for analysis/interrogation.")
-                self._sync_loaded_models()
+                await self._load_model_for_purpose(resolved_path, model_path.name, purpose)
                 return
             else:
                 self.ui.print_error(f"Model file not found: {model_name}")
@@ -1552,17 +1544,7 @@ LLM Used: {'Yes' if result.get('llm_used') else 'No (pattern-based)'}
 
         if model_path:
             resolved_path = str(model_path)
-            if purpose == "nlp":
-                self._current_nlp_model = resolved_path
-                self.ui.print_success(f"Loaded NLP model: {model_path.name}")
-                self.ui.print_info(f"Path: {model_path}")
-                self.ui.print_info("\nThis model will be used for chat responses.")
-            else:
-                self._current_analysis_model = resolved_path
-                self.ui.print_success(f"Loaded analysis model: {model_path.name}")
-                self.ui.print_info(f"Path: {model_path}")
-                self.ui.print_info("\nYou can now analyze this model with 'analyze' or interrogate it.")
-            self._sync_loaded_models()
+            await self._load_model_for_purpose(resolved_path, model_path.name, purpose)
         else:
             # Show available models
             all_models = manager.get_downloaded_models()
@@ -1576,6 +1558,40 @@ LLM Used: {'Yes' if result.get('llm_used') else 'No (pattern-based)'}
             else:
                 self.ui.print_error(f"Model '{model_name}' not found.")
                 self.ui.print_info("Use '/models' to see available models.")
+
+    async def _load_model_for_purpose(self, resolved_path: str, model_name: str, purpose: str) -> None:
+        """Load a model for NLP or analysis purpose."""
+        if purpose == "nlp":
+            # Actually load the model into the LLM engine for chat
+            llm_engine = self._get_llm_engine()
+            if llm_engine:
+                self.ui.print_info(f"Loading {model_name} into memory for chat...")
+                success = await llm_engine.set_nlp_model(resolved_path)
+                if success:
+                    self._current_nlp_model = resolved_path
+                    self.ui.print_success(f"NLP model loaded: {model_name}")
+                    self.ui.print_info("You can now chat with this model. Try asking a question!")
+                else:
+                    self.ui.print_error(f"Failed to load model into memory.")
+                    self.ui.print_info("Check that llama-cpp-python is installed: pip install llama-cpp-python")
+                    return
+            else:
+                # No LLM engine available, just track the path
+                self._current_nlp_model = resolved_path
+                self.ui.print_success(f"NLP model set: {model_name}")
+                self.ui.print_warning("Note: llama-cpp-python not available, chat responses will be limited.")
+        else:
+            self._current_analysis_model = resolved_path
+            self.ui.print_success(f"Analysis model loaded: {model_name}")
+            self.ui.print_info("This model is now the target for analysis/interrogation.")
+
+        self._sync_loaded_models()
+
+    def _get_llm_engine(self):
+        """Get the LLM engine from the conversation manager."""
+        if self._conversation and hasattr(self._conversation, '_llm_engine'):
+            return self._conversation._llm_engine
+        return None
 
     def _find_model_anywhere(self, manager, name: str) -> Optional[Path]:
         """Find a model by name in any location."""
@@ -1674,6 +1690,10 @@ LLM Used: {'Yes' if result.get('llm_used') else 'No (pattern-based)'}
 
         if target in ("nlp", "all") and self._current_nlp_model:
             model_name = Path(self._current_nlp_model).stem
+            # Actually unload from LLM engine
+            llm_engine = self._get_llm_engine()
+            if llm_engine and hasattr(llm_engine, 'unload_nlp_model'):
+                await llm_engine.unload_nlp_model()
             self._current_nlp_model = None
             unloaded.append(f"NLP model: {model_name}")
 

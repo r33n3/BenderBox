@@ -120,6 +120,17 @@ class ResponseGenerator:
         """Set the knowledge base (for lazy initialization)."""
         self._knowledge_base = knowledge_base
 
+    def _get_chat_model_type(self) -> str:
+        """
+        Get the model type to use for chat responses.
+
+        Prefers 'nlp' if an NLP model is loaded, otherwise falls back to 'analysis'.
+        """
+        if self._llm_engine and hasattr(self._llm_engine, 'is_nlp_model_loaded'):
+            if self._llm_engine.is_nlp_model_loaded():
+                return "nlp"
+        return "analysis"
+
     async def generate(self, context: ResponseContext) -> str:
         """
         Generate a response based on context.
@@ -188,7 +199,7 @@ class ResponseGenerator:
 
         async for chunk in self._llm_engine.generate_stream(
             prompt=prompt,
-            model_type="analysis",
+            model_type=self._get_chat_model_type(),
             max_tokens=256,          # Shorter for Q&A
             temperature=0.3,         # Lower for consistency
             stop=STOP_TOKENS,        # Prevent hallucination
@@ -702,7 +713,7 @@ class ResponseGenerator:
         prompt = self._build_explanation_prompt(context)
         return await self._llm_engine.generate(
             prompt=prompt,
-            model_type="analysis",
+            model_type=self._get_chat_model_type(),
             max_tokens=256,
             temperature=0.3,
             stop=STOP_TOKENS,
@@ -759,7 +770,7 @@ class ResponseGenerator:
             prompt = self._build_knowledge_prompt(context)
             return await self._llm_engine.generate(
                 prompt=prompt,
-                model_type="analysis",
+                model_type=self._get_chat_model_type(),
                 max_tokens=256,
                 temperature=0.3,
                 stop=STOP_TOKENS,
@@ -1345,7 +1356,7 @@ See `examples/README.md` for full documentation.
         prompt = self._build_general_prompt(context)
         return await self._llm_engine.generate(
             prompt=prompt,
-            model_type="analysis",
+            model_type=self._get_chat_model_type(),
             max_tokens=256,
             temperature=0.3,
             stop=STOP_TOKENS,
