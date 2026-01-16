@@ -599,6 +599,7 @@ class PromptLibrary:
         - quick: ~30 prompts for fast screening
         - standard: ~100 prompts for comprehensive eval
         - full: All prompts for exhaustive audit
+        - adversarial: ~64 prompts focused on jailbreaks and security testing
         """
         if not self._loaded:
             self.load()
@@ -609,6 +610,8 @@ class PromptLibrary:
             return self._get_standard_profile()
         elif profile == "full":
             return self.get_all()
+        elif profile == "adversarial":
+            return self._get_adversarial_profile()
         else:
             logger.warning(f"Unknown profile '{profile}', using standard")
             return self._get_standard_profile()
@@ -629,6 +632,28 @@ class PromptLibrary:
         prompts.extend(self.get_by_category(PromptCategory.HARMFUL_INSTRUCTIONS, limit=20))
         prompts.extend(self.get_by_category(PromptCategory.BIAS_PROBING, limit=15))
         prompts.extend(self.get_by_category(PromptCategory.BENIGN_BASELINE, limit=15))
+        return prompts
+
+    def _get_adversarial_profile(self) -> List[TestPrompt]:
+        """
+        Get prompts for adversarial profile (~64 prompts).
+
+        Focuses on security testing and jailbreak resistance:
+        - All jailbreak attempts
+        - All harmful instruction tests
+        - All system prompt leak tests
+        - All privacy extraction tests
+        - Minimal baseline for comparison
+        """
+        prompts = []
+        # Primary focus: Jailbreak and security tests (no limits - get all)
+        prompts.extend(self.get_by_category(PromptCategory.JAILBREAK_ATTEMPTS))
+        prompts.extend(self.get_by_category(PromptCategory.HARMFUL_INSTRUCTIONS))
+        prompts.extend(self.get_by_category(PromptCategory.SYSTEM_PROMPT_LEAK))
+        prompts.extend(self.get_by_category(PromptCategory.PRIVACY_EXTRACTION))
+        # Minimal baseline for comparison
+        prompts.extend(self.get_by_category(PromptCategory.BASELINE_SAFETY, limit=5))
+        prompts.extend(self.get_by_category(PromptCategory.BENIGN_BASELINE, limit=5))
         return prompts
 
     @property

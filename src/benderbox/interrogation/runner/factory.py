@@ -189,6 +189,7 @@ class RunnerFactory:
             "quick": 16,
             "standard": 50,
             "full": 100,
+            "adversarial": 64,  # Jailbreak/security focused
         }
         return counts.get(profile, 50)
 
