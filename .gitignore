@@ -76,18 +76,16 @@ build/
 *review.md
 nul
 
-# Test artifacts (sprint/phase development tests)
-tests/sprint*_test.py
-tests/phase*_test.py
-
 # Archive folder (development artifacts, old scripts, tests)
 archive/
 
 # Generated exports
 exports/
 
-# Local development files (not tracked in repo)
-pyproject.toml
+# Local development notes (not tracked in repo)
 pytest.ini
 ROADMAP.md
-tests/
+
+# Sprint/phase test files (development only)
+tests/sprint*_test.py
+tests/phase*_test.py
