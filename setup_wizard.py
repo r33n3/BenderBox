@@ -32,8 +32,8 @@ class Colors:
 FEATURES = {
     "core": {
         "name": "Core (Required)",
-        "description": "CLI, model downloads, basic analysis",
-        "packages": ["pyyaml>=6.0", "aiosqlite>=0.19.0", "click>=8.0.0", "rich>=13.0.0", "httpx>=0.25.0", "huggingface-hub>=0.20.0"],
+        "description": "CLI, model downloads, GGUF analysis, basic security tests",
+        "packages": ["pyyaml>=6.0", "aiosqlite>=0.19.0", "click>=8.0.0", "rich>=13.0.0", "httpx>=0.25.0", "huggingface-hub>=0.20.0", "gguf>=0.6.0"],
         "required": True,
         "python_min": (3, 9),
         "python_max": None,
@@ -108,7 +108,7 @@ def print_banner():
  ██████╔╝███████╗██║ ╚████║██████╔╝███████╗██║  ██║██████╔╝╚██████╔╝██╔╝ ██╗
  ╚═════╝ ╚══════╝╚═╝  ╚═══╝╚═════╝ ╚══════╝╚═╝  ╚═╝╚═════╝  ╚═════╝ ╚═╝  ╚═╝
 {Colors.END}
-{Colors.BOLD}                    Setup Wizard v1.0{Colors.END}
+{Colors.BOLD}                    Setup Wizard v4.0{Colors.END}
                  AI Security Analysis Platform
 """
     print(banner)
@@ -430,6 +430,7 @@ def verify_installation():
         ("Core", "benderbox"),
         ("CLI", "benderbox.ui.app"),
         ("Config", "benderbox.config"),
+        ("GGUF Parser", "gguf"),
     ]
 
     # Check for optional modules
@@ -745,6 +746,9 @@ def print_next_steps(nlp_installed=False, model_downloaded=False):
 {Colors.YELLOW}Model Required:{Colors.END}
    Download a model to use the NLP features:
    {Colors.GREEN}python bb.py models download tinyllama{Colors.END}
+
+   Or download any GGUF model from a URL:
+   {Colors.GREEN}python bb.py models download https://huggingface.co/.../model.gguf{Colors.END}
 """)
 
     print(f"""
@@ -759,13 +763,23 @@ def print_next_steps(nlp_installed=False, model_downloaded=False):
 {Colors.CYAN}Try These Examples:{Colors.END}
    python bb.py context analyze examples/prompts/risky_system_prompt.md
    python bb.py mcp analyze examples/mcp_servers/sample_vulnerable_server.py
+   python bb.py interrogate models/analysis/your-model.gguf
+
+{Colors.CYAN}Download Models:{Colors.END}
+   python bb.py models list                    - List available models
+   python bb.py models download tinyllama      - Download recommended model
+   python bb.py models download <URL>          - Download any GGUF from URL
+
+{Colors.CYAN}Interactive Chat (NLP):{Colors.END}
+   python bb.py -i                             - Start interactive mode
+   /load tinyllama --for nlp                   - Load model for chat
+   download <URL> and analyze it               - Download & analyze via chat
 
 {Colors.CYAN}Quick Commands:{Colors.END}
-   python bb.py models list      - List available models
    python bb.py config api-keys  - Configure API keys
    python bb.py status           - Check system status
 
-{Colors.YELLOW}Documentation:{Colors.END} See README.md for full usage guide
+{Colors.YELLOW}Documentation:{Colors.END} See README.md or run 'python bb.py docs'
 """)
 
 
