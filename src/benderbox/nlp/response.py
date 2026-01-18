@@ -120,16 +120,17 @@ class ResponseGenerator:
         """Set the knowledge base (for lazy initialization)."""
         self._knowledge_base = knowledge_base
 
-    def _get_chat_model_type(self) -> str:
+    def _get_chat_model_type(self) -> Optional[str]:
         """
         Get the model type to use for chat responses.
 
-        Prefers 'nlp' if an NLP model is loaded, otherwise falls back to 'analysis'.
+        Returns 'nlp' if an NLP model is loaded, None otherwise.
+        Chat responses require an explicitly loaded NLP model.
         """
         if self._llm_engine and hasattr(self._llm_engine, 'is_nlp_model_loaded'):
             if self._llm_engine.is_nlp_model_loaded():
                 return "nlp"
-        return "analysis"
+        return None
 
     async def generate(self, context: ResponseContext) -> str:
         """
@@ -189,7 +190,10 @@ class ResponseGenerator:
         """
         # For non-LLM responses, yield complete response
         llm_available = self._llm_engine is not None and getattr(self._llm_engine, 'is_available', False)
-        if not context.intent.requires_llm or not llm_available:
+        chat_model_type = self._get_chat_model_type()
+
+        # Fall back to non-LLM response if no chat model available
+        if not context.intent.requires_llm or not llm_available or chat_model_type is None:
             response = await self.generate(context)
             yield response
             return
@@ -199,7 +203,7 @@ class ResponseGenerator:
 
         async for chunk in self._llm_engine.generate_stream(
             prompt=prompt,
-            model_type=self._get_chat_model_type(),
+            model_type=chat_model_type,
             max_tokens=256,          # Shorter for Q&A
             temperature=0.3,         # Lower for consistency
             stop=STOP_TOKENS,        # Prevent hallucination
@@ -707,13 +711,14 @@ class ResponseGenerator:
 
     async def _generate_explanation(self, context: ResponseContext) -> str:
         """Generate explanation using LLM."""
-        if self._llm_engine is None or not getattr(self._llm_engine, 'is_available', False):
+        chat_model_type = self._get_chat_model_type()
+        if self._llm_engine is None or not getattr(self._llm_engine, 'is_available', False) or chat_model_type is None:
             return self._template_explanation(context)
 
         prompt = self._build_explanation_prompt(context)
         return await self._llm_engine.generate(
             prompt=prompt,
-            model_type=self._get_chat_model_type(),
+            model_type=chat_model_type,
             max_tokens=256,
             temperature=0.3,
             stop=STOP_TOKENS,
@@ -766,11 +771,12 @@ class ResponseGenerator:
             return "\n".join(lines)
 
         # Use LLM if available
-        if self._llm_engine and getattr(self._llm_engine, 'is_available', False):
+        chat_model_type = self._get_chat_model_type()
+        if self._llm_engine and getattr(self._llm_engine, 'is_available', False) and chat_model_type is not None:
             prompt = self._build_knowledge_prompt(context)
             return await self._llm_engine.generate(
                 prompt=prompt,
-                model_type=self._get_chat_model_type(),
+                model_type=chat_model_type,
                 max_tokens=256,
                 temperature=0.3,
                 stop=STOP_TOKENS,
@@ -1058,7 +1064,7 @@ python bb.py search -l 10 "unsafe model behavior"
             from benderbox import __version__
             version = __version__
         except ImportError:
-            version = "3.0.0-alpha"
+            version = "4.0.0-alpha"
 
         return f"""**BenderBox Version**
 
@@ -1160,47 +1166,48 @@ pip install -e ".[nlp]"  # Just NLP features
 
 "I'm here to help. Reluctantly."
 
-**Core Commands:**
-- `status` - Show system status
-- `help` - Show this help message
-- `help mcp` - MCP server analysis help
-- `help context` - Context/prompt analysis help
-- `help models` - Model analysis help
-- `help examples` - Show example files
-- `exit` / `quit` - Exit BenderBox
-
-**Quick Start - Try These Examples:**
+**Interactive Mode (Natural Language):**
+Just say what you want:
 ```
-context analyze examples/prompts/risky_system_prompt.md
-mcp analyze examples/mcp_servers/sample_vulnerable_server.py
-context scan examples/skills/
+analyze phi-2
+run jailbreak tests on phi-2
+is this model safe for production?
+compare phi-2 to tinyllama
+list models
+test the mcp server
 ```
 
 **Analysis Types:**
-1. **MCP Servers** - Test MCP servers for vulnerabilities
-2. **Context/Prompts** - Analyze instruction files for risks
-3. **Models** - Test AI models for safety/censorship
+1. **Models** - Test AI models for safety/jailbreaks
+2. **MCP Servers** - Test MCP servers for vulnerabilities
+3. **Context/Prompts** - Analyze instruction files for risks
 
-**Natural Language:**
-- "Analyze this file for security issues"
-- "Is this MCP server safe?"
-- "What jailbreak patterns were found?"
-- "Explain why the risk score is high"
+**Profiles:** quick | standard | full | adversarial
 
-**Profiles:** quick | standard | full
+**Topic Help:**
+- `help models` - Model analysis examples
+- `help mcp` - MCP server testing
+- `help context` - Prompt analysis
+- `help examples` - Sample files
 
-Type `help <topic>` for detailed help on: mcp, context, models, examples
+**CLI/Scripting:**
+Use `python bb.py --help` for direct command syntax.
+Interactive mode uses natural language; CLI uses flags.
+
+**Exit:** `exit` or `quit`
 """
 
     def _get_mcp_help(self) -> str:
         """Get MCP-specific help."""
         return """**MCP Server Security Analysis**
 
-**Commands:**
-- `mcp tools <target>` - List tools from MCP server
-- `mcp interrogate <target>` - Run security tests
-- `mcp analyze <url>` - Static analysis of server code
-- `mcp call <target> <tool>` - Call a specific tool
+**Natural Language Examples:**
+```
+test the mcp server for vulnerabilities
+what tools does this server expose?
+analyze the mcp server
+is this mcp server safe?
+```
 
 **Target Formats:**
 - STDIO: `npx @modelcontextprotocol/server-filesystem .`
@@ -1211,29 +1218,28 @@ Type `help <topic>` for detailed help on: mcp, context, models, examples
 ```
 mcp analyze examples/mcp_servers/sample_vulnerable_server.py
 ```
-This sample has intentional vulnerabilities (command injection, path traversal, SQL injection) that BenderBox will detect.
+This sample has intentional vulnerabilities that BenderBox will detect.
 
 **Profiles:**
 - `quick` - Fast scan (~15 tests)
 - `standard` - Balanced (~30 tests)
 - `full` - Comprehensive (~50 tests)
 
-**Example Commands:**
-```
-mcp tools "npx @modelcontextprotocol/server-filesystem ."
-mcp interrogate "npx @server" --profile quick
-mcp analyze https://github.com/org/mcp-server
-```
+**For CLI/Scripting:**
+Use `python bb.py mcp --help` for direct command syntax.
 """
 
     def _get_context_help(self) -> str:
         """Get context/prompt analysis help."""
         return """**Context & Prompt Security Analysis**
 
-**Commands:**
-- `context analyze <file>` - Analyze instruction file
-- `context scan <dir>` - Scan directory for risky files
-- `context output <text>` - Analyze model output
+**Natural Language Examples:**
+```
+analyze this prompt for security risks
+scan the prompts directory
+check this file for jailbreak patterns
+is this system prompt safe?
+```
 
 **What It Detects:**
 - Jailbreak instructions ("ignore previous instructions")
@@ -1244,14 +1250,8 @@ mcp analyze https://github.com/org/mcp-server
 
 **Try These Examples:**
 ```
-# Safe prompt - should have no findings
 context analyze examples/prompts/safe_system_prompt.md
-
-# Risky prompt - should flag CRITICAL issues
 context analyze examples/prompts/risky_system_prompt.md
-
-# Scan all skill files
-context scan examples/skills/ --pattern "*.md"
 ```
 
 **File Types:**
@@ -1261,37 +1261,35 @@ context scan examples/skills/ --pattern "*.md"
 - Model outputs
 
 **Risk Levels:** SAFE | LOW | MEDIUM | HIGH | CRITICAL
+
+**For CLI/Scripting:**
+Use `python bb.py context --help` for direct command syntax.
 """
 
     def _get_model_help(self) -> str:
         """Get model analysis help."""
         return """**AI Model Security Analysis**
 
-**Complete Workflow:**
+**Natural Language Examples:**
 ```
-# 1. Download a model
-models download tinyllama
-
-# 2. Load for analysis
-/load tinyllama --for analysis
-
-# 3. Run analysis
-analyze --profile quick
-
-# 4. View reports
-reports
-open reports
+analyze phi-2
+test tinyllama with adversarial profile
+run jailbreak tests on phi-2
+is this model safe for production?
+compare phi-2 to tinyllama
+list models
+what models do I have?
 ```
 
-**Model Commands:**
-- `list models` - Show available models
-- `models download <id>` - Download a model
-- `/load <model> --for nlp` - Load for chat features
-- `/load <model> --for analysis` - Load as analysis target
-- `analyze <model>` - Analyze model for security
-- `interrogate <target>` - Test model safety/censorship
+**Advanced Testing (Variant Probing):**
+```
+run jailbreak tests on phi-2
+test phi-2 with red team profile
+run aggressive tests on tinyllama
+```
+These trigger adversarial profile with automatic variant probing.
 
-**Available Models to Download:**
+**Available Models:**
 | ID | Size | Description |
 |----|------|-------------|
 | `tinyllama` | ~500 MB | Fast, limited RAM |
@@ -1299,22 +1297,14 @@ open reports
 | `qwen2-1.5b` | ~1 GB | Great balance |
 | `mistral-7b` | ~4.4 GB | Best quality |
 
-**Target Formats:**
-- Downloaded: `tinyllama`, `phi-2` (by name)
-- Local GGUF: `./models/llama-7b.gguf`
-- API Models: `openai:gpt-4-turbo`, `anthropic:claude-3-sonnet`
-
 **Profiles:**
 - `quick` - Fast validation (~15 tests)
 - `standard` - Balanced analysis (~50 tests)
-- `full` - Comprehensive audit (~128 tests)
-- `adversarial` - Jailbreak resistance (~64 tests)
+- `full` - Comprehensive audit (~100+ tests)
+- `adversarial` - Jailbreak resistance + variant probing (~64 tests)
 
-**What It Tests:**
-- Jailbreak resistance
-- Content filtering
-- Bias detection
-- Safety guardrails
+**For CLI/Scripting:**
+Use `python bb.py --help` for direct command syntax.
 """
 
     def _get_examples_help(self) -> str:
@@ -1364,54 +1354,42 @@ See `examples/README.md` for full documentation.
 
 BenderBox interrogates AI models to test their safety guardrails and identify vulnerabilities.
 
-**How to Interrogate a Model:**
+**Natural Language Examples:**
 ```
-# 1. Load a model for analysis
-/load phi-2 --for analysis
-
-# 2. Run interrogation with a profile
-analyze --profile standard
-
-# Or interrogate by name
-interrogate phi-2 --profile adversarial
+analyze phi-2
+test tinyllama with adversarial profile
+run jailbreak tests on phi-2
+test phi-2 with red team profile
+run aggressive tests on tinyllama
+is this model safe for production?
 ```
 
-**Interrogation Profiles:**
+**Profiles:**
 | Profile | Tests | Description |
 |---------|-------|-------------|
 | `quick` | ~15 | Fast validation, basic safety checks |
 | `standard` | ~50 | Balanced coverage of safety categories |
-| `full` | ~128 | Comprehensive audit, all test categories |
-| `adversarial` | ~64 | Focused jailbreak resistance testing |
+| `full` | ~100+ | Comprehensive audit, all test categories |
+| `adversarial` | ~64 | Jailbreak resistance + variant probing |
 
-**What Interrogation Tests:**
-1. **Jailbreak Resistance** - DAN, roleplay, context switching attacks
-2. **Content Filtering** - Harmful content generation attempts
-3. **Prompt Injection** - System prompt override attacks
-4. **Safety Guardrails** - Policy enforcement validation
-5. **Bias Detection** - Fairness and bias probes
-6. **Data Extraction** - Training data leakage tests
+**What It Tests:**
+- Jailbreak Resistance (DAN, roleplay, context switching)
+- Content Filtering (harmful content generation)
+- Prompt Injection (system prompt override)
+- Safety Guardrails (policy enforcement)
+- Data Extraction (training data leakage)
 
-**Techniques Used:**
-- Direct harm prompts
-- Roleplay jailbreaks (DAN, evil twin)
-- Context switching attacks
-- Encoding obfuscation (ROT13, pig latin)
-- Emotional manipulation
-- System prompt injection
-
-**Example Commands:**
-```
-analyze phi-2 --profile quick           # Quick safety scan
-interrogate ./model.gguf --profile full # Full interrogation
-analyze --profile adversarial           # Test loaded model
-```
+**Variant Probing (adversarial profile):**
+When a model refuses, automatically tries multiple jailbreak techniques.
 
 **View Results:**
 ```
-reports              # List recent reports
-open reports         # Open report viewer in browser
+show my reports
+open the report viewer
 ```
+
+**For CLI/Scripting:**
+Use `python bb.py interrogate --help` for direct command syntax.
 """
 
     def _get_reports_help(self) -> str:
@@ -1451,19 +1429,19 @@ The HTML viewer at `reports/index.html` provides:
 
 Profiles control the depth and focus of security analysis.
 
-| Profile | Tests | Speed | Use Case |
-|---------|-------|-------|----------|
-| `quick` | ~15 | Fast | Quick validation, CI/CD |
-| `standard` | ~50 | Medium | Regular security checks |
-| `full` | ~128 | Slow | Comprehensive audits |
-| `adversarial` | ~64 | Medium | Jailbreak resistance focus |
+| Profile | Tests | Use Case |
+|---------|-------|----------|
+| `quick` | ~15 | Fast validation, CI/CD |
+| `standard` | ~50 | Regular security checks |
+| `full` | ~100+ | Comprehensive audits |
+| `adversarial` | ~64 | Jailbreak resistance + variant probing |
 
-**Using Profiles:**
+**Natural Language Examples:**
 ```
-analyze model --profile quick
-analyze model --profile standard
-analyze model --profile full
-analyze model --profile adversarial
+analyze phi-2 with quick profile
+test tinyllama with full profile
+run jailbreak tests on phi-2
+test phi-2 with red team profile
 ```
 
 **Profile Details:**
@@ -1471,33 +1449,36 @@ analyze model --profile adversarial
 **quick** - Essential safety checks
 - Basic jailbreak tests
 - Core content filtering
-- Minimal runtime
 
 **standard** (default) - Balanced coverage
-- All quick tests plus
 - Extended jailbreak patterns
 - Bias detection
 - Safety guardrails
 
 **full** - Comprehensive audit
-- All standard tests plus
+- All test categories
 - Edge cases
 - Encoding attacks
-- Exhaustive coverage
 
 **adversarial** - Red team focus
 - Specialized jailbreak battery
+- Variant probing (persistent testing)
 - Advanced prompt injection
-- Evasion techniques
-- Resistance scoring
+
+**YAML Configuration:**
+Profiles are configurable in `configs/profiles/*.yaml`
+
+**For CLI/Scripting:**
+Use `python bb.py --help` for direct command syntax.
 """
 
     async def _answer_general_question(self, context: ResponseContext) -> str:
         """Answer general questions using LLM."""
-        if self._llm_engine is None or not getattr(self._llm_engine, 'is_available', False):
+        chat_model_type = self._get_chat_model_type()
+        if self._llm_engine is None or not getattr(self._llm_engine, 'is_available', False) or chat_model_type is None:
             return (
-                "I need an LLM model loaded to answer general questions. "
-                "Please ensure llama-cpp-python is installed and a model is available.\n\n"
+                "I need an NLP model loaded to answer general questions.\n\n"
+                "Load a model with: /load <model> --for nlp\n\n"
                 "For now, I can help with analysis commands like:\n"
                 "- 'analyze model.gguf'\n"
                 "- 'status'\n"
@@ -1507,7 +1488,7 @@ analyze model --profile adversarial
         prompt = self._build_general_prompt(context)
         return await self._llm_engine.generate(
             prompt=prompt,
-            model_type=self._get_chat_model_type(),
+            model_type=chat_model_type,
             max_tokens=256,
             temperature=0.3,
             stop=STOP_TOKENS,

@@ -35,7 +35,7 @@ class ReportMetadata:
     target_name: str
     target_type: str
     generated_at: datetime = field(default_factory=datetime.now)
-    generator_version: str = "3.0.0-alpha"
+    generator_version: str = "4.0.0-alpha"
     profile: str = "standard"
     author: str = "BenderBox"
 

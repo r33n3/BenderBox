@@ -1,8 +1,9 @@
-# BenderBox v3.0 Completion Roadmap
+# BenderBox v4.0 Completion Roadmap
 
 **Created:** 2026-01-16
+**Updated:** 2026-01-18
 **Current Progress:** ~80%
-**Target:** Production-ready v3.0 release
+**Target:** Production-ready v4.0 release
 
 ---
 

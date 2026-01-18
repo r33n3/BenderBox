@@ -1,6 +1,6 @@
 # BenderBox - AI Security Interrogation & Testing Toolkit
 
-**Version:** 3.0.0-alpha | **Status:** Active Development
+**Version:** 4.0.0-alpha | **Status:** Active Development
 
 BenderBox is a security testing toolkit for interrogating AI models, probing MCP servers, and analyzing instruction files for vulnerabilities, jailbreak resistance, and safety compliance.
 
@@ -134,7 +134,28 @@ Use `python bb.py --help` for full command list or `help` in interactive mode.
 | `quick` | ~15 | Fast CI/CD validation |
 | `standard` | ~50 | Balanced coverage |
 | `full` | ~100+ | Pre-deployment audit |
-| `adversarial` | ~64 | Jailbreak resistance |
+| `adversarial` | ~64 | Jailbreak resistance with variant probing |
+
+Profiles are YAML-configurable in `configs/profiles/`. Create custom profiles or modify existing ones without code changes.
+
+### Variant Probing (Persistent Testing)
+
+The adversarial profile includes **variant probing** - automatically trying multiple jailbreak techniques when a model refuses the initial prompt:
+
+```yaml
+# In configs/profiles/adversarial.yaml
+variant_config:
+  enabled: true
+  max_variants_per_prompt: 5
+  stop_on_success: true
+  technique_categories:
+    - roleplay      # DAN, evil_assistant, developer_mode
+    - context       # hypothetical, educational, fictional
+    - emotional     # urgency, guilt, authority
+    - injection     # ignore_previous, system_override
+```
+
+This mimics how security testers probe model boundaries with multiple attempts.
 
 ---
 

@@ -79,7 +79,7 @@ class ModelCard:
     # Metadata
     analysis_date: datetime = field(default_factory=datetime.now)
     analysis_profile: str = "standard"
-    generator_version: str = "3.0.0-alpha"
+    generator_version: str = "4.0.0-alpha"
 
     # Additional sections
     additional_sections: List[ModelCardSection] = field(default_factory=list)

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "benderbox"
-version = "3.0.0-alpha"
+version = "4.0.0-alpha"
 description = "AI Security Testing and Model Safety Framework - Offline-first platform for analyzing AI models and infrastructure"
 readme = "README.md"
 requires-python = ">=3.9"
