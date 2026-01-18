@@ -85,3 +85,9 @@ archive/
 
 # Generated exports
 exports/
+
+# Local development files (not tracked in repo)
+pyproject.toml
+pytest.ini
+ROADMAP.md
+tests/
