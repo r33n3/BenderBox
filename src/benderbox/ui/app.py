@@ -277,7 +277,6 @@ class BenderBoxApp:
                         # Auto-open in browser for HTML format
                         if open_browser and fmt == ExportFormat.HTML:
                             import webbrowser
-                            from pathlib import Path
                             file_url = Path(export_result.path).as_uri()
                             webbrowser.open(file_url)
                             self.terminal_ui.print_info("Opened report in browser")
@@ -366,7 +365,7 @@ def chat(ctx):
 @click.argument("target")
 @click.option("-p", "--profile", default="standard",
               type=click.Choice(["quick", "standard", "full", "adversarial"]),
-              help="Analysis profile: quick (~15 tests), standard (~50), full (~100+), adversarial (jailbreak)")
+              help="Analysis profile: quick (~15), standard (~50), full (~100+), adversarial (jailbreak + variant probing)")
 @click.option("-o", "--output", help="Output file path")
 @click.option("-f", "--format", default="markdown",
               type=click.Choice(["markdown", "json", "html", "csv", "sarif"]),
@@ -816,7 +815,7 @@ def prereq_remove(ctx, name: str):
 @click.argument("model_target")
 @click.option("-p", "--profile", default="quick",
               type=click.Choice(["quick", "standard", "full", "adversarial"]),
-              help="Interrogation profile: quick (~15), standard (~50), full (~100+), adversarial (jailbreak)")
+              help="Interrogation profile: quick (~15), standard (~50), full (~100+), adversarial (jailbreak + variant probing)")
 @click.option("-c", "--censorship", default="unknown", help="Claimed censorship level")
 @click.option("-o", "--output", help="Output report file path")
 @click.option("-f", "--format", "output_format", default="json",
@@ -826,6 +825,16 @@ def prereq_remove(ctx, name: str):
 @click.option("--no-validate", is_flag=True, help="Skip censorship validation")
 @click.option("-y", "--yes", is_flag=True, help="Skip confirmation for API targets")
 @click.option("--tests-file", "tests_file", help="Load custom tests from file (.md, .yaml, .yml)")
+# Display mode options
+@click.option("-j", "--judge", "judge_model", help="Judge model: 'nlp' for loaded model, or path to .gguf")
+@click.option("--silent", is_flag=True, help="Silent mode: only show final summary (for CI/CD)")
+@click.option("-v", "--verbose", is_flag=True, help="Verbose mode: show all prompts/responses/analysis")
+@click.option("-i", "--interactive", is_flag=True, help="Interactive mode: pause after each test for user control")
+@click.option("--stream", is_flag=True, help="Stream mode: real-time streaming responses")
+@click.option("--max-followups", default=1, type=int, help="Max follow-up probes per test (default: 1, 0 to disable)")
+# Resource management options
+@click.option("--low-resource", is_flag=True, help="Low-resource mode: disable LLM-based features (judge, followups)")
+@click.option("--force-judge", is_flag=True, help="Force judge mode even with resource warnings")
 @click.pass_context
 def interrogate(
     ctx,
@@ -838,6 +847,14 @@ def interrogate(
     no_validate: bool,
     yes: bool,
     tests_file: Optional[str],
+    judge_model: Optional[str],
+    silent: bool,
+    verbose: bool,
+    interactive: bool,
+    stream: bool,
+    max_followups: int,
+    low_resource: bool,
+    force_judge: bool,
 ):
     """
     Interrogate a model for safety and censorship validation.
@@ -857,6 +874,22 @@ def interrogate(
     - Jailbreak vulnerabilities
     - Censorship level verification
     - Mislabeling detection
+
+    Display modes:
+    - --silent: Only show final summary (ideal for CI/CD)
+    - --verbose: Show each prompt, response, and analysis
+    - --interactive: Pause after each test with menu (c/f/m/r/s/d/e/a)
+    - --stream: Real-time streaming responses
+
+    LLM-as-Judge:
+    - Use --judge nlp to use the loaded NLP model as judge
+    - Use --judge path/to/model.gguf to use a specific model
+    - WARNING: Judge mode loads two models simultaneously and requires more RAM
+
+    Resource Management:
+    - --low-resource: Disables LLM features (judge, followups) for constrained systems
+    - --force-judge: Skip resource warnings and force judge mode
+    - System requirements for judge mode are shown based on your hardware
 
     NOTE: API-based interrogation requires paid accounts with the respective providers.
     """
@@ -974,22 +1007,156 @@ def interrogate(
         ui.print_info(f"Claimed censorship: {censorship}")
         if tests_file:
             ui.print_info(f"Custom tests: {tests_file}")
+
+        # Determine display mode
+        from benderbox.interrogation.display import DisplayMode, DisplayConfig, DisplayHandler
+
+        if silent:
+            display_mode = DisplayMode.SILENT
+        elif interactive:
+            display_mode = DisplayMode.INTERACTIVE
+        elif verbose:
+            display_mode = DisplayMode.VERBOSE
+        elif stream:
+            display_mode = DisplayMode.STREAM
+        else:
+            display_mode = DisplayMode.NORMAL
+
+        display_config = DisplayConfig(
+            mode=display_mode,
+            show_prompts=verbose or interactive,
+            show_responses=verbose or interactive or stream,
+            show_analysis=verbose or interactive,
+            pause_between_tests=interactive,
+            stream_responses=stream,
+        )
+        display_handler = DisplayHandler(config=display_config, console=console)
+
+        # Low-resource mode: disable LLM-based features
+        if low_resource:
+            ui.print_info("Low-resource mode enabled: disabling judge and followups")
+            judge_model = None  # Disable judge
+            max_followups = 0   # Disable followups
+
+        # Resource check for judge mode (dual-model operation)
+        if judge_model and not is_api and not force_judge:
+            try:
+                from benderbox.utils.resource_checker import ResourceChecker
+
+                checker = ResourceChecker()
+
+                # Get judge model path for resource estimation
+                judge_path = None
+                if judge_model.lower() not in ("nlp", "analysis", "code"):
+                    judge_path = judge_model
+
+                assessment = checker.assess_judge_mode(
+                    target_model_path=str(model_path) if model_path else None,
+                    judge_model_path=judge_path,
+                )
+
+                if assessment.risk_level == "critical":
+                    console.print()
+                    console.print(Panel(
+                        f"[red bold]RESOURCE WARNING: HIGH MEMORY RISK[/red bold]\n\n"
+                        f"Judge mode loads [bold]two models simultaneously[/bold], which may crash your system.\n\n"
+                        f"[cyan]System RAM:[/cyan] {assessment.total_ram_gb}GB (available: ~{assessment.available_ram_gb}GB)\n"
+                        f"[cyan]Required RAM:[/cyan] ~{assessment.total_required_ram_gb:.1f}GB\n"
+                        f"  - Target model: ~{assessment.target_model_ram_gb:.1f}GB\n"
+                        f"  - Judge model: ~{assessment.judge_model_ram_gb:.1f}GB\n\n"
+                        f"[yellow]Recommendations:[/yellow]\n"
+                        + "\n".join(f"  - {r}" for r in assessment.recommendations) + "\n\n"
+                        f"[dim]Use --low-resource to run without judge, or --force-judge to proceed anyway.[/dim]",
+                        title="Insufficient Memory",
+                        border_style="red",
+                    ))
+                    console.print()
+
+                    if not click.confirm("Continue anyway (may crash)?", default=False):
+                        console.print("[red]Cancelled. Consider using --low-resource mode.[/red]")
+                        return
+                    else:
+                        ui.print_warning("Proceeding with judge mode despite resource warning...")
+
+                elif assessment.risk_level == "high":
+                    console.print()
+                    console.print(Panel(
+                        f"[yellow bold]RESOURCE WARNING[/yellow bold]\n\n"
+                        f"Judge mode will use most of your available RAM.\n\n"
+                        f"[cyan]System RAM:[/cyan] {assessment.total_ram_gb}GB (available: ~{assessment.available_ram_gb}GB)\n"
+                        f"[cyan]Required RAM:[/cyan] ~{assessment.total_required_ram_gb:.1f}GB\n\n"
+                        + "\n".join(f"[yellow]-[/yellow] {w}" for w in assessment.warnings) + "\n\n"
+                        f"[dim]Use --low-resource to run without judge, or --force-judge to skip this warning.[/dim]",
+                        title="High Memory Usage",
+                        border_style="yellow",
+                    ))
+                    console.print()
+
+                    if not yes and not click.confirm("Continue with judge mode?"):
+                        console.print("[yellow]Disabling judge mode. Re-run with --low-resource for faster execution.[/yellow]")
+                        judge_model = None
+                    else:
+                        ui.print_info("Continuing with judge mode...")
+
+                elif assessment.risk_level == "medium" and not silent:
+                    ui.print_info(f"Judge mode will use ~{assessment.total_required_ram_gb:.1f}GB of {assessment.available_ram_gb}GB available RAM")
+
+            except ImportError:
+                pass  # Resource checker not available, continue without warning
+            except Exception as e:
+                logger.debug(f"Resource check failed: {e}")
+
+        # Initialize judge analyzer if requested
+        judge_analyzer = None
+        if judge_model:
+            from benderbox.interrogation.judge import JudgeAnalyzer
+            from benderbox.nlp.llm_engine import LocalLLMEngine
+
+            if judge_model.lower() in ("nlp", "analysis", "code"):
+                # Use already-loaded model from context
+                llm_engine = ctx.obj.get("llm_engine") if ctx.obj else None
+                if llm_engine and llm_engine.is_nlp_model_loaded():
+                    judge_analyzer = JudgeAnalyzer(llm_engine, model_type=judge_model.lower())
+                    ui.print_info(f"Using loaded {judge_model} model as judge")
+                else:
+                    ui.print_warning(f"No {judge_model} model loaded. Use '/load <model> --for nlp' first.")
+                    ui.print_info("Continuing without judge analysis...")
+            else:
+                # Load specified model as judge
+                judge_path = Path(judge_model)
+                if judge_path.exists():
+                    from benderbox.config import get_config
+                    llm_engine = LocalLLMEngine(config=get_config().llm)
+                    try:
+                        import asyncio
+                        asyncio.run(llm_engine.set_nlp_model(str(judge_path)))
+                        judge_analyzer = JudgeAnalyzer(llm_engine, model_type="nlp")
+                        ui.print_info(f"Loaded judge model: {judge_path.name}")
+                    except Exception as e:
+                        ui.print_warning(f"Failed to load judge model: {e}")
+                        ui.print_info("Continuing without judge analysis...")
+                else:
+                    ui.print_warning(f"Judge model not found: {judge_model}")
+                    ui.print_info("Continuing without judge analysis...")
+
+        if judge_analyzer:
+            ui.print_info("LLM-as-judge analysis: enabled")
+        if interactive:
+            ui.print_info("Interactive mode: enabled (press 'c' to continue, 'a' to abort)")
+
         print()
 
-        engine = InterrogationEngine()
+        engine = InterrogationEngine(
+            judge_analyzer=judge_analyzer,
+            display_handler=display_handler,
+            max_followups=max_followups,
+        )
 
-        # Run interrogation with progress display
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-            console=console,
-        ) as progress:
-            task = progress.add_task("Interrogating model...", total=100)
-
+        # Run interrogation with progress display (skip progress bar in interactive/verbose mode)
+        if display_mode in (DisplayMode.INTERACTIVE, DisplayMode.VERBOSE, DisplayMode.STREAM):
+            # No progress bar - display handler shows output
             def update_progress(message: str, percent: float):
-                progress.update(task, completed=percent * 100, description=message)
+                pass  # Display handler handles output
 
             report = engine.interrogate_sync(
                 model_path=model_path or model_target,
@@ -1000,6 +1167,30 @@ def interrogate(
                 progress_callback=update_progress,
                 custom_tests_file=tests_file,
             )
+        else:
+            # Normal/silent mode - use progress bar
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                console=console,
+                disable=silent,
+            ) as progress:
+                task = progress.add_task("Interrogating model...", total=100)
+
+                def update_progress(message: str, percent: float):
+                    progress.update(task, completed=percent * 100, description=message)
+
+                report = engine.interrogate_sync(
+                    model_path=model_path or model_target,
+                    profile=profile,
+                    claimed_censorship=censorship,
+                    validate_censorship=not no_validate,
+                    runner=runner,
+                    progress_callback=update_progress,
+                    custom_tests_file=tests_file,
+                )
 
         # Display results
         print()
@@ -1090,7 +1281,7 @@ def interrogate(
 @click.argument("model_target")
 @click.option("-p", "--profile", default="standard",
               type=click.Choice(["quick", "standard", "full", "adversarial"]),
-              help="Analysis profile: quick (~15), standard (~50), full (~100+), adversarial (jailbreak)")
+              help="Analysis profile: quick (~15), standard (~50), full (~100+), adversarial (jailbreak + variant probing)")
 @click.option("-o", "--output", help="Output report file path")
 @click.pass_context
 def behavior(ctx, model_target: str, profile: str, output: Optional[str]):
@@ -2346,7 +2537,23 @@ def models_test(ctx, model_path: Optional[str], verbose: bool):
 
     # Check if llama-cpp-python is available
     try:
+        import ctypes
+        import llama_cpp
         from llama_cpp import Llama
+        # Suppress C++ warnings unless verbose mode
+        if not verbose:
+            try:
+                log_callback_type = ctypes.CFUNCTYPE(None, ctypes.c_int, ctypes.c_char_p, ctypes.c_void_p)
+
+                @log_callback_type
+                def _null_log_callback(level, text, user_data):
+                    pass
+
+                # Store as function attribute to prevent garbage collection
+                test_model._callback_ref = _null_log_callback
+                llama_cpp.llama_log_set(_null_log_callback, None)
+            except (AttributeError, OSError):
+                pass
     except ImportError:
         ui.print_error("llama-cpp-python is not installed.")
         ui.print_info("Install with: pip install llama-cpp-python")

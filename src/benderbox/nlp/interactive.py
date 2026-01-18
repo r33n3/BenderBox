@@ -271,6 +271,12 @@ class WorkflowExecutor:
         if self.ctx.current_model:
             return self.ctx.current_model
 
+        # Check for default model from model manager
+        if self.ctx.model_manager:
+            default_model = self.ctx.model_manager.get_default_model_path()
+            if default_model:
+                return str(default_model)
+
         # Need to ask user
         if step.ask_if_missing and self.ctx.model_manager:
             models = self.ctx.model_manager.get_downloaded_models()

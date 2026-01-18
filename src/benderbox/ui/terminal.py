@@ -197,6 +197,10 @@ class TerminalUI:
         risk_score = risk.get("score", 0)
         results = result.get("results", [])
 
+        # Get censorship classification from summary or safety section
+        censorship_level = summary.get("censorship_level") or result.get("safety", {}).get("censorship_level", "unknown")
+        censorship_confidence = summary.get("censorship_confidence") or result.get("safety", {}).get("censorship_confidence", 0.0)
+
         if self.console:
             # Create summary table with neon Futurama theme
             table = Table(
@@ -219,6 +223,28 @@ class TerminalUI:
                      style=self.RISK_COLORS.get(risk_level.lower(), "white"))
             )
             table.add_row("Risk Score", f"[bold {self.THEME['neon_orange']}]{risk_score}[/bold {self.THEME['neon_orange']}]/100")
+
+            # Add censorship classification row
+            if censorship_level and censorship_level != "unknown":
+                censorship_display = censorship_level.upper().replace("_", " ")
+                # Color code: censored=green (safer), uncensored=red (riskier), lightly=yellow
+                if "uncensored" in censorship_level.lower():
+                    censor_style = self.THEME['danger']
+                    censor_emoji = "🔓"
+                elif "lightly" in censorship_level.lower():
+                    censor_style = self.THEME['warning']
+                    censor_emoji = "🔐"
+                else:  # censored
+                    censor_style = self.THEME['success']
+                    censor_emoji = "🔒"
+                confidence_pct = f"{censorship_confidence:.0%}" if censorship_confidence else "?"
+                table.add_row(
+                    "Censorship",
+                    Text(f"{censor_emoji} {censorship_display} ({confidence_pct})", style=censor_style)
+                )
+            else:
+                table.add_row("Censorship", Text("Unknown", style=self.THEME['text_muted']))
+
             table.add_row("Total Tests", str(len(results)))
 
             # Count by status
@@ -235,6 +261,9 @@ class TerminalUI:
             print(f"\nAnalysis Summary: {target}")
             print(f"Type: {target_type} | Profile: {profile}")
             print(f"Risk: {risk_level.upper()} ({risk_score}/100)")
+            if censorship_level and censorship_level != "unknown":
+                confidence_pct = f"{censorship_confidence:.0%}" if censorship_confidence else "?"
+                print(f"Censorship: {censorship_level.upper().replace('_', ' ')} ({confidence_pct})")
             print(f"Tests: {len(results)} total")
 
     def print_findings_table(
@@ -268,7 +297,7 @@ class TerminalUI:
                 border_style=self.THEME['neon_purple'],
             )
 
-            table.add_column("Severity", width=10)
+            table.add_column("Severity", width=12, no_wrap=True)
             table.add_column("Test", width=30, style=self.THEME['text_primary'])
             table.add_column("Category", width=15, style=self.THEME['neon_cyan'])
             table.add_column("Status", width=10)
@@ -279,8 +308,10 @@ class TerminalUI:
                 category = finding.get("category", "N/A")[:13]
                 status = finding.get("status", "unknown")
 
+                # Use abbreviated severity for CRITICAL to fit in column
+                severity_label = "CRIT" if severity == "critical" else severity.upper()
                 severity_text = Text(
-                    f"{self.RISK_EMOJI.get(severity, '')} {severity.upper()}",
+                    f"{self.RISK_EMOJI.get(severity, '')} {severity_label}",
                     style=self.RISK_COLORS.get(severity, "white")
                 )
 
@@ -406,6 +437,8 @@ BenderBox supports two separate model slots:
 | `/models` | List all available models (all locations) |
 | `/models list --for analysis` | List analysis models only |
 | `/models list --for nlp` | List NLP models only |
+| `/models default <name> --for nlp` | Set default NLP model (auto-loads on startup) |
+| `/models default <name> --for analysis` | Set default analysis model |
 | `/load <name> --for nlp` | Load model for chat responses |
 | `/load <name> --for analysis` | Load model as analysis target |
 | `/load <name>` | Load for analysis (default) |
@@ -413,6 +446,17 @@ BenderBox supports two separate model slots:
 | `/unload nlp` | Unload NLP model |
 | `/unload analysis` | Unload analysis model |
 | `/unload all` | Unload all models |
+
+## Setting Default Models
+
+Set a default model to auto-load on BenderBox startup:
+
+```
+/models default tinyllama --for nlp      # Set default chat model
+/models default phi-2 --for analysis     # Set default analysis target
+```
+
+The default NLP model enables chat responses without manual `/load` each session.
 
 ## Interrogation Workflow
 
@@ -438,6 +482,7 @@ BenderBox supports two separate model slots:
 
 ```
 /models                           # See all available models
+/models default tinyllama --for nlp  # Set default chat model
 /load qwen2 --for nlp             # Load for chat
 /load phi-2 --for analysis        # Load for interrogation
 /current                          # See what's loaded
@@ -770,7 +815,7 @@ compare phi-2 openai:gpt-4-turbo
             inline: If True, overwrites current line.
         """
         if self.console:
-            style = f"dim {self.THEME['text_secondary']}"
+            style = f"dim {self.THEME['text_muted']}"
             if inline:
                 self.console.print(f"  [{style}]{metrics_line}[/{style}]", end="")
             else:
@@ -910,3 +955,211 @@ class ProgressSpinner:
         self.message = message
         if self._spinner:
             self._spinner.text = message
+
+
+class AnalysisProgressDisplay:
+    """
+    Live progress display for analysis operations.
+
+    Shows:
+    - Current operation status with spinner
+    - Progress bar with percentage
+    - Real-time system resource metrics (CPU, RAM, GPU)
+
+    Thread-safe: can be updated from background threads.
+    """
+
+    def __init__(
+        self,
+        ui: TerminalUI,
+        title: str = "Analysis",
+        show_resources: bool = True,
+    ):
+        """
+        Initialize analysis progress display.
+
+        Args:
+            ui: TerminalUI instance.
+            title: Title for the progress display.
+            show_resources: Whether to show system resource metrics.
+        """
+        import threading
+
+        self.ui = ui
+        self.title = title
+        self.show_resources = show_resources
+        self._live = None
+        self._progress = None
+        self._task_id = None
+        self._current_message = "Initializing..."
+        self._percent = 0.0
+        self._system_monitor = None
+        self._metrics = None
+        self._lock = threading.Lock()  # Thread safety for updates
+        self._update_thread = None
+        self._stop_update = threading.Event()
+        self._spinner_chars = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"  # Braille spinner animation
+        self._spinner_index = 0
+
+        if show_resources:
+            try:
+                from benderbox.utils.system_monitor import SystemMonitor
+                self._system_monitor = SystemMonitor(update_interval=1.0)
+            except ImportError:
+                pass
+
+    def __enter__(self):
+        import threading
+
+        if self.ui.console and RICH_AVAILABLE:
+            from rich.table import Table
+
+            # Start system monitor if available
+            if self._system_monitor:
+                self._system_monitor.start()
+                self._metrics = self._system_monitor.get_metrics()
+
+            # Create the live display with auto-refresh
+            self._live = Live(
+                self._build_display(),
+                console=self.ui.console,
+                refresh_per_second=8,  # Higher refresh rate for smoother updates
+                transient=True,
+            )
+            self._live.__enter__()
+
+            # Start background thread for periodic data refresh
+            # This updates _current_message/_percent and rebuilds the display
+            self._stop_update.clear()
+            self._update_thread = threading.Thread(target=self._refresh_loop, daemon=True)
+            self._update_thread.start()
+        else:
+            print(f"{self.title}: {self._current_message}...", end="", flush=True)
+        return self
+
+    def _refresh_loop(self):
+        """Background thread that refreshes the display periodically."""
+        import time
+        while not self._stop_update.is_set():
+            try:
+                if self._live:
+                    # Update system metrics in background
+                    if self._system_monitor:
+                        self._metrics = self._system_monitor.get_metrics()
+                    # Rebuild and update the display
+                    with self._lock:
+                        self._live.update(self._build_display(), refresh=True)
+            except Exception:
+                pass  # Ignore errors during refresh
+            time.sleep(0.2)  # Refresh 5 times per second
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        # Stop the update thread
+        self._stop_update.set()
+        if self._update_thread:
+            self._update_thread.join(timeout=1.0)
+
+        if self._system_monitor:
+            self._system_monitor.stop()
+        if self._live:
+            self._live.__exit__(exc_type, exc_val, exc_tb)
+        else:
+            print(" done." if not exc_type else " failed.")
+
+    def _build_display(self):
+        """Build the Rich display layout."""
+        if not RICH_AVAILABLE:
+            return None
+
+        from rich.table import Table
+        from rich.text import Text
+        from rich.panel import Panel
+        from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TaskProgressColumn
+        from rich.console import Group
+
+        neon_cyan = TerminalUI.THEME['neon_cyan']
+        neon_green = TerminalUI.THEME['neon_green']
+
+        # Build progress section
+        progress_text = Text()
+        progress_text.append("● ", style=f"bold {neon_cyan}")
+        progress_text.append(self._current_message, style=neon_cyan)
+
+        # Progress bar representation
+        bar_width = 30
+        filled = int(bar_width * self._percent / 100)
+        bar = "█" * filled + "░" * (bar_width - filled)
+
+        # Advance spinner for animation effect
+        spinner_char = self._spinner_chars[self._spinner_index]
+        self._spinner_index = (self._spinner_index + 1) % len(self._spinner_chars)
+
+        progress_line = Text()
+        progress_line.append(f"  [{bar}] ", style=neon_cyan)
+        progress_line.append(f"{self._percent:.0f}% ", style=f"bold {neon_green}")
+        progress_line.append(spinner_char, style=f"bold {neon_cyan}")
+
+        elements = [progress_text, progress_line]
+
+        # Add resource metrics if available
+        if self.show_resources and self._system_monitor:
+            # Always try to get fresh metrics from monitor
+            self._metrics = self._system_monitor.get_metrics()
+
+        if self._metrics and self.show_resources:
+
+            resource_text = Text()
+            resource_text.append("\n  ", style="dim")
+            resource_text.append(f"CPU: {self._metrics.cpu_percent:.0f}%", style="dim cyan")
+            resource_text.append(" │ ", style="dim")
+            resource_text.append(
+                f"RAM: {self._metrics.ram_used_gb:.1f}/{self._metrics.ram_total_gb:.1f}GB",
+                style="dim cyan"
+            )
+            if self._metrics.gpu_name:
+                resource_text.append(" │ ", style="dim")
+                resource_text.append(
+                    f"GPU: {self._metrics.gpu_util_percent:.0f}%",
+                    style="dim cyan"
+                )
+                resource_text.append(" │ ", style="dim")
+                resource_text.append(
+                    f"VRAM: {self._metrics.vram_used_gb:.1f}/{self._metrics.vram_total_gb:.1f}GB",
+                    style="dim cyan"
+                )
+            elements.append(resource_text)
+
+        return Panel(
+            Group(*elements),
+            title=f"[bold {neon_cyan}]{self.title}[/bold {neon_cyan}]",
+            border_style=neon_cyan,
+            padding=(0, 1),
+        )
+
+    def update(self, message: str, percent: float = None) -> None:
+        """
+        Update progress display. Thread-safe.
+
+        Args:
+            message: Current operation description.
+            percent: Progress percentage (0-100). If None, keeps current value.
+        """
+        with self._lock:
+            self._current_message = message
+            if percent is not None:
+                self._percent = max(0.0, min(100.0, percent))
+
+        # Note: actual display update happens in _refresh_loop for thread safety
+        if not self._live:
+            print(f"\r{self.title}: {message} ({self._percent:.0f}%)", end="", flush=True)
+
+    def get_callback(self):
+        """
+        Get a progress callback function for passing to analysis functions.
+
+        Returns:
+            Callable[[str, float], None]: Callback that accepts (message, percent).
+        """
+        def callback(message: str, percent: float) -> None:
+            self.update(message, percent)
+        return callback

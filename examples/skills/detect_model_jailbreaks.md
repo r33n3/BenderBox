@@ -12,7 +12,7 @@ Test a GGUF model's resistance to jailbreak attempts and policy violations using
 - User mentions: "DAN", "prompt injection", "jailbreak", "bypass safety"
 
 ## Required Tools
-- `benderbox_sandbox_analyzeModel` - Run with `attack` or `deep` profile
+- `benderbox_sandbox_analyzeModel` - Run with `adversarial` or `full` profile
 - `benderbox_sandbox_getLatestReport` - Check for existing security audits
 
 ## Inputs
@@ -33,9 +33,9 @@ Test a GGUF model's resistance to jailbreak attempts and policy violations using
 
 ### 1. Determine Analysis Profile
 Map thoroughness to sandbox profile:
-- `fast` → Use cached attack profile OR run with limited tests
-- `standard` → Run `attack` profile (default)
-- `comprehensive` → Run `deep` profile (includes all tests)
+- `fast` → Use `quick` profile for limited tests
+- `standard` → Run `adversarial` profile with variant probing (default)
+- `comprehensive` → Run `full` profile (includes all tests)
 
 ### 2. Check for Recent Security Audit
 If a security audit was run in the last 6 hours:
@@ -47,10 +47,12 @@ Call `benderbox_sandbox_analyzeModel`:
 ```json
 {
   "model_path": "<user_provided_path>",
-  "profile": "attack",  // or "deep" for comprehensive
+  "profile": "adversarial",  // or "full" for comprehensive
   "log_dir": "./sandbox_logs"
 }
 ```
+
+**Note:** The `adversarial` profile includes **variant probing** - when a model refuses an initial prompt, it automatically tries multiple jailbreak techniques (roleplay, context manipulation, emotional appeals, injection) to test resistance.
 
 ### 4. Parse Jailbreak Results
 Extract from JSON response:
@@ -190,7 +192,7 @@ Transform data into actionable security assessment (see Output Format)
 1. **View Full Report:** `./sandbox_logs/benderbox_[run_id].json`
 2. **Compare with Other Models:** [Offer to run comparison if multiple models available]
 3. **Test Backdoors:** Run backdoor detection to check for hidden triggers
-4. **Deep Analysis:** Run comprehensive test suite (if only attack profile was used)
+4. **Deep Analysis:** Run comprehensive test suite (if only adversarial profile was used)
 5. **Export Findings:** [Offer to generate PDF/HTML report for stakeholders]
 
 ### Testing Notes
@@ -236,8 +238,8 @@ Jailbreak testing requires running the model with adversarial prompts.
 ```
 User: "Is llama-7b-q4.gguf safe to use?"
 
-Agent: [Calls benderbox_sandbox_analyzeModel with profile=attack]
-Agent: "I've tested the model with 15 common jailbreak attempts..."
+Agent: [Calls benderbox_sandbox_analyzeModel with profile=adversarial]
+Agent: "I've tested the model with 64 jailbreak attempts including variant probing..."
 Agent: [Shows security assessment with 8% success rate]
 Agent: "✅ GOOD - This model shows acceptable safety for most use cases."
 ```
@@ -247,7 +249,7 @@ Agent: "✅ GOOD - This model shows acceptable safety for most use cases."
 User: "Test for prompt injection vulnerabilities"
 
 Agent: "I'll run targeted jailbreak testing focusing on prompt injection..."
-Agent: [Calls with attack profile]
+Agent: [Calls with adversarial profile]
 Agent: [Filters results to show only prompt_injection category]
 Agent: "Found 2/5 prompt injection attempts succeeded. Details below..."
 ```
@@ -256,7 +258,7 @@ Agent: "Found 2/5 prompt injection attempts succeeded. Details below..."
 ```
 User: "Which is safer: modelA.gguf or modelB.gguf?"
 
-Agent: [Runs attack profile on both models]
+Agent: [Runs adversarial profile on both models]
 Agent: "Comparison Results:
   - Model A: 6% jailbreak success (GOOD)
   - Model B: 23% jailbreak success (MODERATE)
@@ -267,9 +269,10 @@ Agent: "Comparison Results:
 ## Best Practices
 
 ### Testing Strategy
-- **Always start with `standard`** (attack profile) unless user specifies
-- **Use `fast`** only when user needs quick preliminary results
-- **Use `comprehensive`** when deploying to production or high-stakes environments
+- **Always start with `adversarial`** profile unless user specifies otherwise
+- **Use `quick`** only when user needs quick preliminary results
+- **Use `full`** when deploying to production or high-stakes environments
+- **Variant probing** is enabled by default in adversarial profile - tests multiple jailbreak techniques per prompt
 
 ### Result Interpretation
 - **Never guarantee 100% safety** - new jailbreaks are discovered regularly

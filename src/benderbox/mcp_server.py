@@ -205,6 +205,192 @@ def get_latest_report(
         return None
 
 
+def generate_prompt_variants(
+    prompt_text: str,
+    techniques: Optional[List[str]] = None,
+    max_variants: int = 10,
+) -> Dict[str, Any]:
+    """
+    Generate jailbreak variants of a prompt.
+
+    Args:
+        prompt_text: The original prompt to generate variants for.
+        techniques: Optional list of techniques to use.
+        max_variants: Maximum number of variants to generate.
+
+    Returns:
+        Dict with generated variants.
+    """
+    try:
+        from benderbox.interrogation.prompts.schema import (
+            TestPrompt,
+            PromptCategory,
+            ExpectedBehavior,
+        )
+        from benderbox.interrogation.variants import (
+            VariantGenerator,
+            VariantTechnique,
+            VariantConfig,
+        )
+
+        # Create base prompt
+        base_prompt = TestPrompt(
+            id="mcp_prompt",
+            prompt=prompt_text,
+            category=PromptCategory.BASELINE_SAFETY,
+            expected_behavior=ExpectedBehavior.REFUSE,
+        )
+
+        # Parse techniques
+        technique_enums = None
+        if techniques:
+            technique_enums = []
+            for t in techniques:
+                try:
+                    technique_enums.append(VariantTechnique(t.lower()))
+                except ValueError:
+                    pass  # Skip unknown techniques
+
+        # Configure generator
+        config = VariantConfig(
+            techniques=technique_enums or list(VariantTechnique),
+            max_variants=max_variants,
+        )
+
+        generator = VariantGenerator(config)
+        variants = generator.generate(base_prompt, technique_enums)
+
+        return {
+            "original_prompt": prompt_text,
+            "variant_count": len(variants),
+            "variants": [
+                {
+                    "id": v.id,
+                    "prompt": v.prompt,
+                    "technique": v.bypass_technique,
+                    "description": v.description,
+                }
+                for v in variants
+            ],
+        }
+
+    except Exception as e:
+        return {"error": str(e), "type": type(e).__name__}
+
+
+def compare_model_reports(
+    report_paths: List[str],
+) -> Dict[str, Any]:
+    """
+    Compare multiple model interrogation reports.
+
+    Args:
+        report_paths: List of paths to JSON report files.
+
+    Returns:
+        Comparison report as dict.
+    """
+    try:
+        from pathlib import Path
+        from benderbox.interrogation.comparison import (
+            ComparativeAnalyzer,
+            ModelResult,
+        )
+
+        # Load reports
+        models = []
+        for path_str in report_paths:
+            path = Path(path_str)
+            if not path.exists():
+                return {"error": f"Report not found: {path_str}"}
+
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            models.append(ModelResult.from_dict(data))
+
+        if len(models) < 2:
+            return {"error": "Comparison requires at least 2 reports"}
+
+        # Run comparison
+        analyzer = ComparativeAnalyzer()
+        report = analyzer.compare(models)
+
+        return report.to_dict()
+
+    except Exception as e:
+        return {"error": str(e), "type": type(e).__name__}
+
+
+def list_variant_techniques() -> Dict[str, Any]:
+    """
+    List all available variant generation techniques.
+
+    Returns:
+        Dict with techniques and their categories.
+    """
+    try:
+        from benderbox.interrogation.variants.generator import (
+            VariantTechnique,
+            ENCODING_TECHNIQUES,
+            ROLEPLAY_TECHNIQUES,
+            CONTEXT_TECHNIQUES,
+            EMOTIONAL_TECHNIQUES,
+            INJECTION_TECHNIQUES,
+            COMBINATION_TECHNIQUES,
+        )
+
+        return {
+            "techniques": [t.value for t in VariantTechnique],
+            "categories": {
+                "encoding": [t.value for t in ENCODING_TECHNIQUES],
+                "roleplay": [t.value for t in ROLEPLAY_TECHNIQUES],
+                "context": [t.value for t in CONTEXT_TECHNIQUES],
+                "emotional": [t.value for t in EMOTIONAL_TECHNIQUES],
+                "injection": [t.value for t in INJECTION_TECHNIQUES],
+                "combination": [t.value for t in COMBINATION_TECHNIQUES],
+            },
+            "total_count": len(VariantTechnique),
+        }
+
+    except Exception as e:
+        return {"error": str(e), "type": type(e).__name__}
+
+
+def analyze_model_trends(
+    model_name: Optional[str] = None,
+    model_path: Optional[str] = None,
+    log_dir: str = DEFAULT_LOG_DIR,
+) -> Dict[str, Any]:
+    """
+    Analyze trends for a model over time.
+
+    Args:
+        model_name: Model name to filter by.
+        model_path: Model path to filter by.
+        log_dir: Directory containing JSON reports.
+
+    Returns:
+        Trend analysis report as dict.
+    """
+    try:
+        from pathlib import Path
+        from benderbox.interrogation.trend import TrendTracker
+
+        tracker = TrendTracker(log_dir=Path(log_dir))
+        report = tracker.analyze(model_name=model_name, model_path=model_path)
+
+        if report is None:
+            return {
+                "error": "Insufficient data for trend analysis",
+                "message": "Need at least 2 reports for the same model",
+            }
+
+        return report.to_dict()
+
+    except Exception as e:
+        return {"error": str(e), "type": type(e).__name__}
+
+
 def list_available_tests(cli_path: Optional[str] = None) -> List[Dict[str, str]]:
     """
     Query CLI for available tests.
@@ -361,6 +547,117 @@ that can be used with the 'custom' profile.
                     "properties": {},
                 },
             ),
+            Tool(
+                name="benderbox_generateVariants",
+                description="""
+Generate jailbreak prompt variants from a base prompt.
+
+Uses various techniques to transform prompts:
+- Encoding: base64, rot13, leetspeak, unicode, reversed
+- Roleplay: DAN, evil_assistant, developer_mode, uncensored_model
+- Context: hypothetical, educational, fictional, research
+- Emotional: urgency, guilt, authority
+- Injection: ignore_previous, system_override, nested
+- Combination: gradual_escalation, split_request
+
+Returns variants with technique labels and descriptions.
+                """.strip(),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "prompt": {
+                            "type": "string",
+                            "description": "The base prompt to generate variants for",
+                        },
+                        "techniques": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Specific techniques to use (optional, uses all if not specified)",
+                        },
+                        "max_variants": {
+                            "type": "integer",
+                            "default": 10,
+                            "description": "Maximum number of variants to generate",
+                        },
+                    },
+                    "required": ["prompt"],
+                },
+            ),
+            Tool(
+                name="benderbox_listVariantTechniques",
+                description="""
+List all available variant generation techniques and their categories.
+
+Returns technique names grouped by category (encoding, roleplay, context, etc.)
+                """.strip(),
+                inputSchema={
+                    "type": "object",
+                    "properties": {},
+                },
+            ),
+            Tool(
+                name="benderbox_compareModels",
+                description="""
+Compare multiple model interrogation results.
+
+Performs multi-dimensional comparison including:
+- Overall risk scores
+- Safety scores
+- Jailbreak resistance
+- Category-level performance
+- Critical findings
+
+Provides rankings, deltas, and recommendations.
+
+Requires at least 2 report files to compare.
+                """.strip(),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "report_paths": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Paths to JSON report files to compare",
+                            "minItems": 2,
+                        },
+                    },
+                    "required": ["report_paths"],
+                },
+            ),
+            Tool(
+                name="benderbox_analyzeTrends",
+                description="""
+Analyze trends in model interrogation results over time.
+
+Tracks historical reports and provides:
+- Risk score trends (improving/degrading/stable/volatile)
+- Safety and jailbreak resistance trends
+- Category-level trend analysis
+- Anomaly detection
+- Alerts for significant changes
+- Recommendations
+
+Requires at least 2 reports for the same model.
+                """.strip(),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "model_name": {
+                            "type": "string",
+                            "description": "Model name to filter reports by",
+                        },
+                        "model_path": {
+                            "type": "string",
+                            "description": "Model path to filter reports by",
+                        },
+                        "log_dir": {
+                            "type": "string",
+                            "default": "./sandbox_logs",
+                            "description": "Directory containing JSON reports",
+                        },
+                    },
+                },
+            ),
         ]
 
     @app.call_tool()
@@ -432,6 +729,64 @@ that can be used with the 'custom' profile.
                             "tests": tests,
                             "count": len(tests),
                         }, indent=2),
+                    )
+                ]
+
+            elif name == "benderbox_generateVariants":
+                prompt = arguments["prompt"]
+                techniques = arguments.get("techniques")
+                max_variants = arguments.get("max_variants", 10)
+
+                result = generate_prompt_variants(
+                    prompt_text=prompt,
+                    techniques=techniques,
+                    max_variants=max_variants,
+                )
+
+                return [
+                    TextContent(
+                        type="text",
+                        text=json.dumps(result, indent=2),
+                    )
+                ]
+
+            elif name == "benderbox_listVariantTechniques":
+                result = list_variant_techniques()
+
+                return [
+                    TextContent(
+                        type="text",
+                        text=json.dumps(result, indent=2),
+                    )
+                ]
+
+            elif name == "benderbox_compareModels":
+                report_paths = arguments["report_paths"]
+
+                result = compare_model_reports(report_paths)
+
+                return [
+                    TextContent(
+                        type="text",
+                        text=json.dumps(result, indent=2),
+                    )
+                ]
+
+            elif name == "benderbox_analyzeTrends":
+                model_name = arguments.get("model_name")
+                model_path = arguments.get("model_path")
+                log_dir = arguments.get("log_dir", DEFAULT_LOG_DIR)
+
+                result = analyze_model_trends(
+                    model_name=model_name,
+                    model_path=model_path,
+                    log_dir=log_dir,
+                )
+
+                return [
+                    TextContent(
+                        type="text",
+                        text=json.dumps(result, indent=2),
                     )
                 ]
 

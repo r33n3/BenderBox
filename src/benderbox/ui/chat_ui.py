@@ -16,7 +16,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from benderbox.ui.terminal import TerminalUI, ProgressSpinner
+from benderbox.ui.terminal import TerminalUI, ProgressSpinner, AnalysisProgressDisplay
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ class BenderBoxCompleter:
     COMMANDS = [
         "help", "help mcp", "help context", "help models", "help examples",
         "status", "exit", "quit", "clear",
-        "analyze", "interrogate", "compare",
+        "analyze", "fingerprint", "fp", "interrogate", "compare",
         "mcp tools", "mcp interrogate", "mcp analyze", "mcp call",
         "context analyze", "context scan", "context output",
         "models", "models list", "models list --for analysis", "models list --for nlp",
@@ -50,7 +50,7 @@ class BenderBoxCompleter:
     ]
 
     # Profile options
-    PROFILES = ["--profile quick", "--profile standard", "--profile full", "--profile adversarial"]
+    PROFILES = ["--profile fingerprint", "--profile quick", "--profile standard", "--profile full", "--profile adversarial"]
 
     def __init__(self):
         self.matches: List[str] = []
@@ -69,7 +69,7 @@ class BenderBoxCompleter:
                 self.matches = self._complete_path(text)
             elif "--profile" in line and text == "":
                 # Profile value completion
-                self.matches = ["quick", "standard", "full"]
+                self.matches = ["fingerprint", "quick", "standard", "full"]
             elif text.startswith("--"):
                 # Option completion
                 self.matches = [opt for opt in self.PROFILES if opt.startswith(text)]
@@ -150,6 +150,7 @@ class CommandType(Enum):
     """Types of chat commands."""
 
     ANALYZE = "analyze"
+    FINGERPRINT = "fingerprint"  # Static-only analysis (no model loading)
     SEMANTIC = "semantic"  # Semantic code analysis
     SEARCH = "search"  # Semantic search across reports
     COMPARE = "compare"
@@ -203,6 +204,7 @@ class ChatUI:
     # Command aliases
     COMMAND_ALIASES = {
         "analyze": ["analyze", "scan", "check", "test", "a"],
+        "fingerprint": ["fingerprint", "fp", "static", "metadata"],  # Static-only analysis
         "semantic": ["semantic", "code", "review", "security-scan", "sec"],
         "search": ["search", "find", "lookup", "query-reports"],
         "compare": ["compare", "diff", "vs", "c"],
@@ -394,6 +396,9 @@ class ChatUI:
         elif command.command_type == CommandType.ANALYZE:
             await self._handle_analyze(command)
 
+        elif command.command_type == CommandType.FINGERPRINT:
+            await self._handle_fingerprint(command)
+
         elif command.command_type == CommandType.SEMANTIC:
             await self._handle_semantic(command)
 
@@ -532,18 +537,18 @@ class ChatUI:
         self.ui.print_info(f"  Analysis directory: {len(analysis_models)}")
 
         # Show default paths
-        default_nlp = manager.nlp_model_dir / "model.gguf"
-        default_analysis = manager.get_default_model_path()
+        default_nlp = manager.get_default_model_path(purpose="nlp")
+        default_analysis = manager.get_default_model_path(purpose="analysis")
 
         print()
         self.ui.print_header("Default Model Paths")
-        if default_nlp.exists():
-            self.ui.print_info(f"  NLP default: {default_nlp}")
+        if default_nlp:
+            self.ui.print_info(f"  NLP default: {default_nlp.name}")
         else:
             self.ui.print_info(f"  NLP default: Not configured")
 
         if default_analysis:
-            self.ui.print_info(f"  Analysis default: {default_analysis}")
+            self.ui.print_info(f"  Analysis default: {default_analysis.name}")
         else:
             self.ui.print_info(f"  Analysis default: Not configured")
 
@@ -605,28 +610,84 @@ class ChatUI:
 
     async def _handle_analyze(self, command: ParsedCommand) -> None:
         """Handle analyze command."""
-        # Use loaded model if no target specified
-        if not command.args:
+        # Valid profile names for shorthand detection
+        VALID_PROFILES = ("fingerprint", "quick", "standard", "full", "adversarial")
+
+        # Use loaded model if no target specified, OR if only a profile name is given
+        # e.g., "analyze fingerprint" with a loaded model should use loaded model + fingerprint profile
+        first_arg_is_profile = (
+            len(command.args) == 1
+            and command.args[0].lower() in VALID_PROFILES
+            and self._current_analysis_model
+        )
+
+        if not command.args or first_arg_is_profile:
             if self._current_analysis_model:
                 target = self._current_analysis_model
-                self.ui.print_info(f"Analyzing loaded model: {target}")
+                self.ui.print_info(f"Analyzing loaded model: {Path(target).name}")
             else:
                 self.ui.print_error("Please specify a target to analyze.")
-                self.ui.print_info("Usage: analyze <path|url|model-name> [--profile <profile>]")
+                self.ui.print_info("Usage: analyze <path|url|model-name> [fingerprint|quick|standard|full]")
+                self.ui.print_info("       fingerprint <model-name>  (static only, no model loading)")
                 self.ui.print_info("Or load a model first: /load <model-name>")
                 return
         else:
             target = command.args[0]
-            # Check if target is a model name (not a path)
-            if not target.endswith(".gguf") and "/" not in target and "\\" not in target:
-                from benderbox.utils.model_manager import ModelManager
-                manager = ModelManager()
-                model_path = manager.find_model_by_name(target, purpose="analysis")
-                if model_path:
-                    target = str(model_path)
-                    self.ui.print_info(f"Found model: {target}")
+            # Check if target is a model name or filename (not a full path)
+            # Allow both "phi2" and "phi-2.Q2_K.gguf" to be resolved via model manager
+            is_full_path = "/" in target or "\\" in target or (len(target) > 2 and target[1] == ":")
+            if not is_full_path:
+                # First check if it matches the currently loaded analysis model
+                if self._current_analysis_model:
+                    loaded_name = Path(self._current_analysis_model).name
+                    if target == loaded_name or target.lower() == loaded_name.lower():
+                        target = self._current_analysis_model
+                        self.ui.print_info(f"Using loaded analysis model: {Path(target).name}")
+                    else:
+                        # Try to find via model manager
+                        from benderbox.utils.model_manager import ModelManager
+                        manager = ModelManager()
+                        model_path = manager.find_model_by_name(target, purpose="analysis")
+                        if model_path:
+                            target = str(model_path)
+                            self.ui.print_info(f"Found model: {target}")
+                else:
+                    # No loaded model, try model manager
+                    from benderbox.utils.model_manager import ModelManager
+                    manager = ModelManager()
+                    model_path = manager.find_model_by_name(target, purpose="analysis")
+                    if model_path:
+                        target = str(model_path)
+                        self.ui.print_info(f"Found model: {target}")
 
-        profile = command.flags.get("profile", "standard")
+        # Get profile from flags OR second positional argument
+        # Supports multiple formats:
+        #   "analyze phi2 --profile quick"  (explicit flag)
+        #   "analyze phi2 quick"            (positional arg)
+        #   "analyze phi2 fingerprint"      (positional arg - static only)
+        #   "analyze --quick"               (shorthand flag)
+        #   "fingerprint phi2"              (direct command)
+        profile = command.flags.get("profile")
+
+        # Check for shorthand flags (--fingerprint, --quick, --standard, --full, --adversarial)
+        if not profile:
+            for prof_name in VALID_PROFILES:
+                if prof_name in command.flags:
+                    profile = prof_name
+                    break
+
+        # Check if first arg is a valid profile name (when using loaded model)
+        if not profile and first_arg_is_profile:
+            profile = command.args[0].lower()
+
+        # Check if second arg is a valid profile name
+        if not profile and len(command.args) > 1:
+            potential_profile = command.args[1].lower()
+            if potential_profile in VALID_PROFILES:
+                profile = potential_profile
+
+        if not profile:
+            profile = "standard"
 
         # Detect source type and show appropriate message
         try:
@@ -643,27 +704,136 @@ class ChatUI:
         except ImportError:
             pass  # Utils not available, continue with basic behavior
 
-        query = f"analyze {target} with {profile} profile"
+        # Use direct analysis with progress display for better UX
+        try:
+            from benderbox.nlp.analysis_bridge import AnalysisBridge
 
-        if self._conversation:
-            spinner_msg = f"Analyzing {target}..."
-            with ProgressSpinner(self.ui, spinner_msg):
-                response = await self._conversation.process_query(query)
+            # Get or create the analysis bridge
+            if self._conversation and hasattr(self._conversation, "_analysis_bridge"):
+                bridge = self._conversation._analysis_bridge
+            else:
+                bridge = AnalysisBridge()
 
-            self._last_result = response.analysis_result
+            # Run analysis with live progress display
+            with AnalysisProgressDisplay(self.ui, title=f"Analyzing {Path(target).name}") as progress:
+                result = await bridge.analyze_model(
+                    model_path=target,
+                    profile=profile,
+                    progress_callback=progress.get_callback(),
+                )
 
-            if response.analysis_result:
-                self.ui.print_analysis_summary(response.analysis_result)
+            self._last_result = result
+
+            if result and not result.get("error"):
+                self.ui.print_analysis_summary(result)
 
                 # Print findings
-                results = response.analysis_result.get("results", [])
+                results = result.get("results", [])
                 failed = [r for r in results if r.get("status") in ("failed", "warning")]
                 if failed:
                     self.ui.print_findings_table(failed, "Issues Found")
             else:
-                self.ui.print_markdown(response.content)
+                error_msg = result.get("error", "Analysis produced no results")
+                self.ui.print_error(error_msg)
+
+        except ImportError as e:
+            # Fallback to conversation-based analysis if bridge not available
+            logger.warning(f"AnalysisBridge import failed, falling back to conversation: {e}")
+            if self._conversation:
+                query = f"analyze {target} with {profile} profile"
+                spinner_msg = f"Analyzing {target}..."
+                with ProgressSpinner(self.ui, spinner_msg):
+                    response = await self._conversation.process_query(query)
+
+                self._last_result = response.analysis_result
+
+                if response.analysis_result:
+                    self.ui.print_analysis_summary(response.analysis_result)
+                    results = response.analysis_result.get("results", [])
+                    failed = [r for r in results if r.get("status") in ("failed", "warning")]
+                    if failed:
+                        self.ui.print_findings_table(failed, "Issues Found")
+                else:
+                    self.ui.print_markdown(response.content)
+            else:
+                self.ui.print_warning("Analysis requires conversation manager.")
+        except Exception as e:
+            error_str = str(e).lower()
+            # Check if this is a model not found error
+            if "not found" in error_str or "no such file" in error_str:
+                self.ui.print_error(f"Model not found: {target}")
+                self.ui.print_info("")
+                self.ui.print_info("To find available models, try:")
+                self.ui.print_info("  models list       - Show downloaded models")
+                self.ui.print_info("  models available  - Show models that can be downloaded")
+                self.ui.print_info("")
+                # Try to suggest similar models
+                try:
+                    from benderbox.utils.model_manager import ModelManager
+                    manager = ModelManager()
+                    available = manager.list_local_models(purpose="analysis")
+                    if available:
+                        self.ui.print_info("Available local models:")
+                        for model in available[:5]:  # Show up to 5
+                            self.ui.print_info(f"  • {model.name}")
+                        if len(available) > 5:
+                            self.ui.print_info(f"  ... and {len(available) - 5} more")
+                except Exception:
+                    pass
+            else:
+                logger.exception(f"Analysis failed with {type(e).__name__}: {e}")
+                self.ui.print_error(f"Analysis failed: {e}")
+
+    async def _handle_fingerprint(self, command: ParsedCommand) -> None:
+        """Handle fingerprint command - static-only model analysis (no model loading)."""
+        # fingerprint phi2  ->  analyze phi2 fingerprint
+        if not command.args:
+            if self._current_analysis_model:
+                target = self._current_analysis_model
+                self.ui.print_info(f"Fingerprinting loaded model: {target}")
+            else:
+                self.ui.print_error("Please specify a model to fingerprint.")
+                self.ui.print_info("Usage: fingerprint <model-name>")
+                self.ui.print_info("       fp <model-name>")
+                self.ui.print_info("")
+                self.ui.print_info("This performs static-only analysis without loading the model.")
+                return
         else:
-            self.ui.print_warning("Analysis requires conversation manager.")
+            target = command.args[0]
+            # Check if target is a model name or filename (not a full path)
+            is_full_path = "/" in target or "\\" in target or (len(target) > 2 and target[1] == ":")
+            if not is_full_path:
+                # First check if it matches the currently loaded analysis model
+                if self._current_analysis_model:
+                    loaded_name = Path(self._current_analysis_model).name
+                    if target == loaded_name or target.lower() == loaded_name.lower():
+                        target = self._current_analysis_model
+                        self.ui.print_info(f"Using loaded analysis model: {Path(target).name}")
+                    else:
+                        # Try to find via model manager
+                        from benderbox.utils.model_manager import ModelManager
+                        manager = ModelManager()
+                        model_path = manager.find_model_by_name(target, purpose="analysis")
+                        if model_path:
+                            target = str(model_path)
+                            self.ui.print_info(f"Found model: {target}")
+                else:
+                    # No loaded model, try model manager
+                    from benderbox.utils.model_manager import ModelManager
+                    manager = ModelManager()
+                    model_path = manager.find_model_by_name(target, purpose="analysis")
+                    if model_path:
+                        target = str(model_path)
+                        self.ui.print_info(f"Found model: {target}")
+
+        # Create a new command with fingerprint profile and delegate to _handle_analyze
+        fingerprint_command = ParsedCommand(
+            command_type=CommandType.ANALYZE,
+            args=[target, "fingerprint"],
+            raw_input=command.raw_input,
+            flags={"profile": "fingerprint"},
+        )
+        await self._handle_analyze(fingerprint_command)
 
     async def _handle_semantic(self, command: ParsedCommand) -> None:
         """Handle semantic code analysis command."""
@@ -1562,6 +1732,9 @@ LLM Used: {'Yes' if result.get('llm_used') else 'No (pattern-based)'}
                 self.ui.print_info("Use CLI for adding models:")
                 self.ui.print_info(f"  benderbox models add {command.args[1]} --for analysis")
                 return
+            elif subcommand in ("default", "set-default"):
+                await self._handle_set_default_model(command, manager)
+                return
 
         # Default: show models with current loaded status
         await self._show_model_list(manager, "all")
@@ -1635,6 +1808,54 @@ LLM Used: {'Yes' if result.get('llm_used') else 'No (pattern-based)'}
         else:
             self.ui.print_warning("  No models found.")
             self.ui.print_info("  Download with: benderbox models download tinyllama")
+
+    async def _handle_set_default_model(self, command: ParsedCommand, manager) -> None:
+        """Handle setting a default model for a purpose."""
+        from pathlib import Path
+
+        # Show current defaults if no model specified
+        if len(command.args) < 2:
+            default_nlp = manager.get_default_model_path(purpose="nlp")
+            default_analysis = manager.get_default_model_path(purpose="analysis")
+            self.ui.print_header("Default Models")
+            if default_nlp:
+                self.ui.print_success(f"  NLP: {default_nlp.name}")
+            else:
+                self.ui.print_warning(f"  NLP: Not configured")
+            if default_analysis:
+                self.ui.print_success(f"  Analysis: {default_analysis.name}")
+            else:
+                self.ui.print_warning(f"  Analysis: Not configured")
+            print()
+            self.ui.print_info("To set a default: /models default <model-name> --for nlp|analysis")
+            return
+
+        model_name = command.args[1]
+        purpose = command.flags.get("for", "nlp").lower()  # Default to NLP
+
+        if purpose not in ("nlp", "analysis"):
+            self.ui.print_error(f"Invalid purpose: {purpose}. Use 'nlp' or 'analysis'.")
+            return
+
+        # Find the model
+        model_path = self._find_model_anywhere(manager, model_name)
+
+        if not model_path:
+            self.ui.print_error(f"Model '{model_name}' not found.")
+            all_models = manager.get_downloaded_models()
+            if all_models:
+                self.ui.print_info("Available models:")
+                for m in all_models[:5]:
+                    self.ui.print_info(f"  - {m['name']}")
+            return
+
+        # Set as default
+        success, message = manager.setup_default_model(model_path, purpose=purpose)
+        if success:
+            self.ui.print_success(f"Set {model_path.name} as default {purpose.upper()} model.")
+            self.ui.print_info(f"This model will auto-load on startup.")
+        else:
+            self.ui.print_error(f"Failed to set default: {message}")
 
     async def _handle_load_model(self, command: ParsedCommand) -> None:
         """Handle load model command."""
@@ -1909,8 +2130,8 @@ LLM Used: {'Yes' if result.get('llm_used') else 'No (pattern-based)'}
         # Show NLP models
         if nlp_models:
             self.ui.print_info(f"  NLP models: {len(nlp_models)} available")
-            default_nlp = manager.nlp_model_dir / "model.gguf"
-            if default_nlp.exists():
+            default_nlp = manager.get_default_model_path(purpose="nlp")
+            if default_nlp:
                 self.ui.print_success(f"    Default: {default_nlp.name} (will auto-load)")
         else:
             self.ui.print_info("  NLP models: None configured")
@@ -1919,7 +2140,7 @@ LLM Used: {'Yes' if result.get('llm_used') else 'No (pattern-based)'}
         # Show Analysis models
         if analysis_models:
             self.ui.print_info(f"  Analysis models: {len(analysis_models)} available")
-            default_analysis = manager.get_default_model_path()
+            default_analysis = manager.get_default_model_path(purpose="analysis")
             if default_analysis:
                 self.ui.print_info(f"    Default: {default_analysis.name}")
         else:
@@ -1930,30 +2151,146 @@ LLM Used: {'Yes' if result.get('llm_used') else 'No (pattern-based)'}
             self.ui.print_info(f"  Downloaded models: {len(all_models)}")
             self.ui.print_info("  Use '/models' to see all, '/load <model> --for nlp' to load")
 
+    async def _first_run_nlp_model_picker(self) -> Optional[Path]:
+        """
+        Show model selection prompt on first run when no default NLP model exists.
+
+        Returns:
+            Path to selected model, or None if user skips.
+        """
+        from benderbox.utils.model_manager import ModelManager, RECOMMENDED_MODELS
+        from pathlib import Path
+
+        manager = self._model_manager or ModelManager()
+
+        # Get all available models
+        all_models = manager.get_all_models()
+        if not all_models:
+            # No models downloaded yet - offer to download
+            print()
+            self.ui.print_header("First-Time Setup: NLP Model")
+            self.ui.print_info("No models found. BenderBox needs a model for chat features.")
+            print()
+
+            # Show recommended models based on system RAM
+            ram_gb = manager.get_system_ram_gb()
+            recommendations = manager.get_recommended_models(max_ram_gb=ram_gb)
+
+            if recommendations:
+                self.ui.print_info("Recommended models for your system:")
+                for i, model in enumerate(recommendations[:3], 1):
+                    size_str = f"{model.size_mb}MB" if model.size_mb < 1024 else f"{model.size_mb/1024:.1f}GB"
+                    self.ui.print_info(f"  {i}. {model.name} ({size_str}) - {model.description}")
+
+                print()
+                self.ui.print_info("Download a model with: benderbox models download tinyllama")
+                self.ui.print_info("Or press Enter to skip and use template-based responses.")
+
+            return None
+
+        print()
+        self.ui.print_header("First-Time Setup: Select Default NLP Model")
+        self.ui.print_info("Choose which model to use for chat/NLP features.")
+        self.ui.print_info("This will be saved as your default and auto-loaded on startup.")
+        print()
+
+        # Show available models with numbers
+        valid_models = []
+        for i, model in enumerate(all_models[:10], 1):  # Limit to 10
+            size_str = f"{model['size_mb']}MB" if model['size_mb'] < 1024 else f"{model['size_mb']/1024:.1f}GB"
+            location = model.get('location', 'unknown')
+            self.ui.print_info(f"  {i}. {model['name']} ({size_str}) [{location}]")
+            valid_models.append(model)
+
+        if len(all_models) > 10:
+            self.ui.print_info(f"  ... and {len(all_models) - 10} more (use '/models' to see all)")
+
+        print()
+        self.ui.print_info("  0. Skip (use template responses, no LLM)")
+        print()
+
+        # Get user selection
+        while True:
+            try:
+                choice = self.ui.input_prompt("Select model [1]: ").strip()
+                if not choice:
+                    choice = "1"  # Default to first model
+
+                choice_num = int(choice)
+
+                if choice_num == 0:
+                    self.ui.print_info("Skipping model selection. Use '/load <model> --for nlp' to load later.")
+                    return None
+
+                if 1 <= choice_num <= len(valid_models):
+                    selected = valid_models[choice_num - 1]
+                    selected_path = Path(selected['path'])
+
+                    # Set as default
+                    self.ui.print_info(f"Setting {selected['name']} as default NLP model...")
+                    success, msg = manager.setup_default_model(selected_path, purpose="nlp")
+                    if success:
+                        self.ui.print_success(f"Default NLP model set: {selected['name']}")
+                        return manager.get_default_model_path(purpose="nlp")
+                    else:
+                        self.ui.print_warning(f"Could not set default: {msg}")
+                        return selected_path
+
+                self.ui.print_warning(f"Please enter a number between 0 and {len(valid_models)}")
+
+            except ValueError:
+                self.ui.print_warning("Please enter a valid number")
+            except KeyboardInterrupt:
+                print()
+                self.ui.print_info("Skipped.")
+                return None
+
+    def _has_default_nlp_model(self) -> bool:
+        """Check if a default NLP model is configured."""
+        from benderbox.utils.model_manager import ModelManager
+
+        manager = self._model_manager or ModelManager()
+        default_nlp = manager.get_default_model_path(purpose="nlp")
+        return default_nlp is not None and default_nlp.exists()
+
     async def _auto_load_default_nlp_model(self) -> None:
-        """Auto-load default NLP model if available."""
+        """Auto-load default NLP model if available, or prompt for first-time setup."""
         from benderbox.utils.model_manager import ModelManager
         from pathlib import Path
 
         manager = self._model_manager or ModelManager()
 
         # Check for default NLP model
-        default_nlp = manager.nlp_model_dir / "model.gguf"
-        if not default_nlp.exists():
-            # Try any model in nlp dir
+        default_nlp = manager.get_default_model_path(purpose="nlp")
+
+        # If no default configured, run first-time picker
+        if not default_nlp or not default_nlp.exists():
             nlp_models = manager.list_nlp_models()
-            if nlp_models:
-                default_nlp = Path(nlp_models[0]["path"])
+            if not nlp_models:
+                # Check if there are ANY models available for first-run picker
+                all_models = manager.get_all_models()
+                if all_models:
+                    selected = await self._first_run_nlp_model_picker()
+                    if selected:
+                        default_nlp = selected
+                    else:
+                        return  # User skipped
+                else:
+                    return  # No models at all
             else:
-                return  # No NLP model to load
+                # Models in nlp dir but no default - use first one
+                default_nlp = Path(nlp_models[0]["path"])
 
         # Get LLM engine
         llm_engine = self._get_llm_engine()
         if not llm_engine:
             return
 
-        # Load the model
+        # Load the model (this can take a few seconds)
         self.ui.print_info(f"  Loading NLP model: {default_nlp.name}...")
+        # Flush to ensure message displays before blocking model load
+        if self.ui.console:
+            self.ui.console.file.flush()
         try:
             success = await llm_engine.set_nlp_model(str(default_nlp))
             if success:

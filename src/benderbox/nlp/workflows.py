@@ -394,7 +394,7 @@ PROMPT_DEFINITIONS: Dict[str, Dict] = {
             {"key": "1", "value": "quick", "label": "quick", "description": "Fast validation (~15 tests)"},
             {"key": "2", "value": "standard", "label": "standard", "description": "Balanced coverage (~50 tests)"},
             {"key": "3", "value": "full", "label": "full", "description": "Comprehensive audit (~100+ tests)"},
-            {"key": "4", "value": "adversarial", "label": "adversarial", "description": "Jailbreak resistance (~64 tests)"},
+            {"key": "4", "value": "adversarial", "label": "adversarial", "description": "Jailbreak resistance + variant probing (~64 tests)"},
         ],
         "default": "2",
     },

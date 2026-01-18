@@ -531,7 +531,8 @@ class ConversationManager:
         if not self._history:
             return "No conversation history."
 
-        if self._llm_engine:
+        # Check if NLP model is available for summarization
+        if self._llm_engine and self._llm_engine.is_nlp_model_loaded():
             # Use LLM to summarize
             history_text = "\n".join([
                 f"{m.role}: {m.content[:200]}..."
@@ -549,7 +550,7 @@ Summary:"""
 
             return await self._llm_engine.generate(
                 prompt=prompt,
-                model_type="analysis",
+                model_type="nlp",
                 max_tokens=150,
                 temperature=0.3,
                 stop=stop_tokens,

@@ -381,6 +381,20 @@ Footer {
     background: $primary 20%;
 }
 
+.finding-failed {
+    color: $error;
+}
+
+.finding-passed {
+    color: $success;
+}
+
+.success-message {
+    color: $success;
+    padding: 2;
+    text-style: bold;
+}
+
 .finding-severity {
     width: 10;
     text-style: bold;
@@ -388,6 +402,43 @@ Footer {
 
 .finding-name {
     width: 1fr;
+}
+
+/* JSON Search Styles */
+#json-search-container {
+    padding: 1;
+}
+
+#json-search-input {
+    margin-bottom: 1;
+}
+
+.search-results-header {
+    text-style: bold;
+    color: $primary;
+    padding: 1 0;
+}
+
+.json-search-match {
+    color: $warning;
+    text-style: bold;
+    padding: 0 1;
+}
+
+.json-search-context {
+    background: $surface-darken-2;
+    padding: 1;
+    margin: 0 1 1 1;
+}
+
+.search-separator {
+    color: $primary-darken-2;
+    text-align: center;
+}
+
+.no-results {
+    color: $text-muted;
+    padding: 2;
 }
 
 /* Chat Enhancements */
@@ -810,8 +861,15 @@ Analysis completed successfully. See detailed report for findings.
                     with TabbedContent():
                         with TabPane("Summary", id="tab-summary"):
                             yield Markdown("Select a report to view details.", id="report-summary")
-                        with TabPane("Findings", id="tab-findings"):
-                            yield ScrollableContainer(id="findings-container")
+                        with TabPane("Failed", id="tab-failed"):
+                            yield ScrollableContainer(id="failed-container")
+                        with TabPane("Passed", id="tab-passed"):
+                            yield ScrollableContainer(id="passed-container")
+                        with TabPane("JSON Search", id="tab-json-search"):
+                            with Container(id="json-search-container"):
+                                yield Input(placeholder="Search JSON (e.g., 'jailbreak', 'CRITICAL')...", id="json-search-input")
+                                yield Button("Search", id="btn-json-search", variant="primary")
+                                yield ScrollableContainer(id="json-search-results")
                         with TabPane("Raw", id="tab-raw"):
                             yield Markdown("", id="report-raw")
             yield Footer()
@@ -922,7 +980,13 @@ Analysis completed successfully. See detailed report for findings.
         def show_report_details(self, report: Dict[str, Any]) -> None:
             """Show detailed view of selected report."""
             try:
-                # Update summary tab
+                findings = report.get("findings", [])
+
+                # Separate findings by status
+                failed_findings = [f for f in findings if f.get("status", "").lower() in ("failed", "fail", "warning", "warn")]
+                passed_findings = [f for f in findings if f.get("status", "").lower() in ("passed", "pass")]
+
+                # Update summary tab with separate counts
                 summary_md = self.query_one("#report-summary", Markdown)
                 summary_text = f"""
 ## {report.get('target_name', 'Unknown')}
@@ -932,33 +996,74 @@ Analysis completed successfully. See detailed report for findings.
 **Risk Level:** {report.get('risk_level', 'unknown').upper()}
 **Risk Score:** {report.get('risk_score', 0)}/100
 
-### Summary
-- Total Findings: {report.get('finding_count', 0)}
-- Critical: {sum(1 for f in report.get('findings', []) if f.get('severity') == 'critical')}
-- High: {sum(1 for f in report.get('findings', []) if f.get('severity') == 'high')}
-- Medium: {sum(1 for f in report.get('findings', []) if f.get('severity') == 'medium')}
-- Low: {sum(1 for f in report.get('findings', []) if f.get('severity') == 'low')}
+### Test Results
+- **Failed Tests:** {len(failed_findings)} (security concerns)
+- **Passed Tests:** {len(passed_findings)} (verified safe behaviors)
+
+### Failed by Severity
+- Critical: {sum(1 for f in failed_findings if f.get('severity') == 'critical')}
+- High: {sum(1 for f in failed_findings if f.get('severity') == 'high')}
+- Medium: {sum(1 for f in failed_findings if f.get('severity') == 'medium')}
+- Low: {sum(1 for f in failed_findings if f.get('severity') == 'low')}
 """
                 summary_md.update(summary_text)
 
-                # Update findings tab
-                findings_container = self.query_one("#findings-container", ScrollableContainer)
-                # Clear existing findings
-                findings_container.remove_children()
+                # Update Failed tab (security concerns)
+                failed_container = self.query_one("#failed-container", ScrollableContainer)
+                failed_container.remove_children()
 
-                findings = report.get("findings", [])
-                if findings:
-                    for finding in findings:
+                if failed_findings:
+                    # Sort by severity (critical first)
+                    severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
+                    failed_findings.sort(key=lambda f: severity_order.get(f.get("severity", "info").lower(), 5))
+
+                    for finding in failed_findings:
                         severity = finding.get("severity", "info").upper()
                         name = finding.get("name", "Unknown")
-                        status = finding.get("status", "unknown")
+                        status = finding.get("status", "failed").upper()
+                        # Color code by severity
+                        if severity == "CRITICAL":
+                            style = "bold red"
+                        elif severity == "HIGH":
+                            style = "red"
+                        elif severity == "MEDIUM":
+                            style = "yellow"
+                        else:
+                            style = "white"
                         finding_label = Label(
                             f"[{severity}] {name} - {status}",
-                            classes="finding-item"
+                            classes="finding-item finding-failed"
                         )
-                        findings_container.mount(finding_label)
+                        failed_container.mount(finding_label)
                 else:
-                    findings_container.mount(Label("No findings"))
+                    failed_container.mount(Label("No failed tests - model passed all security checks!", classes="success-message"))
+
+                # Update Passed tab (verified behaviors)
+                passed_container = self.query_one("#passed-container", ScrollableContainer)
+                passed_container.remove_children()
+
+                if passed_findings:
+                    # Sort by severity (shows what critical tests passed)
+                    passed_findings.sort(key=lambda f: severity_order.get(f.get("severity", "info").lower(), 5))
+
+                    for finding in passed_findings:
+                        severity = finding.get("severity", "info").upper()
+                        name = finding.get("name", "Unknown")
+                        finding_label = Label(
+                            f"[{severity}] {name} - PASSED",
+                            classes="finding-item finding-passed"
+                        )
+                        passed_container.mount(finding_label)
+                else:
+                    passed_container.mount(Label("No passed tests recorded"))
+
+                # Clear JSON search results when switching reports
+                try:
+                    json_results = self.query_one("#json-search-results", ScrollableContainer)
+                    json_results.remove_children()
+                    json_results.mount(Label("Enter a search term to search the raw JSON data"))
+                except NoMatches:
+                    pass
 
                 # Update raw tab
                 raw_md = self.query_one("#report-raw", Markdown)
@@ -978,6 +1083,77 @@ Analysis completed successfully. See detailed report for findings.
                 await self.export_selected_report()
             elif event.button.id == "btn-refresh":
                 await self.load_reports()
+            elif event.button.id == "btn-json-search":
+                await self.do_json_search()
+
+        async def do_json_search(self) -> None:
+            """Search within the raw JSON of the selected report."""
+            if not self.selected_report:
+                self.notify("No report selected", severity="warning")
+                return
+
+            try:
+                import json
+                import re
+
+                search_input = self.query_one("#json-search-input", Input)
+                search_term = search_input.value.strip()
+
+                if not search_term:
+                    self.notify("Enter a search term", severity="warning")
+                    return
+
+                results_container = self.query_one("#json-search-results", ScrollableContainer)
+                results_container.remove_children()
+
+                # Convert report to JSON string for searching
+                json_str = json.dumps(self.selected_report, indent=2)
+
+                # Find all matches with context
+                matches = []
+                lines = json_str.split("\n")
+                pattern = re.compile(re.escape(search_term), re.IGNORECASE)
+
+                for i, line in enumerate(lines):
+                    if pattern.search(line):
+                        # Get context (2 lines before and after)
+                        start = max(0, i - 2)
+                        end = min(len(lines), i + 3)
+                        context = lines[start:end]
+                        matches.append({
+                            "line_num": i + 1,
+                            "context": "\n".join(context),
+                            "match_line": line.strip()
+                        })
+
+                if matches:
+                    results_container.mount(Label(f"Found {len(matches)} match(es) for '{search_term}':", classes="search-results-header"))
+
+                    for match in matches[:50]:  # Limit to 50 results
+                        # Highlight the match in the context
+                        match_label = Label(
+                            f"Line {match['line_num']}: {match['match_line']}",
+                            classes="json-search-match"
+                        )
+                        results_container.mount(match_label)
+
+                        # Show context in a code block style
+                        context_label = Label(
+                            match['context'],
+                            classes="json-search-context"
+                        )
+                        results_container.mount(context_label)
+                        results_container.mount(Label("---", classes="search-separator"))
+
+                    if len(matches) > 50:
+                        results_container.mount(Label(f"... and {len(matches) - 50} more matches"))
+                else:
+                    results_container.mount(Label(f"No matches found for '{search_term}'", classes="no-results"))
+
+            except NoMatches:
+                pass
+            except Exception as e:
+                self.notify(f"Search error: {e}", severity="error")
 
         async def on_select_changed(self, event: Select.Changed) -> None:
             """Handle filter change."""

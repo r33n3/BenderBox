@@ -456,6 +456,79 @@ REPORT_VIEWER_HTML = '''<!DOCTYPE html>
             font-family: 'Share Tech Mono', monospace;
         }
 
+        /* Expandable finding details */
+        .finding-expandable {
+            cursor: pointer;
+        }
+
+        .finding-expandable .finding-header::after {
+            content: '▶';
+            color: var(--text-muted);
+            font-size: 0.8em;
+            margin-left: 10px;
+            transition: transform 0.2s ease;
+        }
+
+        .finding-expandable.expanded .finding-header::after {
+            transform: rotate(90deg);
+        }
+
+        .finding-body {
+            display: none;
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid var(--border);
+        }
+
+        .finding-expandable.expanded .finding-body {
+            display: block;
+        }
+
+        .finding-prompt, .finding-response {
+            background: var(--bg-dark);
+            padding: 12px;
+            border-radius: 5px;
+            margin-top: 8px;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 0.85em;
+            white-space: pre-wrap;
+            word-break: break-word;
+            border: 1px solid var(--border);
+        }
+
+        .finding-prompt {
+            border-left: 3px solid var(--neon-cyan);
+        }
+
+        .finding-response {
+            border-left: 3px solid var(--neon-orange);
+        }
+
+        .finding-label {
+            font-size: 0.75em;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-top: 12px;
+            margin-bottom: 4px;
+        }
+
+        .finding-meta-row {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            margin-top: 10px;
+        }
+
+        .finding-meta-item {
+            font-size: 0.85em;
+            color: var(--text-secondary);
+        }
+
+        .finding-meta-item strong {
+            color: var(--text-muted);
+        }
+
         /* Table */
         .data-table {
             width: 100%;
@@ -929,8 +1002,8 @@ REPORT_VIEWER_HTML = '''<!DOCTYPE html>
                 const riskLevel = report._risk_level || 'UNKNOWN';
                 const findingsCount = report._findings_count || 0;
                 const results = report.results || [];
-                const passed = results.filter(r => r.status === 'passed').length;
-                const failed = results.filter(r => r.status === 'failed').length;
+                const passed = results.filter(r => ['passed', 'pass'].includes((r.status || '').toLowerCase())).length;
+                const failed = results.filter(r => ['failed', 'fail', 'warning', 'warn'].includes((r.status || '').toLowerCase())).length;
 
                 return `
                     <div class="comparison-card">
@@ -999,26 +1072,33 @@ REPORT_VIEWER_HTML = '''<!DOCTYPE html>
             let testsCount = results.length;
 
             // Fallback: if no normalized results, try to build from raw data
+            const analysisTypeLower = analysisType.toLowerCase();
             if (results.length === 0) {
-                if (analysisType === 'mcp_server' && currentReport.tools) {
+                if (analysisTypeLower === 'mcp_server' && currentReport.tools) {
                     results = currentReport.tools.map(t => ({
                         test_name: t.name,
-                        severity: t.risk_level,
-                        status: t.risk_level === 'critical' || t.risk_level === 'high' ? 'failed' : 'passed',
+                        severity: (t.risk_level || 'info').toLowerCase(),
+                        status: (t.risk_level || '').toLowerCase() === 'critical' || (t.risk_level || '').toLowerCase() === 'high' ? 'failed' : 'passed',
                         category: 'mcp_tool',
                         details: { message: t.description || t.risk_factors?.join(', ') || '' }
                     }));
                     testsCount = currentReport.tools.length;
-                } else if (analysisType === 'model' && currentReport.tests) {
-                    results = currentReport.tests.map(t => ({
-                        test_name: t.name || t.test_id || t.test_name,
-                        severity: t.severity || 'medium',
-                        status: t.result === 'fail' ? 'failed' : 'passed',
-                        category: t.category || 'model',
-                        details: t.details || {}
-                    }));
+                } else if (analysisTypeLower === 'model' && currentReport.tests) {
+                    results = currentReport.tests.map(t => {
+                        // Handle both 'result' and 'status' fields, case-insensitive
+                        const testStatus = (t.status || t.result || 'unknown').toLowerCase();
+                        const isFailure = ['fail', 'failed', 'warn', 'warning'].includes(testStatus);
+                        // TestResult has: name, status, severity, details (string), category
+                        return {
+                            test_name: t.name || t.test_id || t.test_name,
+                            severity: (t.severity || 'medium').toLowerCase(),
+                            status: isFailure ? (testStatus.includes('warn') ? 'warning' : 'failed') : 'passed',
+                            category: t.category || 'model',
+                            details: typeof t.details === 'string' ? { message: t.details } : (t.details || { message: '' })
+                        };
+                    });
                     testsCount = currentReport.tests.length;
-                } else if (analysisType === 'context' && currentReport.findings) {
+                } else if (analysisTypeLower === 'context' && currentReport.findings) {
                     results = currentReport.findings.map(f => ({
                         test_name: f.description || f.pattern_id || f.pattern || 'Unknown',
                         severity: (f.risk_level || f.severity || 'medium').toLowerCase(),
@@ -1037,8 +1117,11 @@ REPORT_VIEWER_HTML = '''<!DOCTYPE html>
             // Tests run
             document.getElementById('tests-run').textContent = testsCount;
 
-            // Findings count
-            const failedCount = findingsCount || results.filter(r => r.status === 'failed' || r.status === 'warning').length;
+            // Findings count (case-insensitive status check)
+            const failedCount = findingsCount || results.filter(r => {
+                const st = (r.status || '').toLowerCase();
+                return ['failed', 'fail', 'warning', 'warn'].includes(st);
+            }).length;
             document.getElementById('findings-count').textContent = failedCount;
 
             // Analysis type
@@ -1054,11 +1137,11 @@ REPORT_VIEWER_HTML = '''<!DOCTYPE html>
 
         function renderSeverityChart(results) {
             const counts = {
-                critical: results.filter(r => r.severity === 'critical').length,
-                high: results.filter(r => r.severity === 'high').length,
-                medium: results.filter(r => r.severity === 'medium').length,
-                low: results.filter(r => r.severity === 'low').length,
-                info: results.filter(r => r.severity === 'info').length,
+                critical: results.filter(r => (r.severity || '').toLowerCase() === 'critical').length,
+                high: results.filter(r => (r.severity || '').toLowerCase() === 'high').length,
+                medium: results.filter(r => (r.severity || '').toLowerCase() === 'medium').length,
+                low: results.filter(r => (r.severity || '').toLowerCase() === 'low').length,
+                info: results.filter(r => (r.severity || '').toLowerCase() === 'info').length,
             };
 
             const total = Object.values(counts).reduce((a, b) => a + b, 0) || 1;
@@ -1090,13 +1173,27 @@ REPORT_VIEWER_HTML = '''<!DOCTYPE html>
         }
 
         function renderTopFindings(results) {
-            const failed = results
-                .filter(r => r.status === 'failed' || r.status === 'warning')
-                .sort((a, b) => {
-                    const order = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
-                    return (order[a.severity] || 5) - (order[b.severity] || 5);
-                })
-                .slice(0, 5);
+            // Filter for failed/warning status only, then sort by severity (critical first)
+            const validFailureStatuses = ['failed', 'fail', 'warning', 'warn'];
+            const severityOrder = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
+
+            // Filter results to only failures/warnings
+            const filtered = results.filter(r => {
+                const status = (r.status || '').toLowerCase();
+                return validFailureStatuses.includes(status);
+            });
+
+            // Sort by severity (critical=0 first, then high=1, medium=2, low=3, info=4)
+            const sorted = [...filtered].sort((a, b) => {
+                const sevA = (a.severity || 'info').toLowerCase();
+                const sevB = (b.severity || 'info').toLowerCase();
+                const orderA = severityOrder[sevA] !== undefined ? severityOrder[sevA] : 5;
+                const orderB = severityOrder[sevB] !== undefined ? severityOrder[sevB] : 5;
+                return orderA - orderB;
+            });
+
+            // Take top 5
+            const failed = sorted.slice(0, 5);
 
             const container = document.getElementById('top-findings');
 
@@ -1111,16 +1208,18 @@ REPORT_VIEWER_HTML = '''<!DOCTYPE html>
                 return;
             }
 
-            container.innerHTML = failed.map(f => `
-                <div class="finding ${f.severity || 'info'}">
+            container.innerHTML = failed.map(f => {
+                const sev = (f.severity || 'info').toLowerCase();
+                return `
+                <div class="finding ${sev}">
                     <div class="finding-header">
                         <span class="finding-title">${escapeHtml(f.test_name || 'Unknown Test')}</span>
-                        <span class="finding-severity severity-${f.severity || 'info'}">${f.severity || 'info'}</span>
+                        <span class="finding-severity severity-${sev}">${sev.toUpperCase()}</span>
                     </div>
                     <div class="report-meta">${escapeHtml(f.category || 'N/A')}</div>
                     ${f.details?.message ? `<div class="finding-details">${escapeHtml(f.details.message)}</div>` : ''}
                 </div>
-            `).join('');
+            `}).join('');
         }
 
         function renderFindings() {
@@ -1131,7 +1230,7 @@ REPORT_VIEWER_HTML = '''<!DOCTYPE html>
 
             const grouped = {};
             results.forEach(r => {
-                const sev = r.severity || 'info';
+                const sev = (r.severity || 'info').toLowerCase();
                 if (!grouped[sev]) grouped[sev] = [];
                 grouped[sev].push(r);
             });
@@ -1147,18 +1246,71 @@ REPORT_VIEWER_HTML = '''<!DOCTYPE html>
                                margin: 20px 0 15px; text-transform: uppercase;">
                         ${sev} (${items.length})
                     </h3>
-                    ${items.map(f => `
-                        <div class="finding ${f.severity || 'info'}" data-searchable="${escapeHtml((f.test_name || '') + ' ' + (f.category || '') + ' ' + (f.details?.message || '')).toLowerCase()}">
+                    ${items.map((f, idx) => {
+                        const fSev = (f.severity || 'info').toLowerCase();
+                        const fStatus = (f.status || 'N/A').toUpperCase();
+                        const details = f.details || {};
+                        const message = typeof details === 'string' ? details : (details.message || '');
+
+                        // Extract prompt/response from artifacts array or direct fields
+                        const artifacts = f.artifacts || [];
+                        const promptArtifact = artifacts.find(a => a.type === 'prompt');
+                        const responseArtifact = artifacts.find(a => a.type === 'response');
+                        const prompt = details.prompt || f.prompt || (promptArtifact?.data) || '';
+                        const response = details.response || f.response || details.model_response || (responseArtifact?.data) || '';
+                        const expected = details.expected_behavior || f.expected_behavior || '';
+                        const hasDetails = message || prompt || response;
+
+                        // Build searchable text
+                        const searchText = [
+                            f.test_name || '',
+                            f.category || '',
+                            message,
+                            prompt,
+                            response
+                        ].join(' ').toLowerCase();
+
+                        return `
+                        <div class="finding ${fSev} ${hasDetails ? 'finding-expandable' : ''}"
+                             data-searchable="${escapeHtml(searchText)}"
+                             ${hasDetails ? `onclick="toggleFinding(this)"` : ''}>
                             <div class="finding-header">
                                 <span class="finding-title">${escapeHtml(f.test_name || 'Unknown')}</span>
-                                <span class="finding-severity severity-${f.severity || 'info'}">${f.status || 'N/A'}</span>
+                                <span class="finding-severity severity-${fSev}">${fStatus}</span>
                             </div>
                             <div class="report-meta">Category: ${escapeHtml(f.category || 'N/A')}</div>
-                            ${f.details?.message ? `<div class="finding-details">${escapeHtml(f.details.message)}</div>` : ''}
+                            ${hasDetails ? `
+                            <div class="finding-body">
+                                ${message ? `
+                                <div class="finding-label">Summary</div>
+                                <div class="finding-details">${escapeHtml(message)}</div>
+                                ` : ''}
+
+                                ${prompt ? `
+                                <div class="finding-label">Prompt Sent</div>
+                                <div class="finding-prompt">${escapeHtml(prompt)}</div>
+                                ` : ''}
+
+                                ${response ? `
+                                <div class="finding-label">Model Response</div>
+                                <div class="finding-response">${escapeHtml(response)}</div>
+                                ` : ''}
+
+                                <div class="finding-meta-row">
+                                    ${expected ? `<div class="finding-meta-item"><strong>Expected:</strong> ${escapeHtml(expected)}</div>` : ''}
+                                    <div class="finding-meta-item"><strong>Severity:</strong> ${escapeHtml(fSev.toUpperCase())}</div>
+                                    <div class="finding-meta-item"><strong>Status:</strong> ${escapeHtml(fStatus)}</div>
+                                </div>
+                            </div>
+                            ` : ''}
                         </div>
-                    `).join('')}
+                    `}).join('')}
                 `;
             }).join('');
+        }
+
+        function toggleFinding(element) {
+            element.classList.toggle('expanded');
         }
 
         function renderDetails() {
@@ -1175,14 +1327,23 @@ REPORT_VIEWER_HTML = '''<!DOCTYPE html>
                     <tr><td>Risk Level</td><td><span class="report-risk risk-${(currentReport.summary?.risk?.level || 'unknown').toLowerCase()}">${currentReport.summary?.risk?.level || 'N/A'}</span></td></tr>
                     <tr><td>Risk Score</td><td>${currentReport.summary?.risk?.score || 0}/100</td></tr>
                     <tr><td>Tests Run</td><td>${(currentReport.results || []).length}</td></tr>
-                    <tr><td>Passed</td><td>${(currentReport.results || []).filter(r => r.status === 'passed').length}</td></tr>
-                    <tr><td>Failed</td><td>${(currentReport.results || []).filter(r => r.status === 'failed').length}</td></tr>
+                    <tr><td>Passed</td><td>${(currentReport.results || []).filter(r => (r.status || '').toLowerCase() === 'passed' || (r.status || '').toLowerCase() === 'pass').length}</td></tr>
+                    <tr><td>Failed/Warnings</td><td>${(currentReport.results || []).filter(r => ['failed', 'fail', 'warning', 'warn'].includes((r.status || '').toLowerCase())).length}</td></tr>
                 </table>
 
                 <h3 style="font-family: 'Orbitron', sans-serif; color: var(--neon-cyan); margin: 30px 0 15px;">
                     Raw JSON
                 </h3>
-                <div class="finding-details" style="max-height: 400px; overflow: auto;">
+                <div style="margin-bottom: 15px;">
+                    <input type="text" id="json-search-input" placeholder="Search JSON (e.g., 'jailbreak', 'CRITICAL')..."
+                        style="width: 70%; padding: 8px 12px; background: var(--dark-bg); border: 1px solid var(--neon-purple);
+                        color: var(--neon-cyan); font-family: 'Share Tech Mono', monospace; border-radius: 4px;"
+                        oninput="searchRawJson(this.value)">
+                    <span id="json-search-count" style="margin-left: 10px; color: var(--neon-orange);"></span>
+                </div>
+                <div id="json-search-results" style="display: none; margin-bottom: 15px; padding: 10px; background: rgba(0,255,255,0.1); border: 1px solid var(--neon-cyan); border-radius: 4px; max-height: 200px; overflow: auto;">
+                </div>
+                <div class="finding-details" id="raw-json-container" style="max-height: 400px; overflow: auto;">
 ${escapeHtml(JSON.stringify(currentReport, null, 2))}
                 </div>
             `;
@@ -1233,6 +1394,80 @@ ${escapeHtml(JSON.stringify(currentReport, null, 2))}
             const div = document.createElement('div');
             div.textContent = str;
             return div.innerHTML;
+        }
+
+        function searchRawJson(query) {
+            const resultsDiv = document.getElementById('json-search-results');
+            const countSpan = document.getElementById('json-search-count');
+            const jsonContainer = document.getElementById('raw-json-container');
+
+            if (!query || query.length < 2) {
+                resultsDiv.style.display = 'none';
+                countSpan.textContent = '';
+                // Reset highlighting in JSON container
+                if (currentReport) {
+                    jsonContainer.innerHTML = escapeHtml(JSON.stringify(currentReport, null, 2));
+                }
+                return;
+            }
+
+            const jsonStr = JSON.stringify(currentReport, null, 2);
+            const lines = jsonStr.split('\\n');
+            const matches = [];
+            const regex = new RegExp(query.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&'), 'gi');
+
+            lines.forEach((line, index) => {
+                if (regex.test(line)) {
+                    // Get context (2 lines before and after)
+                    const start = Math.max(0, index - 2);
+                    const end = Math.min(lines.length, index + 3);
+                    const context = lines.slice(start, end).join('\\n');
+                    matches.push({
+                        lineNum: index + 1,
+                        line: line.trim(),
+                        context: context
+                    });
+                }
+                regex.lastIndex = 0; // Reset regex
+            });
+
+            if (matches.length > 0) {
+                countSpan.textContent = `${matches.length} match(es) found`;
+                resultsDiv.style.display = 'block';
+
+                let resultsHtml = '';
+                matches.slice(0, 20).forEach(match => {
+                    const highlightedLine = escapeHtml(match.line).replace(
+                        new RegExp(query.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&'), 'gi'),
+                        '<span style="background: var(--neon-orange); color: black; padding: 0 2px;">$&</span>'
+                    );
+                    resultsHtml += `
+                        <div style="margin-bottom: 10px; padding: 8px; background: rgba(0,0,0,0.3); border-radius: 4px;">
+                            <div style="color: var(--neon-orange); font-size: 12px; margin-bottom: 4px;">Line ${match.lineNum}</div>
+                            <div style="font-family: 'Share Tech Mono', monospace; font-size: 13px;">${highlightedLine}</div>
+                        </div>
+                    `;
+                });
+
+                if (matches.length > 20) {
+                    resultsHtml += `<div style="color: var(--neon-purple); text-align: center;">... and ${matches.length - 20} more matches</div>`;
+                }
+
+                resultsDiv.innerHTML = resultsHtml;
+
+                // Highlight matches in the main JSON view
+                let highlightedJson = escapeHtml(jsonStr).replace(
+                    new RegExp(query.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&'), 'gi'),
+                    '<span style="background: var(--neon-orange); color: black; padding: 0 2px;">$&</span>'
+                );
+                jsonContainer.innerHTML = highlightedJson;
+            } else {
+                countSpan.textContent = 'No matches';
+                resultsDiv.style.display = 'block';
+                resultsDiv.innerHTML = `<div style="color: var(--neon-purple); text-align: center;">No matches found for "${escapeHtml(query)}"</div>`;
+                // Reset JSON container
+                jsonContainer.innerHTML = escapeHtml(jsonStr);
+            }
         }
     </script>
 

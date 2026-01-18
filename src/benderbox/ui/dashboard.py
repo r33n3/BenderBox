@@ -520,6 +520,238 @@ class StatusDisplay:
                 tree.add(f"[bold]{key}:[/bold] {value}")
 
 
+class ResourceMonitorPanel:
+    """
+    Live system resource monitor panel for TUI.
+
+    Displays real-time CPU, RAM, Disk, and GPU metrics
+    in a compact header bar format.
+    """
+
+    def __init__(
+        self,
+        console: Optional["Console"] = None,
+        update_interval: float = 1.0,
+    ):
+        """
+        Initialize ResourceMonitorPanel.
+
+        Args:
+            console: Rich Console instance.
+            update_interval: Seconds between metric updates.
+        """
+        self.console = console or (Console() if RICH_AVAILABLE else None)
+        self.update_interval = update_interval
+        self._live: Optional["Live"] = None
+        self._running = False
+        self._monitor = None
+
+    def _get_system_monitor(self):
+        """Get or create SystemMonitor instance."""
+        if self._monitor is None:
+            try:
+                from benderbox.utils.system_monitor import SystemMonitor
+                self._monitor = SystemMonitor(update_interval=self.update_interval)
+            except ImportError:
+                pass
+        return self._monitor
+
+    def _format_bytes(self, gb: float) -> str:
+        """Format GB value with color based on usage."""
+        return f"{gb:.1f}GB"
+
+    def _get_usage_color(self, percent: float) -> str:
+        """Get color based on usage percentage."""
+        if percent >= 90:
+            return "bold red"
+        elif percent >= 75:
+            return "bold yellow"
+        elif percent >= 50:
+            return "bold cyan"
+        return "bold green"
+
+    def _render_bar(self, percent: float, width: int = 10) -> str:
+        """Render a compact progress bar using ASCII-safe characters."""
+        filled = int(percent / 100 * width)
+        empty = width - filled
+        color = self._get_usage_color(percent)
+        # Use ASCII-safe characters for Windows compatibility
+        bar = "=" * filled + "-" * empty
+        return f"[{color}][{bar}][/{color}]"
+
+    def render(self) -> "Panel":
+        """Render the resource monitor panel."""
+        if not RICH_AVAILABLE:
+            return None
+
+        monitor = self._get_system_monitor()
+        if not monitor:
+            return Panel("System monitor unavailable", title="Resources")
+
+        metrics = monitor.get_metrics()
+
+        # Build compact resource display
+        parts = []
+
+        # CPU
+        cpu_bar = self._render_bar(metrics.cpu_percent)
+        cpu_color = self._get_usage_color(metrics.cpu_percent)
+        parts.append(
+            f"[bold]CPU:[/bold] {cpu_bar} [{cpu_color}]{metrics.cpu_percent:5.1f}%[/{cpu_color}]"
+        )
+
+        # RAM
+        ram_bar = self._render_bar(metrics.ram_percent)
+        ram_color = self._get_usage_color(metrics.ram_percent)
+        parts.append(
+            f"[bold]RAM:[/bold] {ram_bar} [{ram_color}]{metrics.ram_used_gb:.1f}/{metrics.ram_total_gb:.1f}GB[/{ram_color}]"
+        )
+
+        # Disk (if available via psutil)
+        try:
+            import psutil
+            disk = psutil.disk_usage('/')
+            disk_percent = disk.percent
+            disk_bar = self._render_bar(disk_percent)
+            disk_color = self._get_usage_color(disk_percent)
+            disk_used_gb = disk.used / (1024**3)
+            disk_total_gb = disk.total / (1024**3)
+            parts.append(
+                f"[bold]DISK:[/bold] {disk_bar} [{disk_color}]{disk_used_gb:.0f}/{disk_total_gb:.0f}GB[/{disk_color}]"
+            )
+        except (ImportError, Exception):
+            pass
+
+        # GPU (if available)
+        if metrics.gpu_name:
+            gpu_bar = self._render_bar(metrics.gpu_util_percent)
+            gpu_color = self._get_usage_color(metrics.gpu_util_percent)
+            vram_percent = (metrics.vram_used_gb / metrics.vram_total_gb * 100) if metrics.vram_total_gb > 0 else 0
+            vram_color = self._get_usage_color(vram_percent)
+            parts.append(
+                f"[bold]GPU:[/bold] {gpu_bar} [{gpu_color}]{metrics.gpu_util_percent:5.1f}%[/{gpu_color}] "
+                f"[bold]VRAM:[/bold] [{vram_color}]{metrics.vram_used_gb:.1f}/{metrics.vram_total_gb:.1f}GB[/{vram_color}]"
+            )
+
+        # Join with ASCII-safe separators
+        content = "  |  ".join(parts)
+
+        return Panel(
+            content,
+            title="[bold cyan]System Resources[/bold cyan]",
+            border_style="dim cyan",
+            box=box.ROUNDED,
+            padding=(0, 1),
+        )
+
+    def render_compact(self) -> str:
+        """Render compact single-line resource display."""
+        monitor = self._get_system_monitor()
+        if not monitor:
+            return "[dim]Resources: unavailable[/dim]"
+
+        metrics = monitor.get_metrics()
+
+        parts = [
+            f"CPU:{metrics.cpu_percent:4.0f}%",
+            f"RAM:{metrics.ram_used_gb:.1f}/{metrics.ram_total_gb:.0f}G",
+        ]
+
+        if metrics.gpu_name:
+            parts.append(f"GPU:{metrics.gpu_util_percent:4.0f}%")
+            parts.append(f"VRAM:{metrics.vram_used_gb:.1f}/{metrics.vram_total_gb:.0f}G")
+
+        return " | ".join(parts)
+
+    def start_live(self) -> "Live":
+        """Start live updating display."""
+        if not RICH_AVAILABLE or not self.console:
+            return None
+
+        self._running = True
+        self._live = Live(
+            self.render(),
+            console=self.console,
+            refresh_per_second=1,
+            transient=False,
+        )
+        return self._live
+
+    def stop_live(self) -> None:
+        """Stop live updating display."""
+        self._running = False
+        if self._live:
+            self._live.stop()
+            self._live = None
+
+
+class ResourceAwareDashboard(AnalysisDashboard):
+    """
+    Analysis dashboard with integrated resource monitoring.
+
+    Extends AnalysisDashboard to show system resources in a
+    static header panel that updates alongside task progress.
+    """
+
+    def __init__(
+        self,
+        console: Optional["Console"] = None,
+        refresh_rate: int = 4,
+        show_resources: bool = True,
+    ):
+        """
+        Initialize ResourceAwareDashboard.
+
+        Args:
+            console: Rich Console instance.
+            refresh_rate: Refresh rate per second.
+            show_resources: Whether to show resource panel.
+        """
+        super().__init__(console, refresh_rate)
+        self.show_resources = show_resources
+        self._resource_panel = ResourceMonitorPanel(console)
+
+    def _create_layout(self) -> "Layout":
+        """Create the dashboard layout with resource panel."""
+        layout = Layout()
+
+        if self.show_resources:
+            layout.split_column(
+                Layout(name="resources", size=3),
+                Layout(name="header", size=3),
+                Layout(name="body"),
+                Layout(name="footer", size=5),
+            )
+        else:
+            layout.split_column(
+                Layout(name="header", size=3),
+                Layout(name="body"),
+                Layout(name="footer", size=5),
+            )
+
+        layout["body"].split_row(
+            Layout(name="progress", ratio=2),
+            Layout(name="metrics", ratio=1),
+        )
+
+        return layout
+
+    def _render(self) -> "Layout":
+        """Render the complete dashboard with resources."""
+        layout = self._create_layout()
+
+        if self.show_resources:
+            resource_panel = self._resource_panel.render()
+            if resource_panel:
+                layout["resources"].update(resource_panel)
+
+        layout["header"].update(self._render_header())
+        layout["progress"].update(self._render_progress())
+        layout["metrics"].update(self._render_metrics())
+        layout["footer"].update(self._render_logs())
+        return layout
+
+
 async def run_with_dashboard(
     tasks: List[Callable],
     task_names: List[str],

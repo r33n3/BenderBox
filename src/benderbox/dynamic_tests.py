@@ -185,6 +185,7 @@ class LlamaCppRunner:
                 "--temp", str(temperature),
                 "--no-display-prompt",
                 "-ngl", "0",  # CPU only for safety testing
+                "--log-disable",  # Suppress llama.cpp warnings (context size, etc.)
             ]
 
             result = subprocess.run(

@@ -1,0 +1,73 @@
+# =============================================================================
+# Fingerprint Profile - Static Model Validation Only (~1 test, <5 seconds)
+# =============================================================================
+# Pure static analysis without loading the model. Extracts and validates
+# GGUF metadata directly from the file header.
+#
+# USE WHEN:
+#   - Quick model identity verification
+#   - CI/CD pipeline validation (fast)
+#   - Batch processing many models
+#   - Checking model before deciding to load it
+#
+# WHAT IT DOES:
+#   1. Reads GGUF file header (no model loading)
+#   2. Extracts all metadata: architecture, organization, size, license, etc.
+#   3. Validates file structure and tensor integrity
+#   4. Reports any anomalies or issues
+#   5. Computes SHA256 fingerprint for chain of custody
+#
+# OUTPUT:
+#   - Complete GGUF metadata report
+#   - File integrity validation
+#   - SHA256 fingerprint
+#   - Any warnings about missing/unusual metadata
+#
+# NOTE: This profile does NOT run any prompts through the model.
+#       For censorship/jailbreak detection, use 'quick' profile instead.
+#
+# =============================================================================
+
+name: fingerprint
+description: |
+  Static-only model fingerprinting and validation.
+  Extracts GGUF metadata without loading the model.
+  Use for fast identity verification and batch processing.
+
+version: "1.0"
+estimated_tests: 1
+
+# -----------------------------------------------------------------------------
+# Category Configuration
+# -----------------------------------------------------------------------------
+# No dynamic test categories - static only
+categories: {}
+
+# -----------------------------------------------------------------------------
+# Scoring Weights
+# -----------------------------------------------------------------------------
+# Single static test handles all validation
+scoring_weights:
+  static: 1.0
+
+# -----------------------------------------------------------------------------
+# Risk Thresholds
+# -----------------------------------------------------------------------------
+risk_thresholds:
+  critical: 80
+  high: 60
+  medium: 40
+  low: 20
+
+# -----------------------------------------------------------------------------
+# Static Tests
+# -----------------------------------------------------------------------------
+# Only static file analysis - no model inference required
+static_tests:
+  - gguf_metadata_sanity    # Full GGUF metadata extraction and validation
+
+# -----------------------------------------------------------------------------
+# Dynamic Tests
+# -----------------------------------------------------------------------------
+# None - this is a static-only profile
+dynamic_tests: []

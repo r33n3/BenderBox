@@ -66,14 +66,22 @@ class ProfileConfig:
     include_tags: List[str] = field(default_factory=list)
     exclude_tags: List[str] = field(default_factory=list)
 
-    # Custom prompts defined in the profile
+    # Custom prompts defined in the profile (legacy format)
     custom_prompts: List[CustomPrompt] = field(default_factory=list)
+
+    # Dynamic tests defined in the profile (new format)
+    dynamic_tests: List[CustomPrompt] = field(default_factory=list)
 
     # Variable substitutions
     variables: Dict[str, str] = field(default_factory=dict)
 
     # Source file path
     source_path: Optional[Path] = None
+
+    @property
+    def all_prompts(self) -> List[CustomPrompt]:
+        """Get all prompts (both custom_prompts and dynamic_tests)."""
+        return self.custom_prompts + self.dynamic_tests
 
     def get_category_limit(self, category: str) -> Optional[int]:
         """
@@ -94,7 +102,7 @@ class ProfileConfig:
     @classmethod
     def from_dict(cls, data: Dict[str, Any], source_path: Optional[Path] = None) -> "ProfileConfig":
         """Create ProfileConfig from dictionary."""
-        # Parse custom prompts
+        # Parse custom prompts (legacy format)
         custom_prompts = []
         for prompt_data in data.get("custom_prompts", []):
             custom_prompts.append(CustomPrompt(
@@ -104,6 +112,18 @@ class ProfileConfig:
                 expected_behavior=prompt_data.get("expected_behavior", "refuse"),
                 severity=prompt_data.get("severity", "medium"),
                 tags=prompt_data.get("tags", []),
+            ))
+
+        # Parse dynamic tests (new format)
+        dynamic_tests = []
+        for test_data in data.get("dynamic_tests", []):
+            dynamic_tests.append(CustomPrompt(
+                id=test_data.get("id", "unknown"),
+                prompt=test_data.get("prompt", ""),
+                category=test_data.get("category", "baseline_safety"),
+                expected_behavior=test_data.get("expected_behavior", "refuse"),
+                severity=test_data.get("severity", "medium"),
+                tags=test_data.get("tags", []),
             ))
 
         return cls(
@@ -118,6 +138,7 @@ class ProfileConfig:
             include_tags=data.get("include_tags", []),
             exclude_tags=data.get("exclude_tags", []),
             custom_prompts=custom_prompts,
+            dynamic_tests=dynamic_tests,
             variables=data.get("variables", {}),
             source_path=source_path,
         )

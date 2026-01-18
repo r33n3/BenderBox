@@ -10,6 +10,7 @@ from typing import List, Optional
 class PromptCategory(Enum):
     """Categories of test prompts."""
 
+    # Safety testing categories
     BASELINE_SAFETY = "baseline_safety"
     JAILBREAK_ATTEMPTS = "jailbreak_attempts"
     HARMFUL_INSTRUCTIONS = "harmful_instructions"
@@ -17,6 +18,12 @@ class PromptCategory(Enum):
     PRIVACY_EXTRACTION = "privacy_extraction"
     SYSTEM_PROMPT_LEAK = "system_prompt_leak"
     BENIGN_BASELINE = "benign_baseline"
+
+    # Validation categories (quick profile)
+    CENSORSHIP_PROBE = "censorship_probe"       # Tests to determine censorship status
+    JAILBREAK_CHECK = "jailbreak_check"         # Tests to detect already-jailbroken models
+    FUNCTIONALITY_CHECK = "functionality_check" # Basic model responsiveness tests
+    IDENTITY_VALIDATION = "identity_validation" # Model identity verification tests
 
 
 class ExpectedBehavior(Enum):

@@ -19,10 +19,10 @@ Extract and analyze GGUF model metadata, safety characteristics, and capabilitie
 - **model_path** (string, required): Path to GGUF model file
   - Examples: `./models/llama-7b-q4.gguf`, `model.gguf`
 - **profile** (string, optional): Analysis depth
-  - `quick` - Fast metadata only (~5-10s)
-  - `standard` - Common static tests (~10-15s) [DEFAULT]
-  - `deep` - All tests including dynamic inference (~60-90s)
-  - `attack` - Security-focused testing (~45-60s)
+  - `quick` - Fast metadata only (~15 tests)
+  - `standard` - Balanced coverage (~50 tests) [DEFAULT]
+  - `full` - Exhaustive audit (~100+ tests)
+  - `adversarial` - Jailbreak-focused with variant probing (~64 tests)
 - **force_reanalysis** (boolean, optional): Skip cached reports, run fresh analysis
 
 ## Process Flow
@@ -99,7 +99,7 @@ Transform JSON into Markdown report (see Output Format below)
 *Full JSON: ./sandbox_logs/benderbox_[run_id].json*
 ```
 
-### Deep Summary (for profile: deep, attack)
+### Deep Summary (for profile: full, adversarial)
 
 Include all above sections, PLUS:
 
@@ -186,8 +186,8 @@ Agent: [Generates standard summary with metadata]
 ```
 User: "Is model.gguf safe for production?"
 
-Agent: [Calls benderbox_sandbox_analyzeModel with profile=deep]
-Agent: [Generates deep summary with safety analysis]
+Agent: [Calls benderbox_sandbox_analyzeModel with profile=adversarial]
+Agent: [Generates deep summary with safety analysis including variant probing results]
 Agent: "Based on the analysis, this model shows [X] jailbreak vulnerabilities..."
 ```
 
@@ -205,8 +205,8 @@ Agent: "I found a recent analysis from 2 hours ago. Use that? (y/n)"
 ### Profile Selection
 - **Use `quick`** when user just wants to know "what's inside"
 - **Use `standard`** for general safety checks (default)
-- **Use `deep`** when user explicitly requests thorough analysis or mentions security
-- **Use `attack`** when user is concerned about adversarial risks
+- **Use `full`** when user explicitly requests thorough analysis
+- **Use `adversarial`** when user is concerned about jailbreaks (includes variant probing)
 
 ### Caching Strategy
 - Cache reports for 24 hours by default
@@ -222,7 +222,7 @@ Agent: "I found a recent analysis from 2 hours ago. Use that? (y/n)"
 ### Follow-up Suggestions
 After showing results, suggest relevant next steps:
 - If quick → offer to run standard for more details
-- If standard with issues → offer to run deep/attack for thorough security audit
+- If standard with issues → offer to run full/adversarial for thorough security audit
 - If violations found → offer to compare with other models
 - Always mention the full JSON report location
 

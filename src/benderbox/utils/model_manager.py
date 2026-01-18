@@ -141,29 +141,34 @@ class ModelManager:
         Get list of downloaded GGUF models.
 
         Returns:
-            List of model info dictionaries.
+            List of model info dictionaries (deduplicated by filename).
         """
         models = []
+        seen_names = set()  # Track filenames to avoid duplicates
 
         # Check models/ directory
         if self.models_dir.exists():
             for gguf_file in self.models_dir.rglob("*.gguf"):
-                models.append({
-                    "path": str(gguf_file),
-                    "name": gguf_file.name,
-                    "size_mb": gguf_file.stat().st_size // (1024 * 1024),
-                    "location": "models/",
-                })
+                if gguf_file.name not in seen_names:
+                    seen_names.add(gguf_file.name)
+                    models.append({
+                        "path": str(gguf_file),
+                        "name": gguf_file.name,
+                        "size_mb": gguf_file.stat().st_size // (1024 * 1024),
+                        "location": "models/",
+                    })
 
         # Check data/models/ directory (HuggingFace downloads)
         if self.data_models_dir.exists():
             for gguf_file in self.data_models_dir.rglob("*.gguf"):
-                models.append({
-                    "path": str(gguf_file),
-                    "name": gguf_file.name,
-                    "size_mb": gguf_file.stat().st_size // (1024 * 1024),
-                    "location": "data/models/",
-                })
+                if gguf_file.name not in seen_names:
+                    seen_names.add(gguf_file.name)
+                    models.append({
+                        "path": str(gguf_file),
+                        "name": gguf_file.name,
+                        "size_mb": gguf_file.stat().st_size // (1024 * 1024),
+                        "location": "data/models/",
+                    })
 
         return models
 
@@ -188,37 +193,62 @@ class ModelManager:
 
         return suitable
 
-    def get_default_model_path(self) -> Optional[Path]:
+    def get_default_model_path(self, purpose: str = "analysis") -> Optional[Path]:
         """
-        Get the path to the default analysis model.
+        Get the path to the default model for a given purpose.
 
         Checks in order:
-        1. models/analysis/model.gguf (configured location)
-        2. Any downloaded TinyLlama model
-        3. Any downloaded .gguf file
+        1. Model path/name specified in default.txt marker file
+        2. Legacy models/analysis/model.gguf (for backwards compatibility)
+        3. Any .gguf file in the purpose directory
+        4. Any downloaded TinyLlama model
+        5. Any downloaded .gguf file
+
+        Args:
+            purpose: One of "analysis", "nlp", or "code". Default is "analysis".
 
         Returns:
             Path to model file, or None if not found.
         """
-        # Check configured location
-        default_path = self.analysis_model_dir / "model.gguf"
-        if default_path.exists():
-            return default_path
+        try:
+            model_dir = self.get_model_dir_for_purpose(purpose)
+        except ValueError:
+            model_dir = self.analysis_model_dir
 
-        # Check for any model in analysis dir
-        if self.analysis_model_dir.exists():
-            for gguf in self.analysis_model_dir.glob("*.gguf"):
+        # Check marker file first
+        default_value = self._get_default_marker(model_dir)
+        if default_value:
+            # default.txt may contain a full path or just a filename
+            default_path = Path(default_value)
+            if default_path.is_absolute() and default_path.exists():
+                # Full path stored in marker file
+                return default_path
+            # Legacy: relative filename in the purpose directory
+            relative_path = model_dir / default_value
+            if relative_path.exists():
+                return relative_path
+
+        # Legacy: check for model.gguf (backwards compatibility)
+        legacy_path = model_dir / "model.gguf"
+        if legacy_path.exists():
+            return legacy_path
+
+        # Check for any model in the purpose directory
+        if model_dir.exists():
+            for gguf in model_dir.glob("*.gguf"):
                 return gguf
 
-        # Check for TinyLlama in data/models
-        tinyllama_pattern = self.data_models_dir / "huggingface" / "*TinyLlama*" / "*.gguf"
-        for gguf in self.base_path.glob(str(tinyllama_pattern.relative_to(self.base_path))):
-            return gguf
+        # Only for analysis purpose: fall back to downloaded models
+        if purpose == "analysis":
+            # Check for TinyLlama in data/models
+            tinyllama_pattern = self.data_models_dir / "huggingface" / "*TinyLlama*" / "*.gguf"
+            for gguf in self.base_path.glob(str(tinyllama_pattern.relative_to(self.base_path))):
+                return gguf
 
-        # Fall back to any downloaded model
-        downloaded = self.get_downloaded_models()
-        if downloaded:
-            return Path(downloaded[0]["path"])
+            # Fall back to any downloaded model
+            downloaded = self.get_downloaded_models()
+            if downloaded:
+                return Path(downloaded[0]["path"])
 
         return None
 
@@ -438,19 +468,18 @@ class ModelManager:
         return sorted(suggestions)
 
     def setup_default_model(
-        self, model_path: Path, purpose: str = "analysis"
+        self, model_path: Path, purpose: str = "analysis", use_link: bool = True
     ) -> Tuple[bool, str]:
         """
         Set up a model as the default for a specific purpose.
 
-        Creates a symlink or copies the model to the appropriate directory:
-        - analysis: models/analysis/model.gguf (for interrogating other models)
-        - nlp: models/nlp/model.gguf (for BenderBox's chat features)
-        - code: models/code/model.gguf (for code generation)
+        Simply stores the full path to the model in a 'default.txt' marker file.
+        No copying or symlinking - this saves disk space and avoids duplicates.
 
         Args:
             model_path: Path to the model file.
             purpose: One of "analysis", "nlp", or "code". Default is "analysis".
+            use_link: Ignored (kept for API compatibility).
 
         Returns:
             Tuple of (success, message).
@@ -463,26 +492,38 @@ class ModelManager:
         except ValueError as e:
             return False, str(e)
 
-        # Create target directory
+        # Create target directory for the marker file
         target_dir.mkdir(parents=True, exist_ok=True)
 
-        target_path = target_dir / "model.gguf"
+        # Store the full path to the model in default.txt (no copying needed)
+        self._set_default_marker(target_dir, str(model_path.resolve()))
+        return True, f"Set {model_path.name} as default {purpose} model"
 
-        # Remove existing if present
-        if target_path.exists() or target_path.is_symlink():
-            target_path.unlink()
+    def _set_default_marker(self, model_dir: Path, model_filename: str) -> None:
+        """
+        Set a marker file indicating which model is the default.
 
-        try:
-            # Try to create symlink first (saves space)
-            target_path.symlink_to(model_path.resolve())
-            return True, f"Linked {model_path.name} as default {purpose} model"
-        except OSError:
-            # Fall back to copy on Windows if symlinks not supported
-            try:
-                shutil.copy2(model_path, target_path)
-                return True, f"Copied {model_path.name} as default {purpose} model"
-            except Exception as e:
-                return False, f"Failed to set up model: {e}"
+        Args:
+            model_dir: Directory containing the models.
+            model_filename: Filename of the model to set as default.
+        """
+        marker_path = model_dir / "default.txt"
+        marker_path.write_text(model_filename, encoding="utf-8")
+
+    def _get_default_marker(self, model_dir: Path) -> Optional[str]:
+        """
+        Get the default model filename from marker file.
+
+        Args:
+            model_dir: Directory containing the models.
+
+        Returns:
+            Filename of default model, or None if not set.
+        """
+        marker_path = model_dir / "default.txt"
+        if marker_path.exists():
+            return marker_path.read_text(encoding="utf-8").strip()
+        return None
 
     async def download_model(
         self,

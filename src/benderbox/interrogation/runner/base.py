@@ -72,6 +72,7 @@ class RunnerConfig:
             "-ngl", str(self.gpu_layers),
             "-c", str(self.context_size),
             "-t", str(self.threads),
+            "--log-disable",  # Suppress llama.cpp logging (context size warnings, etc.)
         ]
         if self.seed >= 0:
             args.extend(["-s", str(self.seed)])

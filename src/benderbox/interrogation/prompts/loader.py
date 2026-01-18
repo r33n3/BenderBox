@@ -55,6 +55,18 @@ CATEGORY_ALIASES = {
     "benign": PromptCategory.BENIGN_BASELINE,
     "benign_baseline": PromptCategory.BENIGN_BASELINE,
     "safe": PromptCategory.BENIGN_BASELINE,
+    # Validation categories (quick profile)
+    "censorship_probe": PromptCategory.CENSORSHIP_PROBE,
+    "censorship": PromptCategory.CENSORSHIP_PROBE,
+    "censor": PromptCategory.CENSORSHIP_PROBE,
+    "jailbreak_check": PromptCategory.JAILBREAK_CHECK,
+    "jailbroken": PromptCategory.JAILBREAK_CHECK,
+    "functionality_check": PromptCategory.FUNCTIONALITY_CHECK,
+    "functionality": PromptCategory.FUNCTIONALITY_CHECK,
+    "functional": PromptCategory.FUNCTIONALITY_CHECK,
+    "identity_validation": PromptCategory.IDENTITY_VALIDATION,
+    "identity": PromptCategory.IDENTITY_VALIDATION,
+    "validation": PromptCategory.IDENTITY_VALIDATION,
     # Custom category - defaults to baseline_safety
     "custom": PromptCategory.BASELINE_SAFETY,
 }
@@ -658,7 +670,21 @@ class PromptLibrary:
         """
         prompts = []
 
-        # Get prompts from each configured category
+        # Check if YAML defines its own dynamic tests
+        # If so, use those instead of the built-in category-based selection
+        all_yaml_prompts = config.all_prompts if hasattr(config, 'all_prompts') else config.custom_prompts
+
+        if all_yaml_prompts:
+            # Use dynamic tests defined in YAML profile
+            for custom in all_yaml_prompts:
+                prompt = self._custom_prompt_to_test_prompt(custom, config)
+                if prompt:
+                    prompts.append(prompt)
+
+            logger.info(f"Loaded {len(prompts)} prompts from YAML profile '{config.name}'")
+            return prompts
+
+        # Fall back to category-based selection from built-in prompts
         for category_name, limit in config.categories.items():
             # Convert category name to PromptCategory enum
             category = CATEGORY_ALIASES.get(category_name)
@@ -674,12 +700,6 @@ class PromptLibrary:
                 prompts.extend(self.get_by_category(category))
             else:
                 prompts.extend(self.get_by_category(category, limit=int(limit)))
-
-        # Add custom prompts from the profile
-        for custom in config.custom_prompts:
-            prompt = self._custom_prompt_to_test_prompt(custom, config)
-            if prompt:
-                prompts.append(prompt)
 
         return prompts
 

@@ -75,13 +75,20 @@ import yaml
 class LLMConfig:
     """Configuration for Local LLM Engine."""
 
-    # Model paths (relative to base directory or absolute)
+    # Model directories (relative to base directory or absolute)
+    # Models are stored with original filenames, not renamed.
+    # A 'default.txt' marker file tracks which model is the default.
     # - analysis: Models for interrogating/analyzing other models
     # - nlp: Models for BenderBox's own chat/NLP features
     # - code: Models for code generation/analysis
-    analysis_model_path: str = "models/analysis/model.gguf"
-    nlp_model_path: str = "models/nlp/model.gguf"
-    code_model_path: str = "models/code/model.gguf"
+    analysis_model_dir: str = "models/analysis"
+    nlp_model_dir: str = "models/nlp"
+    code_model_dir: str = "models/code"
+
+    # Legacy paths for backwards compatibility (deprecated)
+    analysis_model_path: str = "models/analysis"  # Now a directory
+    nlp_model_path: str = "models/nlp"  # Now a directory
+    code_model_path: str = "models/code"  # Now a directory
 
     # Model parameters
     context_length: int = 2048  # Match TinyLlama's training context

@@ -496,7 +496,73 @@ BenderBox> help</code></pre>
                     <tr>
                         <td><code>adversarial</code></td>
                         <td>~64</td>
-                        <td>Jailbreak resistance testing</td>
+                        <td>Jailbreak resistance with variant probing</td>
+                    </tr>
+                </table>
+
+                <div class="info-box">
+                    <div class="info-box-title">YAML Configuration</div>
+                    <p>Profiles are configurable in <code>configs/profiles/*.yaml</code>. Create custom profiles or modify existing ones without code changes.</p>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>Variant Probing (Persistent Testing)</h2>
+                <p>The adversarial profile includes <strong>variant probing</strong> - automatically trying multiple jailbreak techniques when a model refuses the initial prompt. This mimics how security testers probe model boundaries with multiple attempts.</p>
+
+                <h3>How It Works</h3>
+                <ol>
+                    <li>Initial prompt is sent to the model</li>
+                    <li>If the model refuses (correct behavior), variant probing activates</li>
+                    <li>Multiple jailbreak techniques are tried to find weaknesses</li>
+                    <li>If any variant succeeds, a vulnerability is recorded</li>
+                </ol>
+
+                <h3>Configuration (in adversarial.yaml)</h3>
+                <pre><code><span class="code-comment"># In configs/profiles/adversarial.yaml</span>
+variant_config:
+  enabled: true
+  max_variants_per_prompt: 5      <span class="code-comment"># Try up to 5 variants</span>
+  stop_on_success: true           <span class="code-comment"># Stop when one succeeds</span>
+  technique_categories:
+    - roleplay      <span class="code-comment"># DAN, evil_assistant, developer_mode</span>
+    - context       <span class="code-comment"># hypothetical, educational, fictional</span>
+    - emotional     <span class="code-comment"># urgency, guilt, authority</span>
+    - injection     <span class="code-comment"># ignore_previous, system_override</span>
+  apply_to_categories:
+    - jailbreak_attempts
+    - harmful_instructions
+    - system_prompt_leak</code></pre>
+
+                <h3>Available Technique Categories</h3>
+                <table>
+                    <tr>
+                        <th>Category</th>
+                        <th>Techniques</th>
+                    </tr>
+                    <tr>
+                        <td><code>encoding</code></td>
+                        <td>base64, rot13, leetspeak, unicode, reversed</td>
+                    </tr>
+                    <tr>
+                        <td><code>roleplay</code></td>
+                        <td>dan, evil_assistant, developer_mode, uncensored_model</td>
+                    </tr>
+                    <tr>
+                        <td><code>context</code></td>
+                        <td>hypothetical, educational, fictional, research</td>
+                    </tr>
+                    <tr>
+                        <td><code>emotional</code></td>
+                        <td>urgency, guilt, authority</td>
+                    </tr>
+                    <tr>
+                        <td><code>injection</code></td>
+                        <td>ignore_previous, system_override, nested</td>
+                    </tr>
+                    <tr>
+                        <td><code>combination</code></td>
+                        <td>gradual_escalation, split_request</td>
                     </tr>
                 </table>
             </div>
@@ -633,6 +699,75 @@ BenderBox> is this model safe for production?</code></pre>
 
 <span class="code-comment"># Compare local vs cloud</span>
 <span class="code-command">python bb.py</span> compare phi-2 openai:gpt-4-turbo</code></pre>
+            </div>
+
+            <div class="section">
+                <h2>LLM-as-Judge Mode</h2>
+                <p>Use a secondary LLM to provide deeper analysis of model responses beyond heuristic pattern matching.</p>
+
+                <h3>Enable Judge Mode</h3>
+                <pre><code><span class="code-comment"># Use loaded NLP model as judge</span>
+<span class="code-command">python bb.py</span> interrogate phi-2 -j nlp
+
+<span class="code-comment"># Use specific GGUF model as judge</span>
+<span class="code-command">python bb.py</span> interrogate phi-2 -j ./models/judge-model.gguf</code></pre>
+
+                <h3>What Judge Mode Provides</h3>
+                <ul>
+                    <li><strong>Classification:</strong> refused, complied, partial, jailbroken, evasive</li>
+                    <li><strong>Confidence scores:</strong> 0.0 - 1.0 confidence in assessment</li>
+                    <li><strong>Reasoning:</strong> Explanation of why the response was classified</li>
+                    <li><strong>Harm detection:</strong> Which harm categories were triggered</li>
+                    <li><strong>Follow-up suggestions:</strong> Recommended probes based on response</li>
+                </ul>
+
+                <div class="info-box warning">
+                    <div class="info-box-title">Resource Requirements</div>
+                    <p>Judge mode requires extra RAM for dual-model operation (target + judge). Use <code>--low-resource</code> to disable judge in constrained environments.</p>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>Interrogation Modes</h2>
+                <p>Control how much detail is shown during analysis:</p>
+
+                <table>
+                    <tr>
+                        <th>Flag</th>
+                        <th>Mode</th>
+                        <th>Description</th>
+                    </tr>
+                    <tr>
+                        <td><code>--silent</code></td>
+                        <td>Silent</td>
+                        <td>Only show final summary (ideal for CI/CD)</td>
+                    </tr>
+                    <tr>
+                        <td><code>-v / --verbose</code></td>
+                        <td>Verbose</td>
+                        <td>Show all prompts, responses, and analysis</td>
+                    </tr>
+                    <tr>
+                        <td><code>-i / --interactive</code></td>
+                        <td>Interactive</td>
+                        <td>Pause after each test for user control</td>
+                    </tr>
+                    <tr>
+                        <td><code>--stream</code></td>
+                        <td>Stream</td>
+                        <td>Real-time streaming responses</td>
+                    </tr>
+                </table>
+
+                <h3>Examples</h3>
+                <pre><code><span class="code-comment"># CI/CD silent mode</span>
+<span class="code-command">python bb.py</span> interrogate phi-2 --silent --profile quick
+
+<span class="code-comment"># Detailed interactive session</span>
+<span class="code-command">python bb.py</span> interrogate phi-2 -i -v -j nlp
+
+<span class="code-comment"># Streaming with judge</span>
+<span class="code-command">python bb.py</span> interrogate phi-2 --stream -j nlp</code></pre>
             </div>
 
             <div class="section">
@@ -953,14 +1088,14 @@ BenderBox> open the report viewer</code></pre>
                 <pre><code><span class="code-comment"># List recent reports</span>
 <span class="code-command">python bb.py</span> report list
 
-<span class="code-comment"># Export as HTML and open</span>
-<span class="code-command">python bb.py</span> export --format html --open
+<span class="code-comment"># Export report as HTML and open</span>
+<span class="code-command">python bb.py</span> export report REPORT_ID --format html --open
 
-<span class="code-comment"># Export as JSON</span>
-<span class="code-command">python bb.py</span> export --format json --output report.json
+<span class="code-comment"># Export report as JSON</span>
+<span class="code-command">python bb.py</span> export report REPORT_ID --format json --output report.json
 
-<span class="code-comment"># Export specific report</span>
-<span class="code-command">python bb.py</span> report export REPORT_ID --format sarif</code></pre>
+<span class="code-comment"># Export report as SARIF</span>
+<span class="code-command">python bb.py</span> export report REPORT_ID --format sarif</code></pre>
             </div>
 
             <div class="section">
@@ -1078,6 +1213,18 @@ BenderBox> review model phi-2 and run security tests
 BenderBox> test tinyllama with adversarial profile
 BenderBox> is this model safe for production?
 BenderBox> compare phi-2 to tinyllama</code></pre>
+
+                <h3>Advanced Testing (Variant Probing)</h3>
+                <pre><code><span class="code-comment"># These trigger adversarial profile with variant probing:</span>
+BenderBox> run jailbreak tests on phi-2
+BenderBox> test phi-2 with red team profile
+BenderBox> attack test the model
+BenderBox> run aggressive tests on tinyllama</code></pre>
+
+                <div class="info-box">
+                    <div class="info-box-title">Variant Probing</div>
+                    <p>When using adversarial profile (or keywords like "jailbreak", "attack", "red team"), variant probing automatically tries multiple jailbreak techniques when the model refuses initial prompts.</p>
+                </div>
 
                 <h3>Model Management</h3>
                 <pre><code>BenderBox> list models

@@ -8,6 +8,11 @@ Provides local LLM inference using llama-cpp-python with:
 - Graceful handling of missing models
 """
 
+# Suppress llama.cpp C++ level logging BEFORE importing llama_cpp
+# This must happen before any llama_cpp import to take effect
+import os
+os.environ.setdefault("LLAMA_LOG_LEVEL", "ERROR")
+
 import asyncio
 import logging
 from collections import OrderedDict
@@ -19,11 +24,41 @@ from benderbox.config import LLMConfig, get_config
 
 logger = logging.getLogger(__name__)
 
+# Flag to track if we've suppressed logs and keep callback reference
+_LLAMA_LOGS_SUPPRESSED = False
+_LLAMA_LOG_CALLBACK_REF = None
+
+
+def _suppress_llama_logs():
+    """Suppress llama.cpp C++ level warnings using log callback."""
+    global _LLAMA_LOGS_SUPPRESSED, _LLAMA_LOG_CALLBACK_REF
+    if _LLAMA_LOGS_SUPPRESSED:
+        return
+    try:
+        import ctypes
+        import llama_cpp
+
+        # Define the log callback type matching the C signature
+        log_callback_type = ctypes.CFUNCTYPE(None, ctypes.c_int, ctypes.c_char_p, ctypes.c_void_p)
+
+        @log_callback_type
+        def _null_log_callback(level, text, user_data):
+            pass  # Suppress all llama.cpp log output
+
+        # Keep reference to prevent garbage collection
+        _LLAMA_LOG_CALLBACK_REF = _null_log_callback
+        llama_cpp.llama_log_set(_null_log_callback, None)
+        _LLAMA_LOGS_SUPPRESSED = True
+    except (ImportError, AttributeError, OSError):
+        pass
+
 
 def is_llama_cpp_available() -> bool:
     """Check if llama-cpp-python is installed and importable."""
     try:
+        import llama_cpp
         from llama_cpp import Llama
+        _suppress_llama_logs()  # Suppress logs when first checking availability
         return True
     except ImportError:
         return False
@@ -102,15 +137,30 @@ class LlamaModel:
 
         try:
             from llama_cpp import Llama
+            _suppress_llama_logs()  # Ensure logs are suppressed before loading
 
             logger.info(f"Loading model from {self.model_path}")
-            self._model = Llama(
-                model_path=self.model_path,
-                n_ctx=self.context_length,
-                n_threads=self.threads,
-                n_gpu_layers=self.gpu_layers,
-                verbose=False,
-            )
+
+            # Suppress stdout/stderr during model loading to prevent
+            # disrupting Rich Live display (llama.cpp may output despite settings)
+            import io
+            import sys as _sys
+            _old_stdout = _sys.stdout
+            _old_stderr = _sys.stderr
+            try:
+                _sys.stdout = io.StringIO()
+                _sys.stderr = io.StringIO()
+                self._model = Llama(
+                    model_path=self.model_path,
+                    n_ctx=self.context_length,
+                    n_threads=self.threads,
+                    n_gpu_layers=self.gpu_layers,
+                    verbose=False,
+                )
+            finally:
+                _sys.stdout = _old_stdout
+                _sys.stderr = _old_stderr
+
             self._loaded = True
             logger.info(f"Model loaded successfully: {self.model_path}")
         except ImportError:
@@ -379,6 +429,16 @@ class LocalLLMEngine:
             and "nlp" in self._loaded_models
             and self._loaded_models["nlp"].is_loaded
         )
+
+    @property
+    def has_nlp_model(self) -> bool:
+        """Check if an NLP model path is configured (may not be loaded yet)."""
+        nlp_path = self._model_paths.get("nlp")
+        if nlp_path is None:
+            return False
+        # Check if the path exists
+        path = Path(nlp_path)
+        return path.exists() and path.is_file()
 
     @property
     def is_available(self) -> bool:

@@ -190,15 +190,20 @@ ACTION_SYNONYMS: Dict[str, List[str]] = {
     # Analyze/Review actions (ordered by specificity - longer phrases first)
     "analyze": [
         "take a look at", "look at", "check out", "check on",
+        "is this model safe", "is it safe", "safe for production",
         "analyze", "analyse", "review", "check", "examine", "inspect",
         "scan", "evaluate", "assess", "audit", "investigate", "study",
     ],
 
     # Interrogate/Test actions (security testing)
+    # Note: "red team", "jailbreak", "attack" etc. are in PROFILE_SYNONYMS for "adversarial"
     "interrogate": [
-        "run security tests on", "security test", "security scan",
-        "run tests on", "run tests", "pen test", "pentest", "red team",
-        "jailbreak test", "safety test", "attack test",
+        "run security tests on", "security test", "security scan", "security tests",
+        "run tests on", "run tests", "pen test", "pentest",
+        "jailbreak tests", "jailbreak test", "safety tests", "safety test",
+        "attack tests", "attack test", "aggressive tests", "aggressive test",
+        "offensive tests", "offensive test", "hostile tests", "hostile test",
+        "adversarial tests", "adversarial test",  # After profile synonym expansion
         "interrogate", "test", "probe",
     ],
 
@@ -327,10 +332,11 @@ ENTITY_PATTERNS: Dict[str, re.Pattern] = {
         re.IGNORECASE
     ),
 
-    # Profile hints (standalone words)
+    # Profile hints (standalone words and phrases)
+    # Note: plurals (jailbreaks, attacks) handled by stripping trailing 's' in extraction
     "profile": re.compile(
         r"\b(quick|fast|standard|normal|full|complete|comprehensive|"
-        r"deep|adversarial|attack|jailbreak)\b",
+        r"deep|adversarial|attacks?|jailbreaks?|red\s+team|aggressive|hostile|offensive)\b",
         re.IGNORECASE
     ),
 
@@ -504,7 +510,29 @@ class CommandMapper:
         """
         entities = ExtractedEntities(raw_query=query)
 
-        # First normalize the query
+        # IMPORTANT: Extract profile from raw query BEFORE synonym expansion
+        # This ensures profile-indicating words like "jailbreak" in "jailbreak tests"
+        # are detected before they get replaced by action synonyms like "interrogate"
+        raw_lower = query.lower()
+        profile_match = ENTITY_PATTERNS["profile"].search(raw_lower)
+        if profile_match:
+            # Normalize whitespace in profile word (e.g., "red  team" -> "red team")
+            profile_word = " ".join(profile_match.group(1).lower().split())
+            # Normalize plural forms (e.g., "jailbreaks" -> "jailbreak", "attacks" -> "attack")
+            if profile_word.endswith('s') and profile_word not in ['fast']:
+                singular = profile_word[:-1]
+                # Check if singular form is in synonyms
+                for canonical, synonyms in PROFILE_SYNONYMS.items():
+                    if singular in synonyms:
+                        profile_word = singular
+                        break
+            # Map to canonical profile name
+            for canonical, synonyms in PROFILE_SYNONYMS.items():
+                if profile_word in synonyms:
+                    entities.profile = canonical
+                    break
+
+        # Now normalize the query (synonym expansion)
         normalized = self.expand_synonyms(query)
         entities.normalized_query = normalized
 
@@ -536,16 +564,6 @@ class CommandMapper:
         # Extract URLs
         for match in ENTITY_PATTERNS["url"].finditer(query):
             entities.urls.append(match.group(1))
-
-        # Extract profile
-        profile_match = ENTITY_PATTERNS["profile"].search(normalized)
-        if profile_match:
-            profile_word = profile_match.group(1).lower()
-            # Map to canonical profile name
-            for canonical, synonyms in PROFILE_SYNONYMS.items():
-                if profile_word in synonyms:
-                    entities.profile = canonical
-                    break
 
         # Extract output format
         format_match = ENTITY_PATTERNS["output_format"].search(query)
@@ -582,7 +600,7 @@ class CommandMapper:
             return model_refs
 
         # Extract potential model names (words after "model" or standalone identifiers)
-        # Pattern: "model <name>" or "<name> model" or just potential model names
+        # Pattern: "model <name>" or "<name> model" or "on <name>" or just potential model names
         potential_names = []
 
         # Look for "model X" pattern
@@ -595,6 +613,19 @@ class CommandMapper:
         if name_model_match:
             potential_names.append(name_model_match.group(1))
 
+        # Look for "on X" pattern (e.g., "run tests on phi-2")
+        on_pattern_match = re.search(r"\bon\s+([a-zA-Z0-9_\-\.]+)(?:\s|$)", normalized_query)
+        if on_pattern_match:
+            potential_names.append(on_pattern_match.group(1))
+
+        # Look for "analyze/test/interrogate X" pattern (action followed by model name)
+        action_target_match = re.search(
+            r"\b(?:analyze|test|interrogate|check|scan|probe)\s+([a-zA-Z0-9_\-\.]+)(?:\s|$)",
+            normalized_query
+        )
+        if action_target_match:
+            potential_names.append(action_target_match.group(1))
+
         # Try to fuzzy match against available models
         for name in potential_names:
             resolved = self._fuzzy_match_model(name)
@@ -602,26 +633,31 @@ class CommandMapper:
                 model_refs.append(resolved)
 
         # If still no matches, try harder - look for known model name patterns
+        # Use allow_unverified=True to keep model names even if not found on disk
         if not model_refs:
             known_patterns = [
-                r"\b(phi-?2?)\b",
-                r"\b(llama[0-9]*)\b",
+                r"\b(phi[\-_]?2)\b",
+                r"\b(phi2)\b",
+                r"\b(llama[\-_]?[0-9]+[a-z]*)\b",  # llama-7b, llama2, llama-13b
                 r"\b(tinyllama)\b",
-                r"\b(mistral)\b",
-                r"\b(qwen[0-9]*)\b",
-                r"\b(smol)\b",
-                r"\b(vicuna)\b",
+                r"\b(tiny[\-_]?llama)\b",
+                r"\b(mistral[\-_]?[0-9]*[a-z]*)\b",  # mistral, mistral-7b
+                r"\b(qwen[\-_]?[0-9]*[a-z]*)\b",
+                r"\b(smol[\-_]?lm[\-_]?[0-9]*)\b",
+                r"\b(vicuna[\-_]?[0-9]*)\b",
+                r"\b(gemma[\-_]?[0-9]*[a-z]*)\b",
+                r"\b(deepseek[\-_]?[a-z0-9]*)\b",
             ]
             for pattern in known_patterns:
                 match = re.search(pattern, normalized_query, re.IGNORECASE)
                 if match:
-                    resolved = self._fuzzy_match_model(match.group(1))
+                    resolved = self._fuzzy_match_model(match.group(1), allow_unverified=True)
                     if resolved and resolved not in model_refs:
                         model_refs.append(resolved)
 
         return model_refs
 
-    def _fuzzy_match_model(self, name: str) -> Optional[str]:
+    def _fuzzy_match_model(self, name: str, allow_unverified: bool = False) -> Optional[str]:
         """
         Fuzzy match a model name against available models.
 
@@ -630,9 +666,12 @@ class CommandMapper:
 
         Args:
             name: Partial or full model name.
+            allow_unverified: If True, return the name as-is if it looks like
+                a valid model identifier but can't be verified on disk.
 
         Returns:
-            Full path to matching model, or None if not found.
+            Full path to matching model, or the name itself if allow_unverified
+            and it looks like a model name, or None if not found.
         """
         if not name:
             return None
@@ -640,7 +679,16 @@ class CommandMapper:
         name_lower = name.lower().strip()
 
         # Skip common words that aren't model names
-        skip_words = {"the", "a", "an", "this", "that", "with", "and", "or", "to", "for"}
+        # Also skip profile names to avoid "analyze full" treating "full" as model
+        skip_words = {
+            "the", "a", "an", "this", "that", "with", "and", "or", "to", "for",
+            "on", "in", "at", "by", "my", "our", "its", "is", "be", "it",
+            "profile", "tests", "test", "model", "models", "run", "check",
+            # Profile names - should not be treated as model names
+            "quick", "fast", "standard", "normal", "full", "complete",
+            "comprehensive", "deep", "adversarial", "attack", "jailbreak",
+            "aggressive", "hostile", "offensive",
+        }
         if name_lower in skip_words:
             return None
 
@@ -666,6 +714,12 @@ class CommandMapper:
             # Fuzzy match (name contained in model name)
             if name_lower in model_name:
                 return model["path"]
+
+        # If allow_unverified and name looks like a model identifier, return it as-is
+        if allow_unverified:
+            # Check if it looks like a model name (contains alphanumeric, not just stop words)
+            if re.match(r'^[a-zA-Z][a-zA-Z0-9_\-\.]*$', name) and len(name) >= 2:
+                return name
 
         return None
 

@@ -78,9 +78,19 @@ class SystemMonitor:
         self._callbacks: List[Callable[[SystemMetrics], None]] = []
         self._has_psutil = False
         self._has_nvidia = False
+        self._cached_cpu_percent: float = 0.0  # Cached CPU value for non-blocking reads
+        self._cpu_lock = threading.Lock()
 
         # Check available monitoring tools
         self._check_capabilities()
+
+        # Initialize CPU percent baseline (first call returns 0.0, so prime it)
+        if self._has_psutil:
+            try:
+                import psutil
+                psutil.cpu_percent(interval=None)  # Prime the CPU counter
+            except Exception:
+                pass
 
     def _check_capabilities(self) -> None:
         """Check what monitoring capabilities are available."""
@@ -99,15 +109,39 @@ class SystemMonitor:
         except (subprocess.SubprocessError, FileNotFoundError):
             pass
 
-    def get_metrics(self) -> SystemMetrics:
-        """Get current system metrics snapshot."""
+    def get_metrics(self, blocking: bool = False) -> SystemMetrics:
+        """
+        Get current system metrics snapshot.
+
+        Args:
+            blocking: If True, use blocking CPU measurement (more accurate but slower).
+                      If False (default), use non-blocking cached value for responsiveness.
+        """
         metrics = SystemMetrics()
 
         # CPU and RAM via psutil
         if self._has_psutil:
             try:
                 import psutil
-                metrics.cpu_percent = psutil.cpu_percent(interval=0.1)
+
+                if blocking:
+                    # Blocking measurement for accuracy (used in background thread)
+                    metrics.cpu_percent = psutil.cpu_percent(interval=0.5)
+                    # Update cache
+                    with self._cpu_lock:
+                        self._cached_cpu_percent = metrics.cpu_percent
+                else:
+                    # Non-blocking: use cached value, update in background
+                    # This call returns CPU since last call (non-blocking)
+                    instant_cpu = psutil.cpu_percent(interval=None)
+                    with self._cpu_lock:
+                        # Use cached value if available and instant reading seems off
+                        if self._cached_cpu_percent > 0:
+                            # Blend for smoother updates
+                            metrics.cpu_percent = self._cached_cpu_percent
+                        else:
+                            metrics.cpu_percent = instant_cpu
+
                 metrics.cpu_cores = psutil.cpu_count() or 1
 
                 mem = psutil.virtual_memory()
@@ -172,7 +206,8 @@ class SystemMonitor:
         """Background monitoring loop."""
         while self._running:
             try:
-                metrics = self.get_metrics()
+                # Use blocking=True for accurate CPU measurement in background
+                metrics = self.get_metrics(blocking=True)
                 self._metrics_history.append(metrics)
 
                 # Keep last 100 samples
