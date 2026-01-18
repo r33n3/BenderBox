@@ -539,6 +539,21 @@ def _probe_with_variants(
         return None
 
 
+# Architectures that support text generation (causal language models)
+GENERATIVE_ARCHITECTURES = {
+    "llama", "mistral", "falcon", "falcon-h1", "phi", "phi2", "phi3",
+    "qwen", "qwen2", "gemma", "gemma2", "gpt2", "gptj", "gptneox",
+    "starcoder", "codellama", "deepseek", "internlm", "baichuan",
+    "yi", "mpt", "olmo", "command-r", "dbrx", "jais", "stablelm",
+}
+
+# Architectures that are encoder-only (cannot generate text)
+ENCODER_ONLY_ARCHITECTURES = {
+    "bert", "roberta", "electra", "albert", "distilbert", "xlm",
+    "nomic-bert", "jina-bert", "bge", "e5",
+}
+
+
 def _run_yaml_dynamic_tests(
     profile_name: str,
     model_path: Path,
@@ -562,6 +577,37 @@ def _run_yaml_dynamic_tests(
         List of TestResult objects
     """
     results = []
+
+    # Check if model architecture supports text generation
+    try:
+        metadata = inspect_gguf_metadata(model_path)
+        arch = metadata.get("architecture", "").lower()
+
+        if arch in ENCODER_ONLY_ARCHITECTURES:
+            logger.warning(
+                f"Model architecture '{arch}' is encoder-only and cannot generate text. "
+                f"Skipping dynamic tests. Use a generative model (llama, falcon, mistral, etc.)"
+            )
+            results.append(TestResult(
+                name="dynamic_tests_skipped",
+                category="dynamic",
+                status="SKIP",
+                severity="INFO",
+                details=(
+                    f"Model architecture '{arch}' is encoder-only (like BERT) and cannot generate text. "
+                    f"Dynamic tests require a generative/causal language model. "
+                    f"Supported architectures: {', '.join(sorted(GENERATIVE_ARCHITECTURES)[:10])}..."
+                ),
+            ))
+            return results
+
+        if arch and arch not in GENERATIVE_ARCHITECTURES:
+            logger.warning(
+                f"Unknown architecture '{arch}' - proceeding with caution. "
+                f"Dynamic tests may fail if model doesn't support text generation."
+            )
+    except Exception as e:
+        logger.debug(f"Could not check model architecture: {e}")
 
     try:
         from benderbox.profiles import load_profile

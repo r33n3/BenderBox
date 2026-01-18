@@ -817,11 +817,8 @@ def prereq_remove(ctx, name: str):
               type=click.Choice(["quick", "standard", "full", "adversarial"]),
               help="Interrogation profile: quick (~15), standard (~50), full (~100+), adversarial (jailbreak + variant probing)")
 @click.option("-c", "--censorship", default="unknown", help="Claimed censorship level")
-@click.option("-o", "--output", help="Output report file path")
-@click.option("-f", "--format", "output_format", default="json",
-              type=click.Choice(["json", "markdown", "html"]),
-              help="Output format (default: json)")
-@click.option("--open", "open_browser", is_flag=True, help="Auto-open HTML report in browser")
+@click.option("-o", "--output", help="Output report file path (JSON)")
+@click.option("--open", "open_report", is_flag=True, help="Open report viewer after saving")
 @click.option("--no-validate", is_flag=True, help="Skip censorship validation")
 @click.option("-y", "--yes", is_flag=True, help="Skip confirmation for API targets")
 @click.option("--tests-file", "tests_file", help="Load custom tests from file (.md, .yaml, .yml)")
@@ -842,8 +839,7 @@ def interrogate(
     profile: str,
     censorship: str,
     output: Optional[str],
-    output_format: str,
-    open_browser: bool,
+    open_report: bool,
     no_validate: bool,
     yes: bool,
     tests_file: Optional[str],
@@ -1228,45 +1224,33 @@ def interrogate(
 
             console.print(cost_table)
 
-        # Save report if output specified
+        # Save report (always JSON format)
         if output:
             output_path = Path(output)
+            # Ensure .json extension
+            if output_path.suffix.lower() != ".json":
+                output_path = output_path.with_suffix(".json")
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            report.save(output_path)
+            ui.print_success(f"Report saved to: {output_path}")
 
-            # Adjust extension based on format
-            if output_format == "html" and not output_path.suffix.lower() == ".html":
-                output_path = output_path.with_suffix(".html")
-            elif output_format == "markdown" and not output_path.suffix.lower() in (".md", ".markdown"):
-                output_path = output_path.with_suffix(".md")
+        # Open report viewer if requested
+        if open_report:
+            import webbrowser
+            from benderbox.reporting.index_generator import ReportViewerGenerator
 
-            # Generate report in specified format
-            if output_format == "html":
-                from benderbox.reporting.html_generator import HTMLReportGenerator
-                html_gen = HTMLReportGenerator()
-                report_dict = report.to_dict()
-                html_content = html_gen.generate(report_dict)
-                output_path.parent.mkdir(parents=True, exist_ok=True)
-                output_path.write_text(html_content, encoding="utf-8")
-                ui.print_success(f"HTML report saved to: {output_path}")
+            # Generate/update the report viewer
+            reports_dir = Path("reports")
+            generator = ReportViewerGenerator(str(reports_dir))
+            reports = generator.collect_reports()
 
-                # Auto-open in browser
-                if open_browser:
-                    import webbrowser
-                    file_url = output_path.as_uri()
-                    webbrowser.open(file_url)
-                    ui.print_info("Opened report in browser")
-
-            elif output_format == "markdown":
-                from benderbox.reporting.report_generator import ReportGenerator
-                md_gen = ReportGenerator()
-                report_dict = report.to_dict()
-                md_content = md_gen.generate_markdown(report_dict)
-                output_path.parent.mkdir(parents=True, exist_ok=True)
-                output_path.write_text(md_content, encoding="utf-8")
-                ui.print_success(f"Markdown report saved to: {output_path}")
+            if reports:
+                viewer_path = reports_dir / "index.html"
+                generator.generate(str(viewer_path))
+                webbrowser.open(viewer_path.resolve().as_uri())
+                ui.print_info("Opened report viewer in browser")
             else:
-                # Default JSON format
-                report.save(output_path)
-                ui.print_success(f"Report saved to: {output_path}")
+                ui.print_warning("No reports found to view")
 
     except ImportError as e:
         ui.print_error(f"Missing dependency: {e}")
@@ -2232,22 +2216,34 @@ def models_list(ctx, purpose: str):
 @models.command("download")
 @click.argument("model_id", required=False)
 @click.option("--set-default", "-d", is_flag=True, help="Set as default model after download")
-@click.option("--purpose", "-p", type=click.Choice(["analysis", "nlp", "code"]), default="nlp",
+@click.option("--purpose", "-p", type=click.Choice(["analysis", "nlp", "code"]), default="analysis",
               help="Purpose for the model: analysis (interrogate models), nlp (chat features), code (code gen)")
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompts (for scripting/CI)")
+@click.option("--file", "-f", "filename", help="Specific GGUF filename to download (for HuggingFace repos)")
 @click.pass_context
-def models_download(ctx, model_id: str, set_default: bool, purpose: str, yes: bool):
-    """Download a recommended model.
+def models_download(ctx, model_id: str, set_default: bool, purpose: str, yes: bool, filename: str):
+    """Download a model from HuggingFace or recommended list.
 
-    MODEL_ID is the model identifier (e.g., 'tinyllama', 'phi2').
-    If not specified, downloads the recommended model for your system.
+    MODEL_ID can be:
+    - A recommended model ID: tinyllama, phi2, qwen2-1.5b, mistral-7b
+    - A HuggingFace repo: TheBloke/Llama-2-7B-GGUF
+    - A HuggingFace URL: https://huggingface.co/tiiuae/Falcon-H1-Tiny-90M-Instruct-GGUF
+
+    If MODEL_ID is a HuggingFace repo without a specific file, BenderBox will
+    list available GGUF files and let you choose.
+
+    Use --file to specify a specific GGUF filename for HuggingFace repos.
 
     Use --purpose to specify the model's intended use:
-    - nlp: For BenderBox's chat/NLP features (default)
-    - analysis: For interrogating/analyzing other models
+    - analysis: For interrogating/analyzing models (default)
+    - nlp: For BenderBox's chat/NLP features
     - code: For code generation features
 
-    Use --yes to skip confirmation prompts for automation/CI.
+    Examples:
+        benderbox models download tinyllama
+        benderbox models download TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF
+        benderbox models download https://huggingface.co/tiiuae/Falcon-H1-Tiny-90M-Instruct-GGUF
+        benderbox models download tiiuae/Falcon-H1-Tiny-90M-Instruct-GGUF --file falcon-h1-tiny-90m-instruct-q4_k_m.gguf
     """
     import asyncio
     from benderbox.ui.terminal import TerminalUI, ProgressSpinner
@@ -2263,28 +2259,126 @@ def models_download(ctx, model_id: str, set_default: bool, purpose: str, yes: bo
         model_id = DEFAULT_MODEL
         ui.print_info(f"No model specified, using recommended: {model_id}")
 
-    if model_id not in RECOMMENDED_MODELS:
-        ui.print_error(f"Unknown model: {model_id}")
-        ui.print_info(f"Available models: {', '.join(RECOMMENDED_MODELS.keys())}")
-        return
+    # Check if it's a recommended model
+    if model_id in RECOMMENDED_MODELS:
+        model = RECOMMENDED_MODELS[model_id]
+        ui.print_info(f"Model: {model.name}")
+        ui.print_info(f"Size: ~{model.size_mb} MB")
+        ui.print_info(f"Source: {model.huggingface_repo}")
+        ui.print_info(f"Purpose: {purpose}")
+        print()
 
-    model = RECOMMENDED_MODELS[model_id]
-    ui.print_info(f"Model: {model.name}")
-    ui.print_info(f"Size: ~{model.size_mb} MB")
-    ui.print_info(f"Source: {model.huggingface_repo}")
-    ui.print_info(f"Purpose: {purpose}")
-    print()
+        if not yes and not click.confirm("Download this model?"):
+            ui.print_info("Cancelled")
+            return
 
-    if not yes and not click.confirm("Download this model?"):
-        ui.print_info("Cancelled")
-        return
+        async def do_download():
+            def progress_cb(msg, pct):
+                pass  # Progress handled by spinner
+            return await manager.download_model(model_id, progress_cb)
 
-    async def do_download():
-        def progress_cb(msg, pct):
-            pass  # Progress handled by spinner
+        download_name = model.name
 
-        return await manager.download_model(model_id, progress_cb)
+    # Check if it's a direct download URL
+    elif manager.is_direct_download_url(model_id):
+        ui.print_info(f"Direct URL: {model_id}")
+        ui.print_info(f"Purpose: {purpose}")
+        print()
 
+        if not yes and not click.confirm("Download this file?"):
+            ui.print_info("Cancelled")
+            return
+
+        async def do_download():
+            return await manager.download_from_url_async(model_id, purpose, filename)
+
+        # Extract filename for display
+        url_filename = filename or model_id.split('/')[-1].split('?')[0]
+        download_name = url_filename
+
+    else:
+        # Assume it's a HuggingFace URL or repo ID
+        repo_id, parsed_filename = manager.parse_huggingface_url(model_id)
+
+        if not repo_id:
+            ui.print_error(f"Invalid model identifier: {model_id}")
+            ui.print_info("Use a recommended model ID or HuggingFace repo/URL")
+            ui.print_info(f"Recommended models: {', '.join(RECOMMENDED_MODELS.keys())}")
+            return
+
+        # Use provided filename or parsed filename
+        target_filename = filename or parsed_filename
+
+        # If no filename, try to list available GGUF files
+        if not target_filename:
+            ui.print_info(f"Repository: {repo_id}")
+            ui.print_info("Fetching available GGUF files...")
+            print()
+
+            try:
+                from huggingface_hub import list_repo_files
+
+                all_files = list_repo_files(repo_id)
+                gguf_files = [f for f in all_files if f.endswith('.gguf')]
+
+                if not gguf_files:
+                    ui.print_error(f"No GGUF files found in {repo_id}")
+                    return
+
+                ui.print_info(f"Available GGUF files in {repo_id}:")
+                for i, f in enumerate(gguf_files, 1):
+                    print(f"  {i}. {f}")
+                print()
+
+                if len(gguf_files) == 1:
+                    target_filename = gguf_files[0]
+                    ui.print_info(f"Auto-selecting: {target_filename}")
+                else:
+                    # Let user choose
+                    choice = click.prompt(
+                        "Select file number (or enter filename)",
+                        default="1"
+                    )
+                    try:
+                        idx = int(choice) - 1
+                        if 0 <= idx < len(gguf_files):
+                            target_filename = gguf_files[idx]
+                        else:
+                            ui.print_error("Invalid selection")
+                            return
+                    except ValueError:
+                        # User entered a filename directly
+                        if choice in gguf_files or choice.endswith('.gguf'):
+                            target_filename = choice
+                        else:
+                            ui.print_error(f"File not found: {choice}")
+                            return
+
+            except ImportError:
+                ui.print_error("huggingface_hub not installed. Run: pip install huggingface-hub")
+                return
+            except Exception as e:
+                ui.print_error(f"Failed to list files: {e}")
+                ui.print_info("Try specifying the filename with --file")
+                return
+
+        ui.print_info(f"Repository: {repo_id}")
+        ui.print_info(f"File: {target_filename}")
+        ui.print_info(f"Purpose: {purpose}")
+        print()
+
+        if not yes and not click.confirm("Download this model?"):
+            ui.print_info("Cancelled")
+            return
+
+        async def do_download():
+            return await manager.download_huggingface_model(
+                repo_id, target_filename, purpose
+            )
+
+        download_name = target_filename
+
+    # Execute download
     try:
         from rich.console import Console
         from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
@@ -2297,7 +2391,7 @@ def models_download(ctx, model_id: str, set_default: bool, purpose: str, yes: bo
             BarColumn(),
             console=console,
         ) as progress:
-            task = progress.add_task(f"Downloading {model.name}...", total=None)
+            task = progress.add_task(f"Downloading {download_name}...", total=None)
             success, message, path = asyncio.run(do_download())
 
         print()
@@ -2306,18 +2400,25 @@ def models_download(ctx, model_id: str, set_default: bool, purpose: str, yes: bo
             ui.print_success(message)
             ui.print_info(f"Path: {path}")
 
-            if set_default or yes or click.confirm(f"Set as default {purpose} model?"):
+            if set_default or (not yes and click.confirm(f"Set as default {purpose} model?")):
                 ok, msg = manager.setup_default_model(path, purpose=purpose)
                 if ok:
                     ui.print_success(msg)
                 else:
                     ui.print_error(msg)
+
+            # Show next steps
+            print()
+            ui.print_info("Next steps:")
+            print(f"  Analyze: python bb.py interrogate {path} --profile quick")
+            print(f"  Quick test: python bb.py models test {path}")
+
         else:
             ui.print_error(message)
 
     except ImportError:
         # Fallback without rich
-        print(f"Downloading {model.name}...")
+        print(f"Downloading {download_name}...")
         success, message, path = asyncio.run(do_download())
         if success:
             print(f"Success: {message}")

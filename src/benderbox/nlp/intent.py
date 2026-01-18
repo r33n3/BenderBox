@@ -204,7 +204,17 @@ KEYWORD_PATTERNS: List[Tuple[re.Pattern, IntentType, bool, bool]] = [
     (re.compile(r"\bmodels?\s+download\b", re.I),
      IntentType.DOWNLOAD_MODEL, False, False),
 
-        # HuggingFace URL patterns
+    # Any URL ending in .gguf (model file) - triggers download
+    (re.compile(r"https?://\S+\.gguf\b", re.I),
+     IntentType.DOWNLOAD_MODEL, False, False),
+
+    # Any HTTP/HTTPS URL with download/get/fetch/analyze intent
+    (re.compile(r"\b(download|get|fetch)\b.*https?://", re.I),
+     IntentType.DOWNLOAD_MODEL, False, False),
+    (re.compile(r"https?://\S+.*\b(download|get|fetch|analyze|test|scan)\b", re.I),
+     IntentType.DOWNLOAD_MODEL, False, False),
+
+    # HuggingFace URL patterns
     (re.compile(r"huggingface\.co/", re.I),
      IntentType.DOWNLOAD_MODEL, False, False),
     (re.compile(r"hf\.co/", re.I),

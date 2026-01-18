@@ -1209,6 +1209,228 @@ class ModelManager:
 
         return None, None
 
+    def validate_gguf_file(self, file_path: Path) -> Tuple[bool, str, Dict]:
+        """
+        Validate that a file is a valid GGUF model by checking the magic bytes.
+
+        GGUF files start with magic bytes: GGUF (0x47 0x47 0x55 0x46)
+        followed by version number (uint32).
+
+        Args:
+            file_path: Path to the file to validate
+
+        Returns:
+            Tuple of (is_valid, message, metadata_dict)
+        """
+        import struct
+
+        GGUF_MAGIC = b'GGUF'
+
+        metadata = {
+            "file_path": str(file_path),
+            "file_size_mb": 0,
+            "is_gguf": False,
+            "gguf_version": None,
+        }
+
+        try:
+            if not file_path.exists():
+                return False, f"File not found: {file_path}", metadata
+
+            file_size = file_path.stat().st_size
+            metadata["file_size_mb"] = round(file_size / (1024 * 1024), 2)
+
+            if file_size < 8:
+                return False, "File too small to be a GGUF model", metadata
+
+            with open(file_path, 'rb') as f:
+                magic = f.read(4)
+                if magic != GGUF_MAGIC:
+                    # Check for other common model formats
+                    f.seek(0)
+                    header = f.read(16)
+
+                    if header.startswith(b'PK'):
+                        return False, "File appears to be a ZIP archive (possibly SafeTensors or PyTorch)", metadata
+                    elif header.startswith(b'\x89PNG'):
+                        return False, "File is a PNG image, not a model", metadata
+                    elif b'pytorch' in header.lower() or header[:2] == b'\x80\x02':
+                        return False, "File appears to be a PyTorch model (.pt/.pth), not GGUF", metadata
+
+                    return False, f"Not a GGUF file (magic bytes: {magic.hex()})", metadata
+
+                # Read GGUF version (uint32, little endian)
+                version_bytes = f.read(4)
+                if len(version_bytes) == 4:
+                    version = struct.unpack('<I', version_bytes)[0]
+                    metadata["gguf_version"] = version
+                    metadata["is_gguf"] = True
+
+                    if version < 1 or version > 3:
+                        return False, f"Unsupported GGUF version: {version}", metadata
+
+            return True, f"Valid GGUF file (version {metadata['gguf_version']}, {metadata['file_size_mb']} MB)", metadata
+
+        except Exception as e:
+            return False, f"Error validating file: {e}", metadata
+
+    def is_direct_download_url(self, url: str) -> bool:
+        """
+        Check if a URL is a direct download link (not a HuggingFace repo page).
+
+        Returns True for URLs that point directly to files.
+        """
+        url = url.lower().strip()
+
+        # Direct file URLs typically end with file extensions
+        direct_extensions = ['.gguf', '.bin', '.safetensors', '.pt', '.pth', '.onnx']
+        if any(url.endswith(ext) for ext in direct_extensions):
+            return True
+
+        # HuggingFace resolve URLs are direct downloads
+        if '/resolve/' in url:
+            return True
+
+        # Check for common CDN/file hosting patterns
+        direct_patterns = [
+            'github.com' in url and '/releases/download/' in url,
+            'raw.githubusercontent.com' in url,
+            '/download/' in url and any(ext in url for ext in direct_extensions),
+        ]
+
+        return any(direct_patterns)
+
+    def download_from_url(
+        self,
+        url: str,
+        purpose: str = "analysis",
+        filename: Optional[str] = None,
+        show_progress: bool = True,
+    ) -> Tuple[bool, str, Optional[Path]]:
+        """
+        Download a model file from any URL.
+
+        Args:
+            url: Direct download URL
+            purpose: "nlp", "analysis", or "code"
+            filename: Optional filename (auto-detected from URL if not provided)
+            show_progress: Whether to show download progress
+
+        Returns:
+            Tuple of (success, message, path_if_success)
+        """
+        import re
+        import urllib.request
+        import urllib.error
+
+        # Convert HuggingFace /blob/ URLs to /resolve/ URLs
+        # /blob/ returns HTML page, /resolve/ returns actual file
+        if 'huggingface.co' in url and '/blob/' in url:
+            url = url.replace('/blob/', '/resolve/')
+            logger.info(f"Converted HuggingFace blob URL to resolve URL")
+
+        # Determine target directory based on purpose
+        if purpose == "nlp":
+            target_dir = self.nlp_model_dir
+        elif purpose == "analysis":
+            target_dir = self.analysis_model_dir
+        elif purpose == "code":
+            target_dir = self.code_model_dir
+        else:
+            target_dir = self.models_dir
+
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        # Extract filename from URL if not provided
+        if not filename:
+            # Try to get filename from URL path
+            url_path = url.split('?')[0]  # Remove query params
+            filename = url_path.split('/')[-1]
+
+            # If filename doesn't look valid, generate one
+            if not filename or '.' not in filename:
+                filename = f"model_{hash(url) % 10000}.gguf"
+
+        # Ensure .gguf extension
+        if not filename.endswith('.gguf'):
+            filename = filename + '.gguf'
+
+        target_path = target_dir / filename
+        temp_path = target_dir / f".{filename}.download"
+
+        logger.info(f"Downloading {url} to {target_path}")
+
+        try:
+            # Set up request with user agent
+            req = urllib.request.Request(
+                url,
+                headers={
+                    'User-Agent': 'BenderBox/4.0 (Model Downloader)',
+                }
+            )
+
+            # Download with progress
+            with urllib.request.urlopen(req, timeout=300) as response:
+                total_size = response.headers.get('content-length')
+                if total_size:
+                    total_size = int(total_size)
+
+                downloaded = 0
+                block_size = 8192
+
+                with open(temp_path, 'wb') as f:
+                    while True:
+                        block = response.read(block_size)
+                        if not block:
+                            break
+                        f.write(block)
+                        downloaded += len(block)
+
+                        if show_progress and total_size:
+                            pct = (downloaded / total_size) * 100
+                            mb_done = downloaded / (1024 * 1024)
+                            mb_total = total_size / (1024 * 1024)
+                            print(f"\r  Downloading: {mb_done:.1f}/{mb_total:.1f} MB ({pct:.1f}%)", end='', flush=True)
+
+                if show_progress:
+                    print()  # Newline after progress
+
+            # Validate the downloaded file
+            is_valid, msg, metadata = self.validate_gguf_file(temp_path)
+
+            if not is_valid:
+                temp_path.unlink(missing_ok=True)
+                return False, f"Downloaded file is not a valid GGUF model: {msg}", None
+
+            # Move to final location
+            if target_path.exists():
+                target_path.unlink()
+            temp_path.rename(target_path)
+
+            return True, f"Downloaded {metadata['file_size_mb']} MB to {target_path}", target_path
+
+        except urllib.error.HTTPError as e:
+            temp_path.unlink(missing_ok=True)
+            return False, f"HTTP error {e.code}: {e.reason}", None
+        except urllib.error.URLError as e:
+            temp_path.unlink(missing_ok=True)
+            return False, f"URL error: {e.reason}", None
+        except Exception as e:
+            temp_path.unlink(missing_ok=True)
+            return False, f"Download failed: {e}", None
+
+    async def download_from_url_async(
+        self,
+        url: str,
+        purpose: str = "analysis",
+        filename: Optional[str] = None,
+    ) -> Tuple[bool, str, Optional[Path]]:
+        """Async wrapper for download_from_url."""
+        import asyncio
+        return await asyncio.to_thread(
+            self.download_from_url, url, purpose, filename, True
+        )
+
 
 def get_model_manager(base_path: Optional[Path] = None) -> ModelManager:
     """Get a ModelManager instance."""

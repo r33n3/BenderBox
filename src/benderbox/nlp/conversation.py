@@ -264,6 +264,74 @@ class ConversationManager:
                 except Exception as e:
                     error = str(e)
 
+            # Download model (with optional analysis)
+            if intent.intent_type == IntentType.DOWNLOAD_MODEL:
+                try:
+                    target = intent.parameters.get("target", "")
+                    if not target:
+                        # Extract URL directly from user input
+                        import re
+                        url_match = re.search(r'https?://\S+', user_input)
+                        if url_match:
+                            target = url_match.group(0)
+                        # Fallback to command mapper entities
+                        elif self._command_mapper:
+                            entities = self._command_mapper.extract_entities(user_input)
+                            if entities.urls:
+                                target = entities.urls[0]
+                            elif entities.model_names:
+                                target = entities.model_names[0]
+
+                    if target:
+                        from benderbox.utils.model_manager import ModelManager
+                        manager = ModelManager()
+
+                        # Check if user also wants analysis
+                        wants_analysis = any(word in user_input.lower() for word in
+                            ["analyze", "test", "interrogate", "check", "scan", "analyse", "full"])
+                        wants_report = any(word in user_input.lower() for word in
+                            ["report", "view", "open", "show"])
+
+                        # Download the model (suppress progress in NLP mode - conflicts with spinner)
+                        purpose = "analysis" if wants_analysis else "nlp"
+                        logger.info(f"Downloading model from: {target}")
+                        success, message, model_path = manager.download_from_url(
+                            target, purpose=purpose, show_progress=False
+                        )
+
+                        if success and model_path:
+                            analysis_result = {
+                                "action": "downloaded_model",
+                                "target": target,
+                                "local_path": str(model_path),
+                                "message": message,
+                            }
+
+                            # Run analysis if requested
+                            if wants_analysis:
+                                profile = intent.parameters.get("profile", "quick")
+                                interrogation_result = await self._analysis_bridge.analyze_model(
+                                    str(model_path), profile
+                                )
+                                analysis_result["interrogation"] = interrogation_result
+                                analysis_result["action"] = "downloaded_and_analyzed"
+
+                                # Save report and open viewer if requested
+                                if wants_report:
+                                    from benderbox.reporting.index_generator import ReportViewerGenerator
+                                    generator = ReportViewerGenerator()
+                                    reports = generator.collect_reports()
+                                    if reports:
+                                        output_path = generator.save(open_browser=True)
+                                        analysis_result["report_opened"] = True
+                        else:
+                            error = message
+                    else:
+                        error = "No model URL or ID provided. Please specify a HuggingFace URL or model ID."
+                except Exception as e:
+                    logger.error(f"Download failed: {e}")
+                    error = str(e)
+
             # Build response context
             response_context = ResponseContext(
                 intent=intent,

@@ -201,52 +201,41 @@ class LlamaCppRunner(BaseModelRunner):
         # Remove the llama.cpp banner/logo
         lines = output.split('\n')
         response_lines = []
-        in_response = False
+        found_prompt = False
+
+        # Patterns to skip even after prompt
         skip_patterns = [
-            'Loading model',
-            'build      :',
-            'model      :',
-            'modalities :',
-            'available commands:',
-            '/exit or Ctrl+C',
-            '/regen',
-            '/clear',
-            '/read',
-            'load_backend:',
             'Exiting...',
             '[ Prompt:',
             'llama_memory',
+            'load_backend:',
         ]
 
         for line in lines:
-            # Skip banner and metadata lines
+            # Look for the prompt marker "> " which indicates start of conversation
+            if line.strip().startswith('> '):
+                found_prompt = True
+                # The actual response comes after the prompt line
+                continue
+
+            # Skip everything before we find the prompt
+            if not found_prompt:
+                continue
+
+            # Skip metadata lines after response
             skip = False
             for pattern in skip_patterns:
                 if pattern in line:
                     skip = True
                     break
-
-            # Skip lines that are just the prompt echo
-            if line.strip() == '>' or line.strip().startswith('> '):
-                in_response = True
-                # Get the part after "> "
-                if line.strip().startswith('> '):
-                    remaining = line.strip()[2:].strip()
-                    if remaining and remaining != prompt.strip():
-                        response_lines.append(remaining)
-                continue
-
             if skip:
                 continue
 
-            # Skip empty lines at the start
-            if not in_response and not line.strip():
+            # Skip empty lines at the start of response
+            if not response_lines and not line.strip():
                 continue
 
-            # Once we see ">", we're in response mode
-            if in_response or (line.strip() and not any(p in line for p in skip_patterns)):
-                in_response = True
-                response_lines.append(line)
+            response_lines.append(line)
 
         response = '\n'.join(response_lines).strip()
 

@@ -777,6 +777,18 @@ class WorkflowExecutor:
                 result["success"] = success
                 result["message"] = message
 
+            elif source_info["type"] == "url":
+                # Direct URL download with GGUF validation
+                url = source_info["url"]
+                success, message, path = self.ctx.model_manager.download_from_url(
+                    url=url,
+                    purpose=purpose,
+                    show_progress=True
+                )
+                result["success"] = success
+                result["message"] = message
+                result["path"] = str(path) if path else None
+
             else:
                 result["message"] = f"Unsupported download source type: {source_info['type']}"
 

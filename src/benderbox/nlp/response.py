@@ -517,39 +517,38 @@ class ResponseGenerator:
 
         lines = ["**Model Download**", ""]
 
-        if suggested:
-            model_id, name, size, desc = suggested
+        # Check if there was an actual download result
+        if context.analysis_result and context.analysis_result.get("action") in ("downloaded_model", "downloaded_and_analyzed"):
+            result = context.analysis_result
             lines.extend([
-                f"To download **{name}** ({size} - {desc}):",
+                f"Downloaded: `{result.get('local_path', 'unknown')}`",
                 "",
-                f"```",
-                f"models download {model_id}",
-                f"```",
-                "",
-                "Or from the CLI:",
-                f"```bash",
-                f"python bb.py models download {model_id} --purpose nlp",
-                f"python bb.py models download {model_id} --purpose analysis",
-                f"```",
+                result.get("message", "Download complete."),
             ])
+            if result.get("action") == "downloaded_and_analyzed":
+                lines.extend([
+                    "",
+                    "Analysis complete. Use `/reports` to view results.",
+                ])
         else:
+            # Show download instructions
             lines.extend([
-                "**Available Models for Download:**",
+                "**Download any GGUF model:**",
                 "",
-                "| ID | Model | Size | Best For |",
-                "|-----|-------|------|----------|",
-                "| `tinyllama` | TinyLlama-1.1B | ~500 MB | Quick testing, limited RAM |",
-                "| `phi2` | Phi-2 | ~1.7 GB | Quality + efficiency |",
-                "| `qwen2-1.5b` | Qwen2-1.5B | ~1 GB | Great balance |",
-                "| `mistral-7b` | Mistral-7B | ~4.4 GB | Best quality (16GB+ RAM) |",
-                "",
-                "**Download Commands:**",
                 "```",
-                "models download tinyllama      # For NLP/chat",
-                "models download phi2           # For analysis",
+                "download https://huggingface.co/user/repo/resolve/main/model.gguf",
                 "```",
                 "",
-                "Or use CLI: `python bb.py models download <id> --purpose nlp|analysis`",
+                "**With analysis:**",
+                "```",
+                "download https://example.com/model.gguf and analyze it",
+                "```",
+                "",
+                "**From CLI:**",
+                "```bash",
+                "python bb.py models download <url> --purpose analysis",
+                "python bb.py models download <url> --purpose nlp",
+                "```",
             ])
 
         lines.extend([

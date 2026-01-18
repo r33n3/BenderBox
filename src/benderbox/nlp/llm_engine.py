@@ -117,6 +117,24 @@ class LlamaModel:
         self._model = None
         self._loaded = False
 
+    def _get_model_context_length(self) -> int:
+        """
+        Get the model's context length from GGUF metadata.
+
+        Returns:
+            Context length from model metadata, or default if not found.
+        """
+        try:
+            from benderbox.sandbox_cli import inspect_gguf_metadata
+            metadata = inspect_gguf_metadata(Path(self.model_path))
+            if metadata and "context_length" in metadata:
+                model_ctx = metadata["context_length"]
+                logger.info(f"Model context length from metadata: {model_ctx}")
+                return model_ctx
+        except Exception as e:
+            logger.debug(f"Could not read model context length: {e}")
+        return 0  # Unknown
+
     def _ensure_loaded(self) -> None:
         """Ensure model is loaded, raising informative error if not possible."""
         if self._loaded and self._model is not None:
@@ -141,6 +159,21 @@ class LlamaModel:
 
             logger.info(f"Loading model from {self.model_path}")
 
+            # Get model's actual context length from metadata
+            model_ctx = self._get_model_context_length()
+
+            # Use minimum of config and model context length
+            # If model context is 0 (unknown), use config default
+            if model_ctx > 0:
+                effective_ctx = min(self.context_length, model_ctx)
+                if effective_ctx < self.context_length:
+                    logger.info(f"Using model's context length ({effective_ctx}) instead of config ({self.context_length})")
+            else:
+                effective_ctx = self.context_length
+
+            # Store the effective context length
+            self._effective_context_length = effective_ctx
+
             # Suppress stdout/stderr during model loading to prevent
             # disrupting Rich Live display (llama.cpp may output despite settings)
             import io
@@ -152,7 +185,7 @@ class LlamaModel:
                 _sys.stderr = io.StringIO()
                 self._model = Llama(
                     model_path=self.model_path,
-                    n_ctx=self.context_length,
+                    n_ctx=effective_ctx,
                     n_threads=self.threads,
                     n_gpu_layers=self.gpu_layers,
                     verbose=False,
@@ -162,7 +195,7 @@ class LlamaModel:
                 _sys.stderr = _old_stderr
 
             self._loaded = True
-            logger.info(f"Model loaded successfully: {self.model_path}")
+            logger.info(f"Model loaded successfully: {self.model_path} (context: {effective_ctx})")
         except ImportError:
             raise LLMEngineError(
                 "llama-cpp-python is not installed. Install with:\n"
@@ -171,6 +204,24 @@ class LlamaModel:
             )
         except Exception as e:
             raise LLMEngineError(f"Failed to load model: {e}")
+
+    def _reset_context(self) -> None:
+        """
+        Reset the model's KV cache to prevent state corruption.
+
+        This should be called before each new generation to ensure
+        clean context state, especially for stateless chat interactions.
+        """
+        if self._model is not None:
+            try:
+                # Reset the model's internal KV cache
+                self._model.reset()
+                logger.debug("Model context reset")
+            except AttributeError:
+                # Older versions of llama-cpp-python may not have reset()
+                pass
+            except Exception as e:
+                logger.debug(f"Could not reset model context: {e}")
 
     def generate(
         self,
@@ -194,6 +245,10 @@ class LlamaModel:
             Generated text completion.
         """
         self._ensure_loaded()
+
+        # Reset KV cache before each generation to prevent state corruption
+        # This is important for models that may have issues with accumulated context
+        self._reset_context()
 
         result = self._model(
             prompt,
@@ -228,6 +283,9 @@ class LlamaModel:
             Generated text chunks.
         """
         self._ensure_loaded()
+
+        # Reset KV cache before each generation
+        self._reset_context()
 
         for chunk in self._model(
             prompt,

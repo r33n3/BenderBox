@@ -168,9 +168,36 @@ WORKFLOW_TEMPLATES: Dict[str, Dict] = {
         "steps": [
             {"action": "resolve_download_source", "required": True, "ask_if_missing": True},
             {"action": "check_disk_space", "required": True},
-            {"action": "select_purpose", "required": True, "ask_if_missing": True, "default_value": "nlp"},
+            {"action": "select_purpose", "required": True, "ask_if_missing": True, "default_value": "analysis"},
             {"action": "download_model", "required": True},
             {"action": "verify_download", "required": True},
+        ],
+        "optional_steps": [
+            {"action": "run_interrogation", "trigger_words": ["analyze", "test", "interrogate", "check", "scan"]},
+            {"action": "open_report", "trigger_words": ["report", "view", "open", "show"]},
+        ],
+    },
+
+    "download_and_analyze": {
+        "name": "download_and_analyze",
+        "description": "Download a model and analyze it for security issues",
+        "triggers": [
+            # This workflow is triggered when both download AND analyze are mentioned
+        ],
+        "match_pattern": r"\b(download|get|fetch)\b.*\b(analy[sz]e|test|interrogate|check|scan)\b",
+        "steps": [
+            {"action": "resolve_download_source", "required": True, "ask_if_missing": True},
+            {"action": "check_disk_space", "required": True},
+            {"action": "select_purpose", "required": True, "default_value": "analysis"},
+            {"action": "download_model", "required": True},
+            {"action": "verify_download", "required": True},
+            {"action": "select_profile", "required": True, "ask_if_missing": True, "default_value": "quick"},
+            {"action": "run_interrogation", "required": True},
+            {"action": "show_summary", "required": True},
+        ],
+        "optional_steps": [
+            {"action": "generate_report", "trigger_words": ["report", "save", "export"]},
+            {"action": "open_report", "trigger_words": ["open", "view", "browser"]},
         ],
     },
 
@@ -269,16 +296,28 @@ class WorkflowDetector:
     def __init__(self):
         self.templates = WORKFLOW_TEMPLATES
 
-    def detect(self, entities: ExtractedEntities) -> Optional[Workflow]:
+    def detect(self, entities: ExtractedEntities, raw_query: str = "") -> Optional[Workflow]:
         """
         Detect the best matching workflow for given entities.
 
         Args:
             entities: Extracted entities from user query.
+            raw_query: Original user query for pattern matching.
 
         Returns:
             Workflow if a match is found, None otherwise.
         """
+        # First, check for pattern-based workflows (like download_and_analyze)
+        # These take priority for multi-action queries
+        if raw_query:
+            for template_name, template in self.templates.items():
+                if "match_pattern" in template:
+                    import re
+                    pattern = re.compile(template["match_pattern"], re.IGNORECASE)
+                    if pattern.search(raw_query):
+                        logger.debug(f"Pattern match for workflow: {template_name}")
+                        return self._create_workflow(template, entities)
+
         if not entities.actions:
             return None
 
