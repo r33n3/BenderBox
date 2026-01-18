@@ -566,14 +566,14 @@ def offer_model_download():
         options.append(model_id)
         idx += 1
 
-    # Custom HuggingFace option
-    print(f"\n  {idx}. {Colors.CYAN}Custom HuggingFace Model{Colors.END}")
-    print(f"     Enter a HuggingFace URL or repo ID")
+    # Custom URL option
+    print(f"\n  {idx}. {Colors.CYAN}Custom Model URL{Colors.END}")
+    print(f"     Enter any GGUF model URL (HuggingFace, direct link, etc.)")
     options.append("custom")
     idx += 1
 
     # Skip option
-    print(f"\n  {idx}. Skip for now")
+    print(f"\n  {idx}. Skip for now (download later)")
     options.append("skip")
 
     # Get user choice
@@ -599,7 +599,7 @@ def offer_model_download():
         return False
 
     if selected == "custom":
-        return download_custom_huggingface_model()
+        return download_custom_model_url()
 
     # Download selected model
     return download_model(selected)
@@ -617,48 +617,38 @@ def get_model_size_estimate(model_id):
     return sizes.get(model_id, (None, "unknown"))
 
 
-def download_custom_huggingface_model():
-    """Download a custom model from HuggingFace."""
-    print(f"\n{Colors.BOLD}Custom HuggingFace Model{Colors.END}")
+def download_custom_model_url():
+    """Download a custom model from any URL."""
+    print(f"\n{Colors.BOLD}Custom Model URL{Colors.END}")
     print("-" * 50)
     print(f"""
-Enter a HuggingFace URL or repository path.
+Enter any URL to a GGUF model file.
 
-{Colors.CYAN}Examples:{Colors.END}
-  - https://huggingface.co/TheBloke/Llama-2-7B-GGUF/blob/main/llama-2-7b.Q4_K_M.gguf
-  - TheBloke/Mistral-7B-Instruct-v0.2-GGUF
-  - bartowski/Qwen2.5-7B-Instruct-GGUF
+{Colors.CYAN}Supported URLs:{Colors.END}
+  - https://huggingface.co/user/repo/resolve/main/model.Q4_K_M.gguf
+  - https://example.com/models/my-model.gguf
+  - Any direct link to a .gguf file
 
-{Colors.YELLOW}Note:{Colors.END} Make sure it's a GGUF model file.
+{Colors.CYAN}HuggingFace shortcuts:{Colors.END}
+  - TheBloke/Mistral-7B-Instruct-v0.2-GGUF (repo ID)
+
+{Colors.YELLOW}Note:{Colors.END} The file must be a valid GGUF model.
 """)
 
-    url = input(f"{Colors.CYAN}HuggingFace URL or repo: {Colors.END}").strip()
+    url = input(f"{Colors.CYAN}Model URL: {Colors.END}").strip()
 
     if not url:
         print(f"{Colors.YELLOW}Cancelled.{Colors.END}")
         return False
 
-    # Parse URL
     try:
         sys.path.insert(0, str(Path(__file__).parent / "src"))
         from benderbox.utils.model_manager import ModelManager
         manager = ModelManager()
-        repo_id, filename = manager.parse_huggingface_url(url)
 
-        if not repo_id:
-            print(f"{Colors.RED}Could not parse HuggingFace URL.{Colors.END}")
-            return False
-
-        # If no filename, list available files
-        if not filename:
-            print(f"\n{Colors.CYAN}Repository:{Colors.END} {repo_id}")
-            print(f"\nPlease enter the GGUF filename to download.")
-            print(f"(Check the HuggingFace page for available .gguf files)")
-            filename = input(f"{Colors.CYAN}Filename (e.g., model.Q4_K_M.gguf): {Colors.END}").strip()
-
-            if not filename:
-                print(f"{Colors.YELLOW}Cancelled.{Colors.END}")
-                return False
+        # Check if it's a direct URL or HuggingFace repo ID
+        is_direct_url = url.startswith("http://") or url.startswith("https://")
+        is_hf_repo = "/" in url and not is_direct_url and not url.startswith("www.")
 
         # Ask for purpose
         print(f"\n{Colors.CYAN}Model Purpose:{Colors.END}")
@@ -667,21 +657,61 @@ Enter a HuggingFace URL or repository path.
         purpose_choice = input(f"{Colors.CYAN}Select [1]: {Colors.END}").strip()
         purpose = "analysis" if purpose_choice == "2" else "nlp"
 
-        # Download with progress (huggingface_hub shows its own progress)
-        print(f"\n{Colors.CYAN}Downloading {repo_id}/{filename}...{Colors.END}")
-        print(f"{Colors.YELLOW}Large models may take 10-30 minutes to download.{Colors.END}")
-        print(f"Progress bar will appear below:\n")
+        if is_direct_url:
+            # Direct URL download
+            print(f"\n{Colors.CYAN}Downloading from URL...{Colors.END}")
+            print(f"{Colors.YELLOW}Large models may take 10-30 minutes to download.{Colors.END}")
+            print(f"Progress will appear below:\n")
 
-        success, message, path = manager.download_huggingface_model_sync(
-            repo_id, filename, purpose, show_progress=True
-        )
+            success, message, path = manager.download_from_url(
+                url, purpose=purpose, show_progress=True
+            )
 
-        if success:
-            print(f"\n{Colors.GREEN}Download complete!{Colors.END}")
-            print(f"Location: {path}")
-            return True
+            if success:
+                print(f"\n{Colors.GREEN}Download complete!{Colors.END}")
+                print(f"Location: {path}")
+                return True
+            else:
+                print(f"\n{Colors.RED}Download failed:{Colors.END} {message}")
+                return False
+
+        elif is_hf_repo:
+            # HuggingFace repo ID
+            repo_id, filename = manager.parse_huggingface_url(url)
+
+            if not repo_id:
+                print(f"{Colors.RED}Could not parse HuggingFace repository.{Colors.END}")
+                return False
+
+            # If no filename, ask for it
+            if not filename:
+                print(f"\n{Colors.CYAN}Repository:{Colors.END} {repo_id}")
+                print(f"\nPlease enter the GGUF filename to download.")
+                print(f"(Check the HuggingFace page for available .gguf files)")
+                filename = input(f"{Colors.CYAN}Filename (e.g., model.Q4_K_M.gguf): {Colors.END}").strip()
+
+                if not filename:
+                    print(f"{Colors.YELLOW}Cancelled.{Colors.END}")
+                    return False
+
+            print(f"\n{Colors.CYAN}Downloading {repo_id}/{filename}...{Colors.END}")
+            print(f"{Colors.YELLOW}Large models may take 10-30 minutes to download.{Colors.END}")
+            print(f"Progress bar will appear below:\n")
+
+            success, message, path = manager.download_huggingface_model_sync(
+                repo_id, filename, purpose, show_progress=True
+            )
+
+            if success:
+                print(f"\n{Colors.GREEN}Download complete!{Colors.END}")
+                print(f"Location: {path}")
+                return True
+            else:
+                print(f"\n{Colors.RED}Download failed:{Colors.END} {message}")
+                return False
         else:
-            print(f"\n{Colors.RED}Download failed:{Colors.END} {message}")
+            print(f"{Colors.RED}Unrecognized URL format.{Colors.END}")
+            print(f"Please enter a full URL (https://...) or HuggingFace repo ID (user/repo)")
             return False
 
     except KeyboardInterrupt:
